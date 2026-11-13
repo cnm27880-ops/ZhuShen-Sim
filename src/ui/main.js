@@ -17,7 +17,9 @@ import {
 import { roomPassRate, clearChance, partyPower, startRun, hasIntel, rewardTierMult } from "../engine/dungeon.js";
 import { effectivePower } from "../engine/tags.js";
 import { getTag } from "../data/tags.js";
-import { step } from "../engine/dispatch.js";
+import { step, areEnemies } from "../engine/dispatch.js";
+import { pairSummary, moodOf, partyRelationBonus } from "../engine/relations.js";
+import { LEVEL_LABELS, STATUS_LABELS } from "../data/relations.js";
 
 const SAVE_KEY = "zhushen-sim-save-v1";
 const $ = (id) => document.getElementById(id);
@@ -186,7 +188,8 @@ function renderSpace() {
       mini.el.style.left = `${spot.x}%`;
       mini.el.style.top = `${spot.y}%`;
     }
-    const emoji = s.injury > 0 ? "🩹" : s.locked ? "🔒" : ROOMS[mini.room].emoji;
+    const mood = moodOf(state, s); // 有戀人 ❤️、在家有仇人 😡
+    const emoji = s.injury > 0 ? "🩹" : s.locked ? "🔒" : mood === "love" ? "❤️" : mood === "anger" ? "😡" : ROOMS[mini.room].emoji;
     mini.el.querySelector(".mini-emoji").textContent = emoji;
     mini.el.classList.toggle("injured", s.injury > 0);
   }
@@ -294,7 +297,7 @@ function closeModal() {
 function renderModal() {
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { dispatch, gacha, detail, settings, runResult, gameOver, confirmRecycle };
+  const builders = { dispatch, gacha, detail, settings, runResult, gameOver, confirmRecycle, relations };
   $("modal").innerHTML = builders[modal.name]();
 }
 
@@ -335,6 +338,17 @@ function dispatch() {
     summary = `小隊總戰力 <b>${partyPower(party)}</b> / 推薦 ${dungeon.recommendedPower}<br />
       每個房間通過率 <b>${rate}%</b>，${CONFIG.dungeon.rooms} 個房間通過 ${CONFIG.dungeon.roomsToClear} 個以上才算通關<br />
       預估通關率 <b class="${cls}">${chance}%</b>（進副本時才會抽環境標籤，實際會再浮動）`;
+    const relBonus = Math.round(partyRelationBonus(state, party) * 100);
+    if (relBonus !== 0) {
+      summary += `<br />隊員關係加成 <b class="${relBonus > 0 ? "good" : "bad"}">${relBonus > 0 ? "+" : ""}${relBonus}%</b>（已含在每房間通過率）`;
+    }
+    const enemyPairs = [];
+    for (let i = 0; i < party.length; i++) {
+      for (let j = i + 1; j < party.length; j++) if (areEnemies(state, party[i], party[j])) enemyPairs.push(`${party[i].name} × ${party[j].name}`);
+    }
+    if (enemyPairs.length > 0) {
+      summary += `<br /><span class="bad">⚔️ 隊內有仇人：${enemyPairs.join("、")}（每個房間有機率先打起來）</span>`;
+    }
     if (!hasIntel(state, dungeon)) {
       summary += `<br /><span class="warn">❓ 首次開荒：沒有情報，通過率 -${Math.round(CONFIG.dungeon.firstClearPenalty * 100)}%、傷勢更重；首通有額外 ${CONFIG.dungeon.firstClearBonus} 分與特殊獎勵。</span>`;
     }
@@ -397,11 +411,62 @@ function detail() {
         .map((t) => `<div><span class="tag-chip tag-${t.rarity}">${t.rarity}・${t.name}</span> <small>${t.desc}${t.pending ? `<br /><i>（${t.pending}）</i>` : ""}</small></div>`)
         .join("")}</td></tr>
     </table>
+    <h3 style="margin-top:12px">💞 人際關係</h3>
+    <div class="rel-list">${relationRows(s)}</div>
     <div class="modal-actions">
       <button class="danger" data-action="ask-recycle" data-id="${s.id}" ${home ? "" : "disabled"}>♻️ 推進回收爐（+${CONFIG.recycle.points} 分）</button>
       <button data-action="toggle-lock" data-id="${s.id}">${s.locked ? "🔓 解除鎖定" : "🔒 鎖定（不參與自動派遣）"}</button>
       ${closeButton}
     </div>`;
+}
+
+/** 一對關係的文字：等級／狀態、雙向好感、雙向仇恨 */
+function relationLine(a, b) {
+  const p = pairSummary(state, a, b);
+  const label = p.status ? STATUS_LABELS[p.status] : LEVEL_LABELS[p.level];
+  const nums = [];
+  if (p.loveAB || p.loveBA) nums.push(`好感 ${p.loveAB}／${p.loveBA}`);
+  if (p.hateAB || p.hateBA) nums.push(`恨意 ${p.hateAB}／${p.hateBA}`);
+  const revenge = p.revenge ? ` <span class="bad">🩸 復仇鎖定</span>` : "";
+  return { p, html: `<span class="rel-label">${label}</span>${nums.join("・")}${revenge}` };
+}
+
+function relationRows(s) {
+  const rows = state.samsarites
+    .filter((o) => o.id !== s.id)
+    .map((o) => ({ o, ...relationLine(s, o) }))
+    .filter(({ p }) => p.level !== "neutral" || p.status || p.loveAB + p.loveBA + p.hateAB + p.hateBA >= 10);
+  if (rows.length === 0) return `<div class="empty">還沒有什麼交情或恩怨。</div>`;
+  return rows
+    .sort((x, y) => relationRank(y.p) - relationRank(x.p))
+    .map(({ o, html }) => `<div class="rel-row"><b>${o.name}</b>${html}<small>（我→他／他→我）</small></div>`)
+    .join("");
+}
+
+const relationRank = (p) => (p.status ? 100 : 0) + Math.max(p.loveAB, p.loveBA, p.hateAB, p.hateBA);
+
+/** 關係總覽：所有有交情或恩怨的配對 */
+function relations() {
+  const list = state.samsarites;
+  const pairs = [];
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const { p, html } = relationLine(list[i], list[j]);
+      if (p.level === "neutral" && !p.status && p.loveAB + p.loveBA + p.hateAB + p.hateBA < 10) continue;
+      pairs.push({ a: list[i], b: list[j], p, html });
+    }
+  }
+  pairs.sort((x, y) => relationRank(y.p) - relationRank(x.p));
+  const body = pairs.length
+    ? pairs.map(({ a, b, html }) => `<div class="rel-row"><b>${a.name}</b> ↔ <b>${b.name}</b>${html}</div>`).join("")
+    : `<div class="empty">大家還不熟。等他們在主神空間待久一點，八卦就來了。</div>`;
+  const bonus = Object.entries(CONFIG.relations.passBonus)
+    .map(([k, v]) => `${LEVEL_LABELS[k]} ${v > 0 ? "+" : ""}${Math.round(v * 100)}%`)
+    .join("・");
+  return `<h3>💞 關係總覽</h3>
+    <p><small>一起出戰的單房通過率：${bonus}（上限 ±${Math.round(CONFIG.relations.bonusCap * 100)}%）。數字是「甲→乙／乙→甲」的好感與仇恨。</small></p>
+    <div class="rel-list">${body}</div>
+    <div class="modal-actions">${closeButton}</div>`;
 }
 
 function confirmRecycle() {
@@ -423,7 +488,7 @@ function settings() {
     )
     .join("");
   const graves = state.graveyard.length
-    ? state.graveyard.map((g) => `<div>第 ${g.day} 天・${rankBadge(g.rank)} ${g.name}・${g.cause}</div>`).join("")
+    ? state.graveyard.map((g) => `<div>第 ${g.day} 天・${rankBadge(g.rank)} ${g.name}・${g.cause}${g.killer ? `（兇手：${g.killer}）` : ""}</div>`).join("")
     : "（還沒有人死）";
   return `<h3>⚙️ 設定</h3>
     <p>遇到下列事件時自動暫停：</p>
@@ -478,6 +543,9 @@ const actions = {
   },
   "open-settings"() {
     modal = { name: "settings" };
+  },
+  "open-relations"() {
+    modal = { name: "relations" };
   },
   "open-detail"(el) {
     modal = { name: "detail", id: Number(el.dataset.id) };

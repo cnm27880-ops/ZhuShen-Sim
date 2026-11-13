@@ -4,11 +4,12 @@
 import { CONFIG } from "../data/config.js";
 import { DUNGEONS } from "../data/dungeons.js";
 import { emit, advanceTick, checkGameOver } from "./core.js";
+import { areEnemies as pairEnemies } from "./relations.js";
 import { clearChance, partyPower, startRun, stepRun } from "./dungeon.js";
 
-// Phase 2 掛鉤：關係系統上線後，這裡回傳「兩人是否為仇恨／死敵」
-export function areEnemies(_state, _a, _b) {
-  return false;
+// 兩人是否為仇恨／死敵（關係系統在 engine/relations.js）
+export function areEnemies(state, a, b) {
+  return pairEnemies(state, a, b);
 }
 
 /** 可以被自動派遣的人：在家、沒鎖定、（保護開關開著時）沒受傷 */
