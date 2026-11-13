@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>主神空間主管模擬器</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- 上面：積分、時間、速度控制、暫停 -->
+    <header id="topbar">
+      <div class="brand"><span class="brand-orb"></span><span>主神空間<small>主管終端 v0.1</small></span></div>
+      <div class="stat"><span class="stat-label">積分</span><span id="points" class="stat-value">0</span></div>
+      <div class="stat">
+        <span class="stat-label" id="day-label">第 1 天</span>
+        <div id="day-bar"><div id="day-bar-fill"></div></div>
+      </div>
+      <div class="stat"><span class="stat-label">每日維持費</span><span id="upkeep" class="stat-value small">0</span></div>
+      <div id="speed-controls"></div>
+      <button id="btn-pause" data-action="toggle-pause">⏸ 暫停</button>
+      <button data-action="open-settings" title="設定">⚙️</button>
+    </header>
+
+    <!-- 自動暫停時顯示原因 -->
+    <div id="banner" style="display: none"></div>
+
+    <main>
+      <!-- 左邊：主神空間俯視圖／副本路線圖 -->
+      <section id="stage">
+        <div id="space-map"></div>
+        <div id="dungeon-view" style="display: none"></div>
+      </section>
+
+      <!-- 右邊：主神監控日誌 -->
+      <aside id="log-panel">
+        <h2>主神監控日誌<span class="rec">REC</span></h2>
+        <div id="log"></div>
+      </aside>
+    </main>
+
+    <!-- 下面：操作按鈕 + 輪迴者列表 -->
+    <footer>
+      <div id="actions">
+        <button class="primary" data-action="open-dispatch">🚪 派遣</button>
+        <button class="primary" data-action="open-gacha">🎴 抽卡</button>
+        <button disabled title="Phase 3 才會開放">🛒 商店（未開放）</button>
+        <label class="toggle"><input type="checkbox" id="auto-dispatch" /> 🤖 自動派遣</label>
+        <label class="toggle"><input type="checkbox" id="protect-injured" /> 禁止自動派遣受傷人員</label>
+        <label class="toggle"><input type="checkbox" id="protect-enemies" /> 禁止仇恨／死敵同隊</label>
+      </div>
+      <div id="roster"></div>
+    </footer>
+
+    <!-- 彈出視窗 -->
+    <div id="modal-backdrop" style="display: none"><div id="modal"></div></div>
+
+    <script type="module" src="src/ui/main.js"></script>
+  </body>
+</html>
