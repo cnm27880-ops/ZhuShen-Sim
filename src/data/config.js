@@ -68,6 +68,25 @@ export const CONFIG = {
     injuryShieldMax: 0.9, // 傷勢減免機率上限
   },
 
+  // ── 許願系統（Phase 3-B）：輪迴者主動向主管許願，答應完成 → 高興；拒絕或超時 → 不爽 ──
+  wish: {
+    chance: 0.4, // 每人每天抽到「特殊事件」（dailyRoll 剩下的 20%）時，改成許願的機率（實際每人每天約 20% × 40% = 8%）
+    dungeonPowerCap: 150, // 「想去副本」只會選推薦戰力不超過這個數字的副本（打不贏的副本不會許願）
+    // 心情狀態：掛在輪迴者身上、持續 days 天，直接加減數值（不是標籤）
+    moods: {
+      happy: { label: "高興", icon: "😊", days: 5, passBonus: 0.05 }, // 每位高興的隊員讓單房通過率 +5%
+      upset: { label: "不爽", icon: "😠", days: 5, powerPct: -0.1, sanityLoss: 10 }, // 戰力 -10%，變不爽那一刻理智 -10
+    },
+    moodPassCap: 0.15, // 全隊心情對單房通過率的加成上限（±）
+    // 各種許願的數字（種類資料在 src/data/wishes.js）。days = 從許願那天起幾天內要處理（超時算失敗）
+    kinds: {
+      eat: { weight: 40, days: 2, cost: [30, 60] }, // 想吃好的：答應當下扣 cost 範圍內的積分
+      vacation: { weight: 25, days: 2, restDays: [2, 3] }, // 想放假：休息 restDays 天，期間不能派遣、維持費照付
+      dungeon: { weight: 20, days: 7 }, // 想去某個副本：期限內派他去並通關
+      gear: { weight: 15, days: 5 }, // 想要某件商店裝備：期限內幫他買下
+    },
+  },
+
   // ── 關係系統（Phase 2-B；計畫第 6 節，標「計畫未定」的是暫定值）──
   relations: {
     // 關係等級門檻（好感／仇恨 0~100）
@@ -174,4 +193,5 @@ export const PAUSE_EVENTS = {
   debt: { label: "開始負債（主神高利貸）", default: true },
   healed: { label: "有人傷癒", default: false },
   autoIdle: { label: "自動派遣找不到合適隊伍", default: false },
+  wish: { label: "輪迴者許願（彈窗讓你答應或拒絕）", default: true },
 };
