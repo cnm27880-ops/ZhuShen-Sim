@@ -79,6 +79,20 @@ main { flex: 1; min-height: 0; display: flex; gap: 14px; padding: 14px 18px; }
   background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow);
 }
 #space-map, #dungeon-view { position: absolute; inset: 0; }
+/* 進行中副本卡片清單（並行副本）：疊在主神空間右側，可捲動 */
+#run-list { position: absolute; top: 10px; right: 10px; bottom: 10px; width: 210px; flex-direction: column; gap: 8px; overflow-y: auto; z-index: 5; pointer-events: none; }
+.run-card { position: relative; flex: none; padding: 8px 10px; border-radius: 10px; color: #eef1f8; font-size: 12px; box-shadow: var(--shadow); pointer-events: auto; background: #1b1e26; }
+.run-title { font-size: 13px; }
+.run-title small { opacity: 0.7; }
+.run-nodes { display: flex; gap: 4px; margin: 6px 0; }
+.run-node { flex: 1; text-align: center; padding: 2px 0; border-radius: 6px; background: rgba(255, 255, 255, 0.14); font-weight: 700; }
+.run-node.current { outline: 2px solid #fff; animation: pulse 1.2s ease-out infinite; }
+.run-node.pass { background: #2b8a3e; }
+.run-node.fail { background: #c92a2a; }
+.run-party { opacity: 0.9; line-height: 1.4; }
+.run-rate { opacity: 0.7; }
+@media (max-width: 700px) { #run-list { width: 150px; } }
+
 /* 主神空間的地板：淡淡的格線 + 中央的柔光 */
 #space-map {
   background:

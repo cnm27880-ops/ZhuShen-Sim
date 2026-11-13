@@ -6,7 +6,7 @@ import { CONFIG } from "../src/data/config.js";
 import { getDungeon } from "../src/data/dungeons.js";
 import { SOCIAL_EVENTS, SCHEMES } from "../src/data/relations.js";
 import { createNewGame, createSamsarite, setInjury, advanceTick, recycle, serialize, deserialize } from "../src/engine/core.js";
-import { roomPassRate, startRun, stepRun } from "../src/engine/dungeon.js";
+import { roomPassRate, startRun } from "../src/engine/dungeon.js";
 import { planAutoDispatch, areEnemies, step } from "../src/engine/dispatch.js";
 import {
   getRel,
@@ -268,8 +268,8 @@ test("副本：復仇鎖定的兩人同隊，第一個房間一定自相殘殺�
   addHate(state, m, killer, 100);
   state.relations[`${m.id}>${killer.id}`].revenge = true;
   assert.equal(startRun(state, easy.id, [m.id, killer.id]).ok, true);
-  stepRun(state);
-  assert.equal(state.run.results[0], false);
+  step(state);
+  assert.equal(state.runs[0].results[0], false);
   assert.ok(killer.injury > 0, "被攻擊的兇手受傷了");
   assert.equal(getRel(state, m, killer).revenge, false);
   assert.ok(state.log.some((e) => e.type === "clash"));
@@ -321,7 +321,7 @@ test("借刀殺人的破壞裝備：下次出征被打中更容易重傷、出�
   a.sabotaged = true;
   state.points = 1000;
   startRun(state, getDungeon("ghost_village").id, [a.id]);
-  while (state.run) stepRun(state);
+  while (state.runs.length) step(state);
   assert.equal(a.sabotaged, false);
 });
 

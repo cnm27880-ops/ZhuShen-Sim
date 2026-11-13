@@ -11,7 +11,7 @@ export const CONFIG = {
   speeds: [1, 2, 5, 10],
 
   // ── 開局（計畫未定）──
-  startingPoints: 150,
+  startingPoints: 500,
   startingSamsarites: 3,
   startingRank: "C",
 
@@ -158,6 +158,8 @@ export const CONFIG = {
     maxCandidates: 14, // 最多拿戰力前幾名來排列組合（避免人太多時算太久）
     dispatchAtTick: 5, // 每天第幾個時段檢查一次自動派遣
   },
+
+  runReportMax: 20, // 排隊等玩家看的副本結算摘要最多留幾筆
 
   logMax: 300,
 };

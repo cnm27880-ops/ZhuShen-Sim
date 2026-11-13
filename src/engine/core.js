@@ -45,8 +45,10 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
     dungeonStats: {}, // { 副本id: { attempts, clears } }；clears > 0 代表已有該副本情報
     collection: [], // 副本特殊獎勵 id（定義在 data/dungeons.js），永久生效，效果見 engine/shop.js collectionEffects
-    run: null, // 進行中的副本
-    lastRun: null, // 上一場副本的結算摘要
+    runs: [], // 進行中的副本（可同時多場）：{ id, startTick, dungeonId, envId, partyIds, roomIndex, results… }，見 engine/dungeon.js
+    nextRunId: 1,
+    runReports: [], // 還沒給玩家看的副本結算摘要（結算視窗排隊用）
+    lastRun: null, // 最近一場副本的結算摘要
     gameOver: false,
     settings: {
       speed: 1,
@@ -285,6 +287,17 @@ export function deserialize(json) {
     s.mood ??= null;
     s.vacationDays ??= 0;
   }
+  // 舊存檔只有單一 state.run：遷移成 state.runs 陣列
+  state.runs ??= [];
+  state.nextRunId ??= 1;
+  state.runReports ??= [];
+  if (state.run) {
+    const old = state.run;
+    state.runs.push({ id: state.nextRunId++, startTick: state.tick - old.roomIndex * CONFIG.roomTicks, ...old });
+  }
+  delete state.run;
+  for (const r of state.runs) r.id ??= state.nextRunId++;
+  state.nextRunId = Math.max(state.nextRunId, 1 + Math.max(0, ...state.runs.map((r) => r.id)));
   state.wishes ??= [];
   state.nextWishId ??= 1 + Math.max(0, ...state.wishes.map((w) => w.id));
   state.relations ??= {};

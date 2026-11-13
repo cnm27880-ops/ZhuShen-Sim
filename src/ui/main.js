@@ -19,7 +19,7 @@ import { effectivePower } from "../engine/tags.js";
 import { shopTier, nextTierInfo, checkBuy, buyItem, collectionEffects } from "../engine/shop.js";
 import { SHOP_ITEMS, SHOP_KIND_LABELS, SHOP_SLOT_LABELS, getShopItem } from "../data/shop.js";
 import { getSpecialReward } from "../data/dungeons.js";
-import { getTag } from "../data/tags.js";
+import { getTag, getEnvTag } from "../data/tags.js";
 import { step, areEnemies } from "../engine/dispatch.js";
 import { pendingWishes, wishesOf, checkAccept, acceptWish, refuseWish, wishVars } from "../engine/wishes.js";
 import { getWish } from "../data/wishes.js";
@@ -70,7 +70,7 @@ function saveGame() {
 function schedule() {
   clearTimeout(timer);
   if (state.settings.paused || state.gameOver || modal) return;
-  const ms = (state.run ? CONFIG.roomMs : CONFIG.tickMs) / state.settings.speed;
+  const ms = (state.runs.length ? CONFIG.roomMs / CONFIG.roomTicks : CONFIG.tickMs) / state.settings.speed; // 有副本在跑時節奏稍快（房間間隔 ÷ 每房時段數）
   timer = setTimeout(() => {
     step(state);
     afterChange();
@@ -85,8 +85,13 @@ function afterChange() {
     if (state.settings.pauseOn[ev.type]) {
       state.settings.paused = true;
       bannerText = `⏸ 自動暫停：${PAUSE_EVENTS[ev.type].label} —— ${ev.text}`;
-      if (ev.type === "runEnd" && !modal) modal = { name: "runResult" };
     }
+  }
+  // 副本結算視窗排隊：一次只彈一個，關掉後若還有就接著彈（含重新整理讀檔後還沒看的）。關掉「副本結算」暫停就不彈、清掉佇列
+  if (!state.settings.pauseOn.runEnd) state.runReports.length = 0;
+  else if (!modal && !state.gameOver && state.runReports.length > 0) {
+    state.settings.paused = true;
+    modal = { name: "runResult" };
   }
   // 有人許願等回覆：自動暫停並彈窗（包含重新整理讀檔後還沒回覆的）。關掉「許願」暫停就改用 🙏 按鈕手動處理
   if (state.settings.pauseOn.wish && !modal && !state.gameOver && pendingWishes(state).length > 0) {
@@ -152,11 +157,11 @@ function pickRoom(s) {
 }
 
 function renderStage() {
-  const inDungeon = Boolean(state.run);
-  $("space-map").style.display = inDungeon ? "none" : "block";
-  $("dungeon-view").style.display = inDungeon ? "flex" : "none";
-  if (inDungeon) renderDungeon();
-  else renderSpace();
+  // 主神空間永遠是主畫面；進行中的副本用旁邊的卡片清單顯示（並行副本）
+  $("space-map").style.display = "block";
+  $("dungeon-view").style.display = "none";
+  renderSpace();
+  renderRunList();
 }
 
 function renderSpace() {
@@ -210,45 +215,32 @@ function renderSpace() {
   }
 }
 
-function renderDungeon() {
-  const run = state.run;
-  const dungeon = getDungeon(run.dungeonId);
-  const party = run.partyIds.map((id) => getSamsarite(state, id)).filter(Boolean);
-  const view = $("dungeon-view");
-  const nodeX = (i) => ((i + 1) / CONFIG.dungeon.rooms) * 100;
-
-  if (view.dataset.runKey !== String(state.dungeonStats[run.dungeonId].attempts) + run.dungeonId) {
-    view.dataset.runKey = String(state.dungeonStats[run.dungeonId].attempts) + run.dungeonId;
-    view.className = `theme-${dungeon.id}`;
-    view.innerHTML = `
-      <h3>${dungeon.icon} ${dungeon.name} <small>（${dungeon.genre}・${dungeon.difficulty}）</small></h3>
-      <div class="dungeon-intro">${dungeon.intro}</div>
-      <div class="route">
-        <div class="route-line"></div><div class="route-progress"></div>
-        ${dungeon.rooms
-          .map((room, i) => `<div class="route-node" data-node="${i}" style="left:${nodeX(i)}%"><span class="route-node-mark">${i + 1}</span><span class="route-node-label">${room.name}</span></div>`)
-          .join("")}
-        <div class="route-party" style="left:0%"></div>
-      </div>
-      <div class="dungeon-status"></div>`;
-  }
-
-  view.querySelectorAll(".route-node").forEach((node, i) => {
-    const result = run.results[i];
-    node.classList.toggle("pass", result === true);
-    node.classList.toggle("fail", result === false);
-    node.classList.toggle("current", i === run.roomIndex);
-    node.querySelector(".route-node-mark").textContent = result === true ? "✓" : result === false ? "✕" : i + 1;
-  });
-  view.querySelector(".route-progress").style.width = `${run.roomIndex === 0 ? 0 : nodeX(run.roomIndex - 1)}%`;
-  const partyEl = view.querySelector(".route-party");
-  partyEl.style.left = `${run.roomIndex === 0 ? 0 : nodeX(run.roomIndex - 1)}%`;
-  partyEl.innerHTML = party
-    .map((s) => `<div class="mini ${s.injury > 0 ? "injured" : ""}">${miniHtml(s, s.injury > 0 ? "🩹" : "🔦")}</div>`)
+/** 進行中副本卡片：每場一張（副本名、環境、5 個房間進度、隊員、目前通過率） */
+function renderRunList() {
+  const box = $("run-list");
+  box.style.display = state.runs.length ? "flex" : "none";
+  box.innerHTML = state.runs
+    .map((run) => {
+      const dungeon = getDungeon(run.dungeonId);
+      const party = run.partyIds.map((id) => getSamsarite(state, id)).filter(Boolean);
+      const env = getEnvTag(run.envId);
+      const nodes = dungeon.rooms
+        .map((_, i) => {
+          const r = run.results[i];
+          const cls = r === true ? "pass" : r === false ? "fail" : i === run.roomIndex ? "current" : "";
+          return `<span class="run-node ${cls}">${r === true ? "✓" : r === false ? "✕" : i + 1}</span>`;
+        })
+        .join("");
+      const rate = party.length ? Math.round(roomPassRate(state, party, dungeon, env, 0, run.firstTime) * 100) : 0;
+      const names = party.map((s) => `${s.injury > 0 ? "🩹" : "🔦"}${s.name}`).join("、") || "全滅";
+      return `<div class="run-card theme-${dungeon.id}" data-run-id="${run.id}">
+        <div class="run-title">${dungeon.icon} <b>${dungeon.name}</b> <small>${env ? env.name : ""}</small></div>
+        <div class="run-nodes">${nodes}</div>
+        <div class="run-party">${names}</div>
+        <small class="run-rate">存活 ${party.length} 人・房間通過率 ${rate}%</small>
+      </div>`;
+    })
     .join("");
-  const rate = Math.round(roomPassRate(state, party, dungeon) * 100);
-  view.querySelector(".dungeon-status").textContent =
-    `進度 ${run.roomIndex}/${CONFIG.dungeon.rooms}・存活 ${party.length} 人・目前每個房間通過率 ${rate}%・主神空間時間暫停中`;
 }
 
 function renderLog() {
@@ -599,7 +591,9 @@ function settings() {
 }
 
 function runResult() {
-  const r = state.lastRun;
+  const r = state.runReports[0];
+  if (!r) return `<h3>副本結算</h3><p>沒有待看的結算。</p><div class="modal-actions">${closeButton}</div>`;
+  const waiting = state.runReports.length - 1;
   const rooms = r.results.map((ok) => (ok ? "✅" : "❌")).join(" ");
   const survivors = r.survivors.length
     ? r.survivors.map((s) => `${s.name}（${INJURIES[s.injury].name}）`).join("、")
@@ -611,8 +605,9 @@ function runResult() {
       ${r.specialReward ? `🎁 特殊獎勵：<b class="good">${r.specialReward}</b>（已永久生效）<br />` : ""}
       生還：${survivors}<br />
       死亡：<span class="${r.deaths.length ? "bad" : ""}">${r.deaths.length ? r.deaths.join("、") : "無"}</span>
+      ${waiting > 0 ? `<br /><small>還有 ${waiting} 場副本結算排隊中</small>` : ""}
     </div>
-    <div class="modal-actions"><button class="primary" data-action="close-modal">知道了</button></div>`;
+    <div class="modal-actions"><button class="primary" data-action="close-run-report">${waiting > 0 ? "下一場" : "知道了"}</button></div>`;
 }
 
 function wish() {
@@ -661,7 +656,6 @@ const actions = {
     state.settings.speed = Number(el.dataset.value);
   },
   "open-dispatch"() {
-    if (state.run) return;
     modal = { name: "dispatch" };
   },
   "open-gacha"() {
@@ -703,6 +697,10 @@ const actions = {
   },
   "close-modal"() {
     modal = null;
+  },
+  "close-run-report"() {
+    state.runReports.shift();
+    modal = null; // afterChange 會自動接著彈下一場
   },
   "pick-dungeon"(el) {
     dispatchPick.dungeonId = el.dataset.id;

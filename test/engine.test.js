@@ -18,7 +18,7 @@ import {
   serialize,
   deserialize,
 } from "../src/engine/core.js";
-import { roomPassRate, clearChance, chanceAtLeast, startRun, stepRun, partyPower, rewardTierMult } from "../src/engine/dungeon.js";
+import { roomPassRate, clearChance, chanceAtLeast, startRun, partyPower, rewardTierMult } from "../src/engine/dungeon.js";
 import { planAutoDispatch, autoCandidates, step } from "../src/engine/dispatch.js";
 
 const easy = getDungeon("ghost_village");
@@ -120,7 +120,7 @@ test("首次通關：額外 +50 分、掉一個特殊獎勵並收入收藏；第
   for (let i = 0; i < 20 && !first; i++) {
     for (const s of state.samsarites) setInjury(s, 0);
     startRun(state, easy.id, state.samsarites.map((s) => s.id));
-    while (state.run) stepRun(state);
+    while (state.runs.length) step(state);
     if (state.lastRun.success) first = state.lastRun;
     if (state.samsarites.length < 4) break;
   }
@@ -130,7 +130,7 @@ test("首次通關：額外 +50 分、掉一個特殊獎勵並收入收藏；第
     assert.equal(state.collection.length, 1);
     assert.ok(first.reward >= CONFIG.dungeon.firstClearBonus);
     startRun(state, easy.id, state.samsarites.map((s) => s.id));
-    while (state.run) stepRun(state);
+    while (state.runs.length) step(state);
     assert.equal(state.lastRun.firstClear, false);
     assert.equal(state.collection.length, 1);
   }
@@ -180,9 +180,9 @@ test("一場副本剛好過 1 天，而且出征的人不扣維持費", () => {
   assert.equal(startRun(state, easy.id, party).ok, true);
   const before = state.points;
   let guard = 0;
-  while (state.run && guard++ < 10) stepRun(state);
+  while (state.runs.length && guard++ < 30) step(state);
   assert.equal(state.tick, CONFIG.ticksPerDay);
-  assert.equal(state.run, null);
+  assert.equal(state.runs.length, 0);
   assert.equal(state.points, before - upkeepOf(stay) + state.lastRun.reward);
   assert.ok(state.samsarites.every((s) => s.location === "space"));
 });
@@ -193,7 +193,7 @@ test("戰力嚴重不足的隊伍會傷亡；失敗生還者一定帶傷", () =>
   for (let seed = 1; seed <= 40; seed++) {
     const state = createNewGame(seed);
     startRun(state, "ember_war", state.samsarites.map((s) => s.id));
-    while (state.run) stepRun(state);
+    while (state.runs.length) step(state);
     if (state.lastRun.success) continue; // 戰力不足仍有極小機率運氣好通關
     assert.ok(state.samsarites.every((s) => s.injury > 0));
     if (state.graveyard.length > 0) sawDeath = true;
@@ -202,14 +202,15 @@ test("戰力嚴重不足的隊伍會傷亡；失敗生還者一定帶傷", () =>
   assert.ok(sawDeath && sawInjuredSurvivor);
 });
 
-test("派遣檢查：人數上限、不能重複出征", () => {
+test("派遣檢查：人數上限、同一個人不能同時在兩場副本", () => {
   const state = createNewGame(5);
   state.points = 100000;
   while (state.samsarites.length <= CONFIG.partyMax) pullGacha(state, "ba");
   assert.equal(startRun(state, easy.id, state.samsarites.map((s) => s.id)).ok, false);
   assert.equal(startRun(state, easy.id, []).ok, false);
   assert.equal(startRun(state, easy.id, [state.samsarites[0].id]).ok, true);
-  assert.equal(startRun(state, easy.id, [state.samsarites[1].id]).ok, false);
+  assert.equal(startRun(state, easy.id, [state.samsarites[0].id]).ok, false); // 已經在副本裡
+  assert.equal(startRun(state, easy.id, [state.samsarites[1].id]).ok, true); // 別人可以再開一場（並行副本）
 });
 
 test("自動派遣：不派鎖定的人、不派受傷的人（開關開著時）、挑獎勵最高的可行副本", () => {

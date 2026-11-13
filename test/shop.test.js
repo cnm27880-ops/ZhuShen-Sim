@@ -8,7 +8,8 @@ import { LOGS } from "../src/data/logs.js";
 import { createNewGame, createSamsarite, setInjury, serialize, deserialize, pullGacha } from "../src/engine/core.js";
 import { shopTier, nextTierInfo, buyItem, checkBuy, collectionEffects } from "../src/engine/shop.js";
 import { effectivePower, injuryShieldOf, dodgeOf } from "../src/engine/tags.js";
-import { roomPassRate, rewardMultiplier, partyPower, startRun, stepRun } from "../src/engine/dungeon.js";
+import { roomPassRate, rewardMultiplier, partyPower, startRun } from "../src/engine/dungeon.js";
+import { step } from "../src/engine/dispatch.js";
 
 const ghost = getDungeon("ghost_village");
 
@@ -182,10 +183,9 @@ test("傷勢減免的收藏真的進入副本結算：同一個種子下，有�
       s.stats.power = 1; // 一定打不過，一定被打
       state.samsarites = [s];
       startRun(state, ghost.id, [s.id]);
-      while (state.run) {
-        stepRun(state);
-        total += 1; // 走完一個房間 = 還活著撐過一個房間（全滅時副本會提前結束）
-      }
+      const run = state.runs[0];
+      while (state.runs.length) step(state);
+      total += run.results.length; // 走完幾個房間 = 還活著撐過幾個房間（全滅時副本會提前結束）
     }
     return total;
   };
@@ -205,7 +205,7 @@ test("首通掉落記錄的是獎勵 id，而且有對應資料", () => {
     for (const s of state.samsarites) setInjury(s, 0);
     if (state.samsarites.length === 0) break;
     startRun(state, ghost.id, state.samsarites.map((s) => s.id));
-    while (state.run) stepRun(state);
+    while (state.runs.length) step(state);
   }
   if (state.collection.length > 0) {
     assert.ok(getSpecialReward(state.collection[0]));
