@@ -19,7 +19,7 @@ import {
   deserialize,
 } from "../src/engine/core.js";
 import { roomPassRate, clearChance, chanceAtLeast, startRun, stepRun, partyPower, rewardTierMult } from "../src/engine/dungeon.js";
-import { planAutoDispatch, step } from "../src/engine/dispatch.js";
+import { planAutoDispatch, autoCandidates, step } from "../src/engine/dispatch.js";
 
 const easy = getDungeon("ghost_village");
 
@@ -47,7 +47,7 @@ test("房間通過率：已有情報、戰力等於推薦戰力時是 55%（50% 
   const state = createNewGame(1);
   state.dungeonStats[easy.id] = { attempts: 1, clears: 1 }; // 已有情報
   const fake = (power) => [{ stats: { power }, tags: [] }];
-  assert.ok(Math.abs(roomPassRate(state, fake(200), easy) - 0.55) < 1e-9);
+  assert.ok(Math.abs(roomPassRate(state, fake(easy.recommendedPower), easy) - 0.55) < 1e-9);
   assert.equal(roomPassRate(state, fake(100000), easy), CONFIG.dungeon.maxPassRate);
   assert.equal(roomPassRate(createNewGame(1), fake(1), easy), CONFIG.dungeon.minPassRate); // 首次開荒又超弱 → 吃到下限
   assert.ok(Math.abs(chanceAtLeast(5, 5, 0.7) - 0.7 ** 5) < 1e-9);
@@ -56,7 +56,7 @@ test("房間通過率：已有情報、戰力等於推薦戰力時是 55%（50% 
 
 test("首次開荒：通過率 -10%；通關後變成有情報", () => {
   const state = createNewGame(1);
-  const fake = [{ stats: { power: 200 }, tags: [] }];
+  const fake = [{ stats: { power: easy.recommendedPower }, tags: [] }];
   assert.ok(Math.abs(roomPassRate(state, fake, easy) - 0.4) < 1e-9);
 });
 
@@ -227,8 +227,8 @@ test("自動派遣：不派鎖定的人、不派受傷的人（開關開著時�
   assert.ok(!plan2.party.includes(strong[1]));
 
   state.settings.protect.noInjured = false;
-  const plan3 = planAutoDispatch(state);
-  assert.ok(plan3.party.includes(strong[1]));
+  assert.ok(autoCandidates(state).includes(strong[1])); // 保護開關關掉後，受傷的人才會進候選名單
+  assert.ok(planAutoDispatch(state));
 
   for (const s of strong) s.locked = true;
   assert.equal(planAutoDispatch(state), null);

@@ -9,7 +9,7 @@ export const DUNGEONS = [
     genre: "靈異",
     difficulty: "簡單",
     icon: "🏚️",
-    recommendedPower: 200,
+    recommendedPower: 150,
     reward: 100,
     specialRewards: ["鬼道術法・引魂符", "鬼道術法・封煞咒", "陰陽眼"],
     intro: "終年不散的霧、沒有人上香的祖祠、門口排排站的紙紮人。",
