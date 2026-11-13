@@ -41,8 +41,19 @@ export function shopBonus(s, key) {
 
 /** 套上強化、裝備、標籤後的戰力（基礎戰力 stats.power 不會被改動）：(基礎 + 強化 + 裝備) × (1 + 標籤%) */
 export function effectivePower(s) {
-  const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0);
+  const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0) + moodPowerPct(s);
   return Math.max(1, Math.round((s.stats.power + shopBonus(s, "power")) * (1 + pct)));
+}
+
+/** 心情狀態（許願系統）對戰力的加成：不爽 -10% 之類，數字在 CONFIG.wish.moods */
+export function moodPowerPct(s) {
+  return CONFIG.wish.moods[s.mood?.kind]?.powerPct ?? 0;
+}
+
+/** 全隊心情對「單房通過率」的加成（高興 +5%／人），有上限 */
+export function moodPassBonus(party) {
+  const sum = party.reduce((n, s) => n + (CONFIG.wish.moods[s.mood?.kind]?.passBonus ?? 0), 0);
+  return Math.max(-CONFIG.wish.moodPassCap, Math.min(CONFIG.wish.moodPassCap, sum));
 }
 
 /** 全隊標籤對「單房通過率」的加成（已套用上限）。env 是環境標籤（可為 null） */

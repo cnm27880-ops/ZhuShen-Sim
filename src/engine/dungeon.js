@@ -7,7 +7,8 @@ import { CONFIG, INJURIES } from "../data/config.js";
 import { getDungeon } from "../data/dungeons.js";
 import { ENV_TAGS, getEnvTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
-import { effectivePower, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf } from "./tags.js";
+import { wishesAfterRun } from "./wishes.js";
+import { effectivePower, moodPassBonus, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf } from "./tags.js";
 import { partyRelationBonus, pickClash, clashText, afterClash, afterDeath, findProtector } from "./relations.js";
 import { logText } from "./templates.js";
 import { emit, advanceTick, setInjury, killSamsarite, checkGameOver } from "./core.js";
@@ -51,6 +52,7 @@ export function roomPassRate(state, party, dungeon, env = null, swing = 0) {
     (partyPower(party) / dungeon.recommendedPower) * CONFIG.dungeon.basePassRate +
     relationBonus(state, party) +
     tagBonus(state, party, dungeon, env) +
+    moodPassBonus(party) +
     intelBonus(state, dungeon) +
     swing;
   return Math.min(CONFIG.dungeon.maxPassRate, Math.max(CONFIG.dungeon.minPassRate, raw));
@@ -88,6 +90,8 @@ export function startRun(state, dungeonId, partyIds) {
   }
   const party = partyIds.map((id) => state.samsarites.find((s) => s.id === id));
   if (party.some((s) => !s || s.location !== "space")) return { ok: false, reason: "有隊員不在主神空間" };
+  const resting = party.find((s) => (s.vacationDays ?? 0) > 0);
+  if (resting) return { ok: false, reason: `${resting.name} 正在放假（還要 ${resting.vacationDays} 天）` };
 
   const enteredInjury = {};
   for (const s of party) {
@@ -235,6 +239,7 @@ function finishRun(state) {
     deaths: run.deaths,
     survivors: survivors.map((s) => ({ name: s.name, injury: s.injury })),
   };
+  const partyIds = run.partyIds;
   state.run = null;
 
   const vars = { dungeon: dungeon.name, passed: passedCount, rooms: CONFIG.dungeon.rooms, reward };
@@ -246,5 +251,6 @@ function finishRun(state) {
     text = logText(state, survivors.length > 0 ? "runFail" : "runWipe", vars);
   }
   emit(state, "runEnd", text);
+  wishesAfterRun(state, run.dungeonId, success, partyIds, survivors.map((s) => s.id)); // 想去這個副本的許願結算
   checkGameOver(state);
 }

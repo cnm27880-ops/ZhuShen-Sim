@@ -21,6 +21,9 @@ import { SHOP_ITEMS, SHOP_KIND_LABELS, SHOP_SLOT_LABELS, getShopItem } from "../
 import { getSpecialReward } from "../data/dungeons.js";
 import { getTag } from "../data/tags.js";
 import { step, areEnemies } from "../engine/dispatch.js";
+import { pendingWishes, wishesOf, checkAccept, acceptWish, refuseWish, wishVars } from "../engine/wishes.js";
+import { getWish } from "../data/wishes.js";
+import { renderTemplate } from "../engine/templates.js";
 import { pairSummary, moodOf, partyRelationBonus } from "../engine/relations.js";
 import { LEVEL_LABELS, STATUS_LABELS } from "../data/relations.js";
 
@@ -85,6 +88,11 @@ function afterChange() {
       if (ev.type === "runEnd" && !modal) modal = { name: "runResult" };
     }
   }
+  // 有人許願等回覆：自動暫停並彈窗（包含重新整理讀檔後還沒回覆的）。關掉「許願」暫停就改用 🙏 按鈕手動處理
+  if (state.settings.pauseOn.wish && !modal && !state.gameOver && pendingWishes(state).length > 0) {
+    state.settings.paused = true;
+    modal = { name: "wish", forced: true };
+  }
   render();
   schedule();
 }
@@ -116,6 +124,10 @@ function renderTopbar() {
 
   $("banner").style.display = state.settings.paused && bannerText ? "block" : "none";
   $("banner").innerHTML = `${bannerText}<button data-action="toggle-pause">▶ 繼續</button>`;
+
+  const waiting = pendingWishes(state).length;
+  $("btn-wishes").style.display = waiting > 0 ? "" : "none";
+  $("btn-wishes").textContent = `🙏 許願 (${waiting})`;
 
   $("auto-dispatch").checked = state.settings.autoDispatch;
   $("protect-injured").checked = state.settings.protect.noInjured;
@@ -252,6 +264,22 @@ function injuryLabel(s) {
   return `<span class="inj-${s.injury}">${INJURIES[s.injury].name}（還要休 ${s.restDaysLeft} 天）</span>`;
 }
 
+/** 心情、休假、許願中的小標示 */
+function moodLabel(s) {
+  const m = CONFIG.wish.moods[s.mood?.kind];
+  return m ? `${m.icon} ${m.label}（${s.mood.daysLeft} 天）` : "";
+}
+
+function statusExtras(s) {
+  const parts = [];
+  if (s.vacationDays > 0) parts.push(`🏖️ 休假中（${s.vacationDays} 天）`);
+  const mood = moodLabel(s);
+  if (mood) parts.push(mood);
+  const wish = wishesOf(state, s.id)[0];
+  if (wish) parts.push(`🙏 ${getWish(wish.kind).name}${wish.status === "pending" ? "（等你回覆）" : "（進行中）"}`);
+  return parts.length ? `<br /><small>${parts.join("・")}</small>` : "";
+}
+
 function rankBadge(rank) {
   return `<span class="rank rank-${rank}">${rank}</span>`;
 }
@@ -277,7 +305,7 @@ function renderRoster() {
         <div class="card-meta"><span>⚔️ ${effectivePower(s)}</span><span>🧠 ${s.stats.sanity}</span><span>💸 ${upkeepOf(s)}/天</span></div>
         <div class="tags">${tagChips(s)}</div>
         <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
-        <div class="card-status">${s.location === "dungeon" ? "🚪 副本中" : injuryLabel(s)}</div>
+        <div class="card-status">${s.location === "dungeon" ? "🚪 副本中" : injuryLabel(s)}${statusExtras(s)}</div>
       </div>`
     )
     .join("");
@@ -300,7 +328,7 @@ function closeModal() {
 function renderModal() {
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { dispatch, gacha, shop, detail, settings, runResult, gameOver, confirmRecycle, relations };
+  const builders = { dispatch, gacha, shop, detail, settings, runResult, gameOver, confirmRecycle, relations, wish };
   $("modal").innerHTML = builders[modal.name]();
 }
 
@@ -327,7 +355,7 @@ function dispatch() {
         .map(
           (s) => `<div class="option ${dispatchPick.party.has(s.id) ? "selected" : ""}" data-action="toggle-member" data-id="${s.id}">
             ${rankBadge(s.rank)}<span class="grow">${s.name} ${s.locked ? "🔒" : ""}</span>
-            <small>戰力 ${effectivePower(s)}・${injuryLabel(s)}</small>
+            <small>戰力 ${effectivePower(s)}・${injuryLabel(s)}${s.vacationDays > 0 ? "・🏖️ 休假中" : ""}${s.mood ? "・" + moodLabel(s) : ""}</small>
           </div>`
         )
         .join("")
@@ -464,6 +492,7 @@ function detail() {
   return `<h3>${rankBadge(s.rank)} ${s.name}</h3>
     <table class="stats">
       <tr><td>狀態</td><td>${home ? "主神空間" : "副本中"}・${injuryLabel(s)}</td></tr>
+      ${s.mood || s.vacationDays > 0 || wishesOf(state, s.id).length ? `<tr><td>心情／許願</td><td>${statusExtras(s).replace("<br />", "")}</td></tr>` : ""}
       <tr><td>生命</td><td>${s.stats.hp}</td></tr>
       <tr><td>戰力</td><td>${effectivePower(s)}（基礎 ${s.stats.power}，含強化、裝備、標籤）</td></tr>
       <tr><td>防禦</td><td>${s.stats.defense}</td></tr>
@@ -586,6 +615,35 @@ function runResult() {
     <div class="modal-actions"><button class="primary" data-action="close-modal">知道了</button></div>`;
 }
 
+function wish() {
+  const list = pendingWishes(state);
+  const w = list[0];
+  if (!w) return `<h3>🙏 許願</h3><p>目前沒有等你回覆的許願。</p><div class="modal-actions">${closeButton}</div>`;
+  const s = getSamsarite(state, w.samsariteId);
+  const def = getWish(w.kind);
+  const vars = wishVars(state, w);
+  const check = checkAccept(state, w);
+  const left = w.deadlineDay - currentDay(state);
+  const mh = CONFIG.wish.moods.happy;
+  const mu = CONFIG.wish.moods.upset;
+  return `<h3>${def.icon} ${s.name} 的願望：${def.name}</h3>
+    <p>${w.text}</p>
+    <div class="summary">
+      ${renderTemplate(def.costDesc, vars)}<br />
+      完成條件：${renderTemplate(def.doneDesc, vars)}<br />
+      期限：第 ${w.deadlineDay} 天前（還剩 ${left} 天，超時算失敗）<br />
+      <span class="good">完成 → ${mh.icon} ${mh.label} ${mh.days} 天（隊伍通過率 +${Math.round(mh.passBonus * 100)}%／人）</span><br />
+      <span class="bad">拒絕或超時 → ${mu.icon} ${mu.label} ${mu.days} 天（戰力 ${Math.round(mu.powerPct * 100)}%、理智 -${mu.sanityLoss}）</span>
+      ${check.ok ? "" : `<br /><span class="bad">現在答應不了：${check.reason}</span>`}
+      ${list.length > 1 ? `<br /><small>還有 ${list.length - 1} 個許願排隊中</small>` : ""}
+    </div>
+    <div class="modal-actions">
+      <button class="danger" data-action="refuse-wish" data-id="${w.id}">拒絕</button>
+      <button class="primary" data-action="accept-wish" data-id="${w.id}" ${check.ok ? "" : "disabled"}>答應</button>
+      ${modal.forced ? "" : closeButton}
+    </div>`;
+}
+
 function gameOver() {
   return `<h3>🕳️ 你被主神換掉了</h3>
     <p>手下沒有任何輪迴者，也借不到積分。撐了 ${currentDay(state)} 天，送走了 ${state.graveyard.length} 個人。</p>
@@ -620,6 +678,20 @@ const actions = {
     if (!result.ok) alert(result.reason);
     saveGame();
   },
+  "open-wishes"() {
+    modal = { name: "wish", forced: false };
+  },
+  "accept-wish"(el) {
+    const result = acceptWish(state, Number(el.dataset.id));
+    if (!result.ok) alert(result.reason);
+    if (pendingWishes(state).length === 0) modal = null;
+    saveGame();
+  },
+  "refuse-wish"(el) {
+    refuseWish(state, Number(el.dataset.id));
+    if (pendingWishes(state).length === 0) modal = null;
+    saveGame();
+  },
   "open-settings"() {
     modal = { name: "settings" };
   },
@@ -637,6 +709,7 @@ const actions = {
   },
   "toggle-member"(el) {
     const id = Number(el.dataset.id);
+    if (getSamsarite(state, id)?.vacationDays > 0) return; // 放假中不能派
     if (dispatchPick.party.has(id)) dispatchPick.party.delete(id);
     else if (dispatchPick.party.size < CONFIG.partyMax) dispatchPick.party.add(id);
   },
@@ -682,7 +755,7 @@ const actions = {
 
 document.addEventListener("click", (event) => {
   // 點到視窗外面的暗色區域 = 關閉（遊戲結束視窗除外）
-  if (event.target.id === "modal-backdrop" && modal?.name !== "gameOver") return closeModal();
+  if (event.target.id === "modal-backdrop" && modal?.name !== "gameOver" && !modal?.forced) return closeModal();
   const el = event.target.closest("[data-action]");
   if (!el || el.disabled) return;
   actions[el.dataset.action]?.(el);
