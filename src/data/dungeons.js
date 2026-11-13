@@ -11,7 +11,11 @@ export const DUNGEONS = [
     icon: "🏚️",
     recommendedPower: 150,
     reward: 100,
-    specialRewards: ["鬼道術法・引魂符", "鬼道術法・封煞咒", "陰陽眼"],
+    specialRewards: [
+      { id: "ghost_talisman", name: "鬼道術法・引魂符", desc: "靈異副本通過率 +8%。", effect: { genreBonus: { 靈異: 0.08 } } },
+      { id: "ghost_seal", name: "鬼道術法・封煞咒", desc: "全員受傷時多 10% 機率少受一級。", effect: { injuryShield: 0.1 } },
+      { id: "yin_yang_eye", name: "陰陽眼", desc: "所有副本通過率 +3%。", effect: { passBonus: 0.03 } },
+    ],
     intro: "終年不散的霧、沒有人上香的祖祠、門口排排站的紙紮人。",
     rooms: [
       { name: "村口牌坊", pass: "小隊屏住呼吸，從紙紮人的隊伍中間穿了過去。", fail: "紙紮人的頭齊刷刷轉了過來，{name}被紙手抓出一道血痕。" },
@@ -29,7 +33,11 @@ export const DUNGEONS = [
     icon: "🚀",
     recommendedPower: 5000,
     reward: 200,
-    specialRewards: ["科技改造・神經加速器", "義體・強化義肢", "外星武器・脈衝切割器"],
+    specialRewards: [
+      { id: "ark_accelerator", name: "科技改造・神經加速器", desc: "所有副本通過率 +4%。", effect: { passBonus: 0.04 } },
+      { id: "ark_prosthetic", name: "義體・強化義肢", desc: "全員受傷時多 15% 機率少受一級。", effect: { injuryShield: 0.15 } },
+      { id: "ark_cutter", name: "外星武器・脈衝切割器", desc: "科幻副本通過率 +10%。", effect: { genreBonus: { 科幻: 0.1 } } },
+    ],
     intro: "失去動力的殖民船，走廊只剩緊急照明，通風管裡有東西在爬。",
     rooms: [
       { name: "氣閘艙", pass: "手動開啟氣閘，氧氣存量還夠。", fail: "氣閘失壓，{name}被甩到艙壁上。" },
@@ -47,7 +55,11 @@ export const DUNGEONS = [
     icon: "🔥",
     recommendedPower: 100000,
     reward: 400,
-    specialRewards: ["魔法・火焰箭", "魔杖・燼木法杖", "魔法血統・燼裔"],
+    specialRewards: [
+      { id: "ember_firebolt", name: "魔法・火焰箭", desc: "奇幻副本通過率 +10%。", effect: { genreBonus: { 奇幻: 0.1 } } },
+      { id: "ember_staff", name: "魔杖・燼木法杖", desc: "所有副本通關積分 +10%。", effect: { rewardPct: 0.1 } },
+      { id: "ember_blood", name: "魔法血統・燼裔", desc: "所有副本通過率 +5%。", effect: { passBonus: 0.05 } },
+    ],
     intro: "兩座法師塔對轟了三百年，天空下的是火，地上跑的是失控的魔法生物。",
     rooms: [
       { name: "魔法風暴荒原", pass: "抓準風暴的間隙衝過了荒原。", fail: "一道失控的雷鏈掃過，{name}被電得渾身冒煙。" },
@@ -61,4 +73,23 @@ export const DUNGEONS = [
 
 export function getDungeon(id) {
   return DUNGEONS.find((d) => d.id === id);
+}
+
+// 副本特殊獎勵（首通掉落，永久生效）。state.collection 存的是獎勵 id。
+// effect 欄位：passBonus 所有副本單房通過率、genreBonus { 類型: 加成 }、rewardPct 通關積分加成、injuryShield 全員傷勢減免機率
+export function getSpecialReward(id) {
+  for (const d of DUNGEONS) {
+    const hit = (d.specialRewards ?? []).find((r) => r.id === id);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+/** 舊存檔的收藏是「名字」，用名字找回獎勵（找不到回傳 undefined） */
+export function findSpecialRewardByName(name) {
+  for (const d of DUNGEONS) {
+    const hit = (d.specialRewards ?? []).find((r) => r.name === name);
+    if (hit) return hit;
+  }
+  return undefined;
 }

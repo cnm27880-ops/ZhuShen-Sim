@@ -11,15 +11,16 @@ import { effectivePower, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, d
 import { partyRelationBonus, pickClash, clashText, afterClash, afterDeath, findProtector } from "./relations.js";
 import { logText } from "./templates.js";
 import { emit, advanceTick, setInjury, killSamsarite, checkGameOver } from "./core.js";
+import { collectionEffects, collectionPassBonus } from "./shop.js";
 
 /** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
 export function relationBonus(state, party) {
   return partyRelationBonus(state, party);
 }
 
-/** 標籤與環境相性：標籤加成（含類型、環境相性）+ 環境本身的修正 */
-export function tagBonus(_state, party, dungeon, env = null) {
-  return tagPassBonus(party, dungeon, env) + (env?.passMod ?? 0);
+/** 標籤與環境相性：標籤加成（含類型、環境相性）+ 環境本身的修正 + 副本特殊獎勵（收藏）的加成 */
+export function tagBonus(state, party, dungeon, env = null) {
+  return tagPassBonus(party, dungeon, env) + (env?.passMod ?? 0) + collectionPassBonus(state, dungeon);
 }
 
 /** 副本情報：通關過一次就有情報（重打 +5%）；沒通關過就是首次開荒（-10%） */
@@ -36,7 +37,7 @@ export function rewardTierMult(state, dungeon) {
   return CONFIG.dungeon.rewardTiers.find((t) => nth <= t.upTo).mult;
 }
 export function rewardMultiplier(state, dungeon, party = [], env = null) {
-  return rewardTierMult(state, dungeon) * (1 + tagRewardPct(party)) * (env?.rewardMult ?? 1);
+  return rewardTierMult(state, dungeon) * (1 + tagRewardPct(party) + collectionEffects(state).rewardPct) * (env?.rewardMult ?? 1);
 }
 
 export function partyPower(party) {
@@ -174,7 +175,8 @@ function hurt(state, run, victim, dungeon, attacker = null) {
   }
   const table = run.firstTime ? CONFIG.dungeon.firstClearInjuryRoll : CONFIG.dungeon.injuryRoll;
   let gained = weighted(state, table).levels;
-  const shield = injuryShieldOf(victim);
+  const cap = CONFIG.tags.injuryShieldMax;
+  const shield = Math.min(cap, injuryShieldOf(victim) + collectionEffects(state).injuryShield); // 個人（標籤＋裝備）＋收藏的全員減免
   if (shield > 0 && rand(state) < shield) gained = Math.max(1, gained - 1);
   else if (shield < 0 && rand(state) < -shield) gained += 1;
   const newLevel = victim.injury + gained + (sabotaged ? 1 : 0);
@@ -197,14 +199,17 @@ function finishRun(state) {
   const success = survivors.length > 0 && passedCount >= CONFIG.dungeon.roomsToClear;
   let reward = 0;
   let specialReward = null;
+  let dropDesc = "";
 
   if (success) {
     const env = getEnvTag(run.envId) ?? null;
     reward = Math.round(dungeon.reward * rewardMultiplier(state, dungeon, survivors, env));
     if (run.firstTime) {
       reward += CONFIG.dungeon.firstClearBonus;
-      specialReward = pick(state, dungeon.specialRewards ?? ["神秘戰利品"]);
-      state.collection.push(specialReward);
+      const drop = pick(state, dungeon.specialRewards);
+      specialReward = drop.name;
+      dropDesc = drop.desc;
+      state.collection.push(drop.id);
     }
     state.points += reward;
     state.dungeonStats[run.dungeonId].clears += 1;
@@ -236,7 +241,7 @@ function finishRun(state) {
   let text;
   if (success) {
     text = logText(state, run.firstTime ? "runFirstClear" : "runClear", vars);
-    if (specialReward) text += "\n" + logText(state, "runSpecial", { item: specialReward });
+    if (specialReward) text += "\n" + logText(state, "runSpecial", { item: specialReward, desc: dropDesc });
   } else {
     text = logText(state, survivors.length > 0 ? "runFail" : "runWipe", vars);
   }
