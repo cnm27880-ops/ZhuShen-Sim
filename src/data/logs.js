@@ -62,6 +62,32 @@ export const LOGS = {
     "🤖 自動派遣：算了一圈，沒有一隊有把握，今天大家待在家。",
   ],
 
+  // ───────── 商店（shop.js、core.js 的階層解鎖）─────────
+  shopTier: [
+    "🛒 累積花費達 {spent} 分，商店解鎖 Tier {tier}。主神：「很好，你終於開始認真消費了。」",
+    "🛒 商店升級了：Tier {tier} 開放（累積花費 {spent} 分）。主神笑得合不攏嘴：「這都是我賺的。」",
+  ],
+  shopEnhance: [
+    "💪 {A} 接受了【{item}】（-{cost} 分，第 {n}/{max} 次）。身體發出不祥的喀啦聲，但數字確實變大了。",
+    "💪 {A} 被按在機器上做了【{item}】（-{cost} 分，第 {n}/{max} 次）。主神：「不用謝。」",
+  ],
+  shopGear: [
+    "🎒 {A} 領到了【{item}】（{slot}，-{cost} 分）。",
+    "🎒 {A} 花 {cost} 分換上了【{item}】（{slot}）。主神：「報帳請填單。」",
+  ],
+  shopGearSwap: [
+    "🎒 {A} 把【{old}】換成了【{item}】（{slot}，-{cost} 分）。舊裝備被主神回收了。",
+    "🎒 {A} 換裝：【{old}】→【{item}】（{slot}，-{cost} 分）。舊的不會退錢。",
+  ],
+  shopHeal: [
+    "🧪 {A} 用了【{item}】（-{cost} 分），現在：{injury}。",
+    "🧪 {A} 咬牙吞下【{item}】（-{cost} 分），傷勢變成：{injury}。",
+  ],
+  shopCalm: [
+    "💊 {A} 吞了【{item}】（-{cost} 分），理智 +{san}，眼神終於不再飄移了。",
+    "💊 {A} 領了【{item}】（-{cost} 分），理智 +{san}。主神：「不要問成分。」",
+  ],
+
   // ───────── 副本（dungeon.js）─────────
   runStart: [
     "🚪 {names} 被傳送進【{dungeon}】（總戰力 {power} / 推薦 {rec}）。",
@@ -120,8 +146,8 @@ export const LOGS = {
     "🏆 【{dungeon}】首次攻略成功（{passed}/{rooms} 房間），入帳 {reward} 分。這座副本有情報了。",
   ],
   runSpecial: [
-    "🎁 首通特殊獎勵：【{item}】（已收入收藏，效果 Phase 3 開放）",
-    "🎁 首通掉落了【{item}】（已收入收藏，效果 Phase 3 開放）",
+    "🎁 首通特殊獎勵：【{item}】已永久生效。{desc}",
+    "🎁 首通掉落了【{item}】，從現在起永久生效。{desc}",
   ],
   runFail: [
     "💀 【{dungeon}】失敗（只通過 {passed}/{rooms} 房間），倖存者全員帶傷逃回。",

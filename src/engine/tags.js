@@ -3,6 +3,7 @@
 
 import { CONFIG } from "../data/config.js";
 import { TAGS, getTag } from "../data/tags.js";
+import { getShopItem } from "../data/shop.js";
 import { rand, randInt, weighted } from "./rng.js";
 
 function tagsOf(s) {
@@ -31,10 +32,17 @@ export function rollTags(state) {
   ];
 }
 
-/** 套上標籤後的戰力（基礎戰力 stats.power 不會被改動，之後裝備也會疊在這一層） */
+/** 商店強化 + 裝備加在某個數值（power / injuryShield / dodge）上的總和 */
+export function shopBonus(s, key) {
+  const upgrade = s.upgrades?.[key] ?? 0;
+  const gear = Object.values(s.gear ?? {}).reduce((n, id) => n + (getShopItem(id)?.effect?.[key] ?? 0), 0);
+  return upgrade + gear;
+}
+
+/** 套上強化、裝備、標籤後的戰力（基礎戰力 stats.power 不會被改動）：(基礎 + 強化 + 裝備) × (1 + 標籤%) */
 export function effectivePower(s) {
   const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0);
-  return Math.max(1, Math.round(s.stats.power * (1 + pct)));
+  return Math.max(1, Math.round((s.stats.power + shopBonus(s, "power")) * (1 + pct)));
 }
 
 /** 全隊標籤對「單房通過率」的加成（已套用上限）。env 是環境標籤（可為 null） */
@@ -69,11 +77,11 @@ export function tagRewardPct(party) {
 
 /** 這個人受傷時「少/多受一級」的機率（正數減免、負數加重） */
 export function injuryShieldOf(s) {
-  const v = tagsOf(s).reduce((sum, t) => sum + (t.injuryShield ?? 0), 0);
+  const v = tagsOf(s).reduce((sum, t) => sum + (t.injuryShield ?? 0), 0) + shopBonus(s, "injuryShield");
   return Math.max(-CONFIG.tags.injuryShieldMax, Math.min(CONFIG.tags.injuryShieldMax, v));
 }
 
 /** 被點名受傷時直接閃過的機率 */
 export function dodgeOf(s) {
-  return Math.min(0.9, tagsOf(s).reduce((sum, t) => sum + (t.dodge ?? 0), 0));
+  return Math.min(CONFIG.shopDodgeMax, tagsOf(s).reduce((sum, t) => sum + (t.dodge ?? 0), 0) + shopBonus(s, "dodge"));
 }

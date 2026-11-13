@@ -16,6 +16,9 @@ import {
 } from "../engine/core.js";
 import { roomPassRate, clearChance, partyPower, startRun, hasIntel, rewardTierMult } from "../engine/dungeon.js";
 import { effectivePower } from "../engine/tags.js";
+import { shopTier, nextTierInfo, checkBuy, buyItem, collectionEffects } from "../engine/shop.js";
+import { SHOP_ITEMS, SHOP_KIND_LABELS, SHOP_SLOT_LABELS, getShopItem } from "../data/shop.js";
+import { getSpecialReward } from "../data/dungeons.js";
 import { getTag } from "../data/tags.js";
 import { step, areEnemies } from "../engine/dispatch.js";
 import { pairSummary, moodOf, partyRelationBonus } from "../engine/relations.js";
@@ -297,7 +300,7 @@ function closeModal() {
 function renderModal() {
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { dispatch, gacha, detail, settings, runResult, gameOver, confirmRecycle, relations };
+  const builders = { dispatch, gacha, shop, detail, settings, runResult, gameOver, confirmRecycle, relations };
   $("modal").innerHTML = builders[modal.name]();
 }
 
@@ -390,6 +393,70 @@ function gacha() {
     <div class="modal-actions">${closeButton}</div>`;
 }
 
+/** 商店：選人 → 買東西。Tier 還沒解鎖的商品會灰掉並顯示解鎖條件 */
+function shop() {
+  const tier = shopTier(state);
+  const next = nextTierInfo(state);
+  const home = state.samsarites.filter((s) => s.location === "space");
+  if (!home.some((s) => s.id === modal.targetId)) modal.targetId = home[0]?.id ?? null;
+  const target = getSamsarite(state, modal.targetId);
+
+  const people = home.length
+    ? home
+        .map((s) => `<div class="option ${s.id === modal.targetId ? "selected" : ""}" data-action="shop-target" data-id="${s.id}">
+          ${rankBadge(s.rank)}<span class="grow">${s.name}</span>
+          <small>戰力 ${effectivePower(s)}・${injuryLabel(s)}・理智 ${s.stats.sanity}</small></div>`)
+        .join("")
+    : `<div class="empty">主神空間裡沒有人可以用。</div>`;
+
+  const gearLine = target
+    ? Object.entries(SHOP_SLOT_LABELS)
+        .map(([slot, label]) => `${label}：${getShopItem(target.gear?.[slot])?.name ?? "（空）"}`)
+        .join("・")
+    : "";
+
+  const itemRow = (item) => {
+    const locked = item.tier > tier;
+    const check = locked ? { ok: false, reason: "" } : checkBuy(state, item, target);
+    const owned = item.kind === "enhance" && target ? ` ${target.bought?.[item.id] ?? 0}/${item.max}` : "";
+    const slot = item.kind === "gear" ? `・${SHOP_SLOT_LABELS[item.slot]}` : "";
+    const why = !locked && !check.ok ? `<br /><small class="bad">${check.reason}</small>` : "";
+    return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
+      <span class="option-icon">${item.icon}</span>
+      <span class="grow"><b>${item.name}</b> <small>${SHOP_KIND_LABELS[item.kind]}${slot}${owned}</small><br /><small>${item.desc}</small>${why}</span>
+      <button class="primary" data-action="buy" data-id="${item.id}" ${check.ok ? "" : "disabled"}>${locked ? "🔒" : item.price + " 分"}</button>
+    </div>`;
+  };
+  const sections = [1, 2, 3, 4]
+    .map((t) => {
+      const need = CONFIG.shopTierUnlock[t - 1];
+      const head = t <= tier ? `Tier ${t}` : `🔒 Tier ${t}（累積花費 ${need} 分解鎖）`;
+      return `<h3 style="margin-top:14px">${head}</h3><div class="option-list">${SHOP_ITEMS.filter((i) => i.tier === t).map(itemRow).join("")}</div>`;
+    })
+    .join("");
+
+  const fx = collectionEffects(state);
+  const collection = state.collection.length
+    ? state.collection
+        .map(getSpecialReward)
+        .filter(Boolean)
+        .map((r) => `<div>🎁 <b>${r.name}</b>：${r.desc}</div>`)
+        .join("")
+    : "（還沒有。首次通關副本會掉特殊獎勵，永久生效。）";
+  const progress = next
+    ? `累積花費 <b>${state.totalSpent}</b> 分，再花 <b>${next.remaining}</b> 分解鎖 Tier ${next.tier}`
+    : `累積花費 <b>${state.totalSpent}</b> 分，商店已全部解鎖`;
+  const shield = Math.round(fx.injuryShield * 100);
+  return `<h3>🛒 商店 <small>（目前 Tier ${tier}）</small></h3>
+    <p>積分：<b>${state.points}</b>。${progress}。抽卡的花費也算累積花費。</p>
+    <h3 style="margin-top:10px">要給誰用？${target ? `<small>（${gearLine}）</small>` : ""}</h3>
+    <div class="option-list">${people}</div>
+    ${sections}
+    <h3 style="margin-top:14px">🎁 副本特殊獎勵（永久生效）</h3>
+    <div class="summary">${collection}${shield ? `<div><small>全員傷勢減免合計 +${shield}%</small></div>` : ""}</div>
+    <div class="modal-actions">${closeButton}</div>`;
+}
+
 function detail() {
   const s = getSamsarite(state, modal.id);
   if (!s) return `<h3>查無此人</h3><p>這個人已經不在了。</p><div class="modal-actions">${closeButton}</div>`;
@@ -398,13 +465,14 @@ function detail() {
     <table class="stats">
       <tr><td>狀態</td><td>${home ? "主神空間" : "副本中"}・${injuryLabel(s)}</td></tr>
       <tr><td>生命</td><td>${s.stats.hp}</td></tr>
-      <tr><td>戰力</td><td>${effectivePower(s)}（基礎 ${s.stats.power}，標籤加成後）</td></tr>
+      <tr><td>戰力</td><td>${effectivePower(s)}（基礎 ${s.stats.power}，含強化、裝備、標籤）</td></tr>
       <tr><td>防禦</td><td>${s.stats.defense}</td></tr>
       <tr><td>速度</td><td>${s.stats.speed}</td></tr>
       <tr><td>理智</td><td>${s.stats.sanity}</td></tr>
       <tr><td>運氣</td><td>${s.stats.luck}</td></tr>
       <tr><td>維持費</td><td>${upkeepOf(s)} 分 / 天（基礎 ${CONFIG.upkeepBase} + 階級 ${RANKS[s.rank].upkeep} + 傷勢 ${INJURIES[s.injury].upkeep}）</td></tr>
       <tr><td>資歷</td><td>第 ${s.joinedDay} 天加入・出征 ${s.runs} 次</td></tr>
+      <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}`).join("・")}${s.upgrades?.power || s.upgrades?.dodge ? `<br /><small>強化：戰力 +${s.upgrades.power ?? 0}${s.upgrades.dodge ? `、閃避 +${Math.round(s.upgrades.dodge * 100)}%` : ""}</small>` : ""}</td></tr>
       <tr><td>標籤</td><td>${(s.tags ?? [])
         .map(getTag)
         .filter(Boolean)
@@ -511,7 +579,7 @@ function runResult() {
     <div class="summary">
       <span class="result-rooms">${rooms}</span><br />房間通過 ${r.passedCount}/${CONFIG.dungeon.rooms}<br />
       ${r.envName ? `環境：${r.envName}<br />` : ""}獎勵：<b class="${r.success ? "good" : "bad"}">+${r.reward} 分</b>${r.firstClear ? "（含首通 +" + CONFIG.dungeon.firstClearBonus + "）" : ""}<br />
-      ${r.specialReward ? `🎁 特殊獎勵：<b class="good">${r.specialReward}</b>（已收入收藏）<br />` : ""}
+      ${r.specialReward ? `🎁 特殊獎勵：<b class="good">${r.specialReward}</b>（已永久生效）<br />` : ""}
       生還：${survivors}<br />
       死亡：<span class="${r.deaths.length ? "bad" : ""}">${r.deaths.length ? r.deaths.join("、") : "無"}</span>
     </div>
@@ -540,6 +608,17 @@ const actions = {
   },
   "open-gacha"() {
     modal = { name: "gacha" };
+  },
+  "open-shop"() {
+    modal = { name: "shop", targetId: modal?.targetId ?? null };
+  },
+  "shop-target"(el) {
+    modal.targetId = Number(el.dataset.id);
+  },
+  buy(el) {
+    const result = buyItem(state, el.dataset.id, modal.targetId);
+    if (!result.ok) alert(result.reason);
+    saveGame();
   },
   "open-settings"() {
     modal = { name: "settings" };

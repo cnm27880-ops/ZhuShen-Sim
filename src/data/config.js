@@ -20,6 +20,9 @@ export const CONFIG = {
   debtLimit: -500, // 主神高利貸上限
   debtShockSanity: 10, // 負債期間每天電擊一人，理智 -10
   recycle: { points: 30, sanityLoss: 5 }, // 主神回收爐（理智扣多少：計畫未定）
+  // 商店 4 階的解鎖門檻：「累積花費」（抽卡也算）達到才開放。索引 0 = Tier 1。計畫書建議 0/500/2000/5000，這裡用開發者指定的值
+  shopTierUnlock: [0, 1000, 5000, 10000],
+  shopDodgeMax: 0.9, // 閃避機率上限（標籤 + 商店加成加起來）
 
   // ── 副本 ──
   partyMax: 4, // 一隊最多幾人（計畫未定）

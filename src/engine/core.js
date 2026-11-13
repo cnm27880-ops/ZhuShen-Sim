@@ -5,6 +5,7 @@ import { CONFIG, RANKS, INJURIES, GACHA_POOLS, PAUSE_EVENTS } from "../data/conf
 import { SURNAMES, GIVEN_NAMES } from "../data/names.js";
 import { rand, randInt, pick, weighted } from "./rng.js";
 import { rollTags } from "./tags.js";
+import { findSpecialRewardByName, getSpecialReward } from "../data/dungeons.js";
 import { logText } from "./templates.js";
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
@@ -40,7 +41,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     relations: {}, // 關係矩陣（見 engine/relations.js）
     cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
     dungeonStats: {}, // { 副本id: { attempts, clears } }；clears > 0 代表已有該副本情報
-    collection: [], // 副本特殊獎勵（血統／術法／義體…），目前只收集，Phase 3 才有效果
+    collection: [], // 副本特殊獎勵 id（定義在 data/dungeons.js），永久生效，效果見 engine/shop.js collectionEffects
     run: null, // 進行中的副本
     lastRun: null, // 上一場副本的結算摘要
     gameOver: false,
@@ -84,6 +85,9 @@ export function createSamsarite(state, rank) {
     locked: false, // 🔒 鎖定後不參與自動派遣
     location: "space", // "space" 主神空間 / "dungeon" 副本中
     tags: rollTags(state), // 標籤 id 陣列，資料在 src/data/tags.js
+    upgrades: {}, // 商店強化累積的數值：{ power, dodge… }（見 data/shop.js）
+    gear: {}, // 商店裝備：{ weapon: 商品id, armor: 商品id }
+    bought: {}, // 每種強化買過幾次：{ 商品id: 次數 }
     joinedDay: currentDay(state),
     runs: 0,
     sabotaged: false, // 裝備被人動了手腳（借刀殺人），下次出征會倒楣
@@ -130,12 +134,26 @@ export function canAfford(state, cost) {
   return state.points - cost >= CONFIG.debtLimit;
 }
 
+/** 商店目前開到第幾階（1~4），依累積花費 totalSpent 和 CONFIG.shopTierUnlock 決定 */
+export function shopTier(state) {
+  let tier = 1;
+  CONFIG.shopTierUnlock.forEach((need, i) => {
+    if (state.totalSpent >= need) tier = i + 1;
+  });
+  return tier;
+}
+
 export function spend(state, cost) {
   if (!canAfford(state, cost)) return false;
   const wasInDebt = state.points < 0;
+  const tierBefore = shopTier(state);
   state.points -= cost;
   state.totalSpent += cost;
   announceDebtIfNew(state, wasInDebt);
+  const tierAfter = shopTier(state);
+  if (tierAfter > tierBefore) {
+    emit(state, "shopTier", logText(state, "shopTier", { tier: tierAfter, spent: state.totalSpent }), { tier: tierAfter });
+  }
   return true;
 }
 
@@ -248,6 +266,15 @@ export function deserialize(json) {
   if (state.version !== 1) throw new Error("存檔版本不符");
   state.events = [];
   state.collection ??= []; // 舊存檔沒有這個欄位
+  // Phase 3-A 之前收藏存的是名字，現在存 id；對不上的丟掉
+  state.collection = state.collection
+    .map((x) => (getSpecialReward(x) ? x : findSpecialRewardByName(x)?.id))
+    .filter(Boolean);
+  for (const s of state.samsarites) {
+    s.upgrades ??= {};
+    s.gear ??= {};
+    s.bought ??= {};
+  }
   state.relations ??= {};
   state.cooldowns ??= {};
   // 之後新增的暫停事件種類，舊存檔沒有就補上預設值
