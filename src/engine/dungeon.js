@@ -9,6 +9,7 @@ import { ENV_TAGS, getEnvTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
 import { effectivePower, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf } from "./tags.js";
 import { partyRelationBonus, pickClash, clashText, afterClash, afterDeath, findProtector } from "./relations.js";
+import { logText } from "./templates.js";
 import { emit, advanceTick, setInjury, killSamsarite, checkGameOver } from "./core.js";
 
 /** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
@@ -102,10 +103,15 @@ export function startRun(state, dungeonId, partyIds) {
   emit(
     state,
     "runStart",
-    `🚪 ${party.map((s) => s.name).join("、")} 被傳送進【${dungeon.name}】（總戰力 ${partyPower(party)} / 推薦 ${dungeon.recommendedPower}）。`
+    logText(state, "runStart", {
+      names: party.map((s) => s.name).join("、"),
+      dungeon: dungeon.name,
+      power: partyPower(party),
+      rec: dungeon.recommendedPower,
+    })
   );
-  emit(state, "env", `🌐 環境：【${env.name}】${env.desc}`);
-  if (firstTime) emit(state, "intel", "🗺️ 首次開荒：沒有任何情報，成功率較低、傷勢會更重。");
+  emit(state, "env", logText(state, "env", { env: env.name, desc: env.desc }));
+  if (firstTime) emit(state, "intel", logText(state, "intel"));
   return { ok: true };
 }
 
@@ -122,7 +128,7 @@ export function stepRun(state) {
   const passed = clash ? false : rand(state) < roomPassRate(state, party, dungeon, env, tagSwing(state, party));
 
   if (clash) {
-    emit(state, "clash", `${progress} ${clashText(clash)}`);
+    emit(state, "clash", `${progress} ${clashText(state, clash)}`);
     afterClash(state, clash);
     hurt(state, run, clash.victim, dungeon, clash.attacker);
   } else if (passed) {
@@ -150,7 +156,7 @@ function hurt(state, run, victim, dungeon, attacker = null) {
     // 愛慕／靈魂伴侶的隊友有機會替他擋下這一下
     const guard = findProtector(state, partyOf(state), victim);
     if (guard) {
-      emit(state, "social", `🛡️ ${guard.name} 撲上去替 ${victim.name} 擋下了這一擊！`);
+      emit(state, "social", logText(state, "guard", { A: guard, B: victim }));
       victim = guard;
     }
   }
@@ -160,10 +166,10 @@ function hurt(state, run, victim, dungeon, attacker = null) {
   if (sabotaged) {
     victim.sabotaged = false;
     deathBonus += CONFIG.relations.sabotageDeathBonus;
-    emit(state, "scheme", `🔧 ${victim.name} 的裝備在關鍵時刻壞掉了……`);
+    emit(state, "scheme", logText(state, "sabotageHit", { A: victim }));
   }
   if (rand(state) < dodgeOf(victim)) {
-    emit(state, "dodge", `💨 ${victim.name} 千鈞一髮閃開了，毫髮無傷。`);
+    emit(state, "dodge", logText(state, "dodge", { A: victim }));
     return;
   }
   const table = run.firstTime ? CONFIG.dungeon.firstClearInjuryRoll : CONFIG.dungeon.injuryRoll;
@@ -180,7 +186,7 @@ function hurt(state, run, victim, dungeon, attacker = null) {
     return;
   }
   setInjury(victim, newLevel);
-  emit(state, "injury", `🩸 ${victim.name} → ${INJURIES[newLevel].name}。`);
+  emit(state, "injury", logText(state, "injury", { A: victim, injury: INJURIES[newLevel].name }));
 }
 
 function finishRun(state) {
@@ -226,11 +232,14 @@ function finishRun(state) {
   };
   state.run = null;
 
-  const text = success
-    ? `🏆 【${dungeon.name}】${run.firstTime ? "首次通關" : "通關"}（${passedCount}/${CONFIG.dungeon.rooms} 房間），+${reward} 分。${specialReward ? `\n🎁 首通特殊獎勵：【${specialReward}】（已收入收藏，效果 Phase 3 開放）` : ""}`
-    : survivors.length > 0
-      ? `💀 【${dungeon.name}】失敗（只通過 ${passedCount}/${CONFIG.dungeon.rooms} 房間），倖存者全員帶傷逃回。`
-      : `💀 【${dungeon.name}】全滅。沒有人回來。`;
+  const vars = { dungeon: dungeon.name, passed: passedCount, rooms: CONFIG.dungeon.rooms, reward };
+  let text;
+  if (success) {
+    text = logText(state, run.firstTime ? "runFirstClear" : "runClear", vars);
+    if (specialReward) text += "\n" + logText(state, "runSpecial", { item: specialReward });
+  } else {
+    text = logText(state, survivors.length > 0 ? "runFail" : "runWipe", vars);
+  }
   emit(state, "runEnd", text);
   checkGameOver(state);
 }

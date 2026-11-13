@@ -33,9 +33,11 @@
 | `src/data/dungeons.js` | 副本資料表（3 個 MVP 副本：中國村、太空船、魔法戰爭） |
 | `src/data/tags.js` | 30 個 MVP 標籤 + 5 個副本環境標籤（資料表，加標籤只改這裡） |
 | `src/engine/tags.js` | 抽標籤、戰力／通過率／獎勵／傷勢減免的標籤計算 |
-| `src/data/relations.js` | 關係系統資料表：互動事件、借刀殺人手法、標籤特殊事件、日誌句子（加事件只改這裡） |
+| `src/data/relations.js` | 關係系統資料表：互動事件、借刀殺人手法、標籤特殊事件（每個事件的 `texts` 是多版本模板，加事件只改這裡） |
+| `src/data/logs.js` | 日誌 Mad Libs 模板：系統／經濟／副本／關係的所有日誌句子（每個 key 多個版本）+ 依標籤而異的「反應」句池（加句子只改這裡） |
 | `src/data/names.js` | 隨機姓名字庫 |
 | `src/engine/` | 純規則引擎，不碰 DOM，可用 Node 直接測試 |
+| `src/engine/templates.js` | 日誌模板引擎：`logText(state, key或texts陣列, vars)` 抽版本並填 `{A}{B}{react:池:A}`；抽版本用雜湊，不消耗主亂數 |
 | `src/engine/rng.js` | 可重現亂數（rand / randInt / pick / weighted） |
 | `src/engine/relations.js` | 關係矩陣、每日互動、告白／戀人／靈魂伴侶／死敵、借刀殺人、直接殺人與主神懲罰、死亡連鎖、副本內內鬥／背刺／擋刀 |
 | `src/engine/core.js` | 狀態、輪迴者、維持費、傷勢、高利貸、回收爐、抽卡、時間 tick、存檔、遊戲結束判定 |
@@ -83,12 +85,12 @@
 npm test
 ```
 
-43 項測試都要通過。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 重新整理讀檔），確認沒有主控台錯誤。
+49 項測試都要通過。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 重新整理讀檔），確認沒有主控台錯誤。
 
 ## 不可違反的規則
 
 1. 這是獨立專案，與舊 AI-TRPG 專案無關；舊專案的規則（六維十技能、Prompt 快取契約等）不適用。
-2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，43 項都要通過。
+2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，49 項都要通過。
 3. 所有可調數字都要放在 `src/data/config.js`，不要寫死在引擎裡。
 4. 引擎不要碰 DOM，畫面邏輯不要寫進引擎。
 5. 機密（Token、金鑰）永遠不能進 git。
@@ -98,7 +100,7 @@ npm test
 - 推上 `main` ＝ 自動部署到 Cloudflare Pages，合併前先確認測試都過。
 - 儲存庫：`ZhuShen-Sim`，子網域待定。
 - Cloudflare Pages 設定：Framework preset 選 None、Build command 留空、Build output directory 填 `/`。
-- 部署前確認 `npm test` 43 項全過。
+- 部署前確認 `npm test` 49 項全過。
 
 ## 開發階段（現在不要做，除非我明確要求）
 
@@ -108,7 +110,7 @@ npm test
 
 **Phase 2-B（已完成）**：關係矩陣、每日互動與告白、借刀殺人、死亡連鎖、副本內內鬥／背刺／擋刀、關係面板。日誌文字目前是固定句子。
 
-**Phase 2-C（還沒做）**：主神監控日誌 Mad Libs 模板（把 `src/data/relations.js` 的固定句子換成模板）。
+**Phase 2-C（已完成）**：主神監控日誌 Mad Libs 模板。所有日誌（含副本、經濟、關係）改成多版本模板 + 標籤反應句；副本各房間的 `pass`／`fail` 文字仍在 `src/data/dungeons.js`（固定句，未模板化）。事件冷卻 7 天的記憶機制留到 Phase 3。
 
 **Phase 3（還沒做）**：狗血擴充 — 許願系統、商店 4 階、生小孩、員工合同、主神搞事。
 

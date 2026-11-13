@@ -4,6 +4,7 @@
 import { CONFIG } from "../data/config.js";
 import { DUNGEONS } from "../data/dungeons.js";
 import { emit, advanceTick, checkGameOver } from "./core.js";
+import { logText } from "./templates.js";
 import { areEnemies as pairEnemies } from "./relations.js";
 import { clearChance, partyPower, startRun, stepRun } from "./dungeon.js";
 
@@ -67,7 +68,7 @@ export function planAutoDispatch(state) {
 export function tryAutoDispatch(state) {
   const plan = planAutoDispatch(state);
   if (!plan) {
-    emit(state, "autoIdle", "🤖 自動派遣：目前沒有任何隊伍的預估通關率達標，今天不出門。");
+    emit(state, "autoIdle", logText(state, "autoIdle"));
     return false;
   }
   return startRun(
