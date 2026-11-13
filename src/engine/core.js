@@ -5,6 +5,7 @@ import { CONFIG, RANKS, INJURIES, GACHA_POOLS, PAUSE_EVENTS } from "../data/conf
 import { SURNAMES, GIVEN_NAMES } from "../data/names.js";
 import { rand, randInt, pick, weighted } from "./rng.js";
 import { rollTags } from "./tags.js";
+import { logText } from "./templates.js";
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
 // ───────── 事件與日誌 ─────────
@@ -57,7 +58,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
   for (let i = 0; i < CONFIG.startingSamsarites; i++) {
     state.samsarites.push(createSamsarite(state, CONFIG.startingRank));
   }
-  emit(state, "system", `主神：「新來的主管，這 ${CONFIG.startingSamsarites} 個人歸你了。別讓我無聊。」`);
+  emit(state, "system", logText(state, "start", { n: CONFIG.startingSamsarites }));
   return state;
 }
 
@@ -107,7 +108,7 @@ export function setInjury(s, level) {
 export function killSamsarite(state, s, cause, killer = null) {
   state.samsarites = state.samsarites.filter((x) => x.id !== s.id);
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null });
-  emit(state, "death", `☠️ ${s.name}（${s.rank} 級）${cause}。永久死亡。`, { samsariteId: s.id, killerId: killer?.id ?? null });
+  emit(state, "death", logText(state, "death", { A: s, rank: s.rank, cause }), { samsariteId: s.id, killerId: killer?.id ?? null });
 }
 
 /** 把某人從關係矩陣裡清掉（死亡或被回收之後） */
@@ -140,7 +141,7 @@ export function spend(state, cost) {
 
 export function announceDebtIfNew(state, wasInDebt) {
   if (!wasInDebt && state.points < 0) {
-    emit(state, "debt", `💸 積分變成負數了。主神：「借你。利息嘛……每天電一個人。」（上限 ${CONFIG.debtLimit} 分）`);
+    emit(state, "debt", logText(state, "debt", { limit: CONFIG.debtLimit }));
   }
 }
 
@@ -156,7 +157,7 @@ export function endOfDay(state) {
       s.restDaysLeft -= 1;
       if (s.restDaysLeft <= 0) {
         setInjury(s, 0);
-        emit(state, "healed", `🩹 ${s.name} 傷好了，可以繼續被壓榨了。`, { samsariteId: s.id });
+        emit(state, "healed", logText(state, "healed", { A: s }), { samsariteId: s.id });
       }
     }
   }
@@ -166,18 +167,18 @@ export function endOfDay(state) {
   const hitLimit = state.points < CONFIG.debtLimit;
   if (hitLimit) state.points = CONFIG.debtLimit;
 
-  emit(state, "dayEnd", `📅 第 ${day} 天結算：留守 ${atHome.length} 人，維持費 -${cost} 分。`);
+  emit(state, "dayEnd", logText(state, "dayEnd", { day, home: atHome.length, cost }));
   announceDebtIfNew(state, wasInDebt);
 
   if (state.points < 0 && state.samsarites.length > 0) {
     if (hitLimit) {
       // 債務頂到上限還付不出來：主神暴怒，全員電擊（計畫未定的暫定處理）
       for (const s of state.samsarites) loseSanity(s, CONFIG.debtShockSanity);
-      emit(state, "shock", `⚡ 債務已達上限。主神暴怒，電擊了所有人（理智 -${CONFIG.debtShockSanity}）。`);
+      emit(state, "shock", logText(state, "shockAll", { san: CONFIG.debtShockSanity }));
     } else {
       const victim = pick(state, state.samsarites);
       loseSanity(victim, CONFIG.debtShockSanity);
-      emit(state, "shock", `⚡ 負債中。主神隨手電了 ${victim.name} 一下（理智 -${CONFIG.debtShockSanity}）。`);
+      emit(state, "shock", logText(state, "shockOne", { A: victim, san: CONFIG.debtShockSanity }));
     }
   }
 }
@@ -194,7 +195,7 @@ export function recycle(state, id) {
   emit(
     state,
     "recycle",
-    `♻️ ${s.name} 被推進了主神回收爐（+${CONFIG.recycle.points} 分）。其他人看著你的眼神變了（全員理智 -${CONFIG.recycle.sanityLoss}）。`
+    logText(state, "recycle", { A: s, points: CONFIG.recycle.points, san: CONFIG.recycle.sanityLoss })
   );
   checkGameOver(state);
   return true;
@@ -208,7 +209,7 @@ export function pullGacha(state, poolId) {
   const rank = weighted(state, pool.odds).rank;
   const s = createSamsarite(state, rank);
   state.samsarites.push(s);
-  emit(state, "gacha", `🎴 【${pool.name}】-${pool.cost} 分 → ${rank} 級輪迴者 ${s.name}（戰力 ${s.stats.power}）報到。`, {
+  emit(state, "gacha", logText(state, "gacha", { pool: pool.name, cost: pool.cost, rank, A: s, power: s.stats.power }), {
     samsariteId: s.id,
   });
   return s;
@@ -231,7 +232,7 @@ export function checkGameOver(state) {
   const cheapest = Math.min(...GACHA_POOLS.map((p) => p.cost));
   if (state.samsarites.length === 0 && !canAfford(state, cheapest)) {
     state.gameOver = true;
-    emit(state, "gameOver", "🕳️ 你手下沒有任何輪迴者，也借不到積分了。主神：「下一位主管。」");
+    emit(state, "gameOver", logText(state, "gameOver"));
   }
   return state.gameOver;
 }

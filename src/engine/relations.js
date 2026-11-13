@@ -7,10 +7,11 @@
 //   revenge：死者的戀人／死黨鎖定兇手；下次同隊進副本，第一個房間一定自相殘殺
 
 import { CONFIG, INJURIES } from "../data/config.js";
-import { SOCIAL_EVENTS, SCHEMES, DISCOVER_TEXT, TAG_SPECIALS, MOURN_TEXT } from "../data/relations.js";
+import { SOCIAL_EVENTS, SCHEMES, DISCOVER_TEXTS, TAG_SPECIALS } from "../data/relations.js";
 import { getTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
 import { effectivePower } from "./tags.js";
+import { logText } from "./templates.js";
 import {
   emit,
   currentDay,
@@ -24,7 +25,6 @@ import {
 const R = () => CONFIG.relations;
 const clamp = (v) => Math.max(0, Math.min(100, v));
 const ZERO = Object.freeze({ love: 0, hate: 0 });
-const fill = (text, names) => text.replace(/\{(\w)\}/g, (_, k) => names[k]?.name ?? "?");
 const hasTag = (s, id) => (s.tags ?? []).includes(id);
 
 // ───────── 關係矩陣：讀寫 ─────────
@@ -50,7 +50,7 @@ export function addHate(state, a, b, delta) {
   r.hate = clamp(r.hate + delta);
   if (r.hate >= R().nemesisAt && pairStatus(state, a, b) !== "nemesis") {
     setPairStatus(state, a, b, "nemesis");
-    emit(state, "relation", `⚔️ ${a.name} 對 ${b.name} 的恨意滿到溢出來了，兩人結成死敵。`);
+    emit(state, "relation", logText(state, "nemesis", { A: a, B: b }));
   }
 }
 
@@ -195,7 +195,7 @@ export function runSocial(state, ev, a, b) {
   addLove(state, b, a, ev.dLove[1]);
   if (ev.dHate[0]) addHate(state, a, b, ev.dHate[0]);
   if (ev.dHate[1]) addHate(state, b, a, ev.dHate[1]);
-  emit(state, "social", fill(ev.text, { A: a, B: b }));
+  emit(state, "social", logText(state, ev.texts, { A: a, B: b }));
 }
 
 /** 告白：對方也喜歡你（好感夠、沒仇、沒有別的戀人）就成為戀人，否則被拒絕 */
@@ -206,11 +206,11 @@ export function resolveConfession(state, a, b) {
     setPairStatus(state, a, b, "lover");
     addLove(state, a, b, 15);
     addLove(state, b, a, 15);
-    emit(state, "relation", `💕 ${a.name} 鼓起勇氣向 ${b.name} 告白，${b.name} 答應了！兩人成為戀人。`);
+    emit(state, "relation", logText(state, "confessOk", { A: a, B: b }));
   } else {
     addLove(state, a, b, -15);
     a.stats.sanity = Math.max(0, a.stats.sanity - R().confessSanityLoss);
-    emit(state, "relation", `💔 ${a.name} 向 ${b.name} 告白，被當場拒絕了（理智 -${R().confessSanityLoss}）。`);
+    emit(state, "relation", logText(state, "confessFail", { A: a, B: b, san: R().confessSanityLoss }));
   }
   return ok;
 }
@@ -224,7 +224,7 @@ function promoteSoulmates(state) {
       if (pairStatus(state, a, b) !== "lover") continue;
       if (getRel(state, a, b).love >= R().soulmateAt && getRel(state, b, a).love >= R().soulmateAt) {
         setPairStatus(state, a, b, "soulmate");
-        emit(state, "relation", `💞 ${a.name} 與 ${b.name} 成為靈魂伴侶。一個人倒下，另一個也會跟著崩潰。`);
+        emit(state, "relation", logText(state, "soulmate", { A: a, B: b }));
       }
     }
   }
@@ -253,7 +253,7 @@ function specialEvent(state, a) {
       addHate(state, b, c, sp.dHate);
       addHate(state, c, b, sp.dHate);
     }
-    emit(state, "social", fill(sp.text, { A: a, B: b, C: c }));
+    emit(state, "social", logText(state, sp.texts, { A: a, B: b, C: c }));
   }
 }
 
@@ -270,17 +270,17 @@ export function runScheme(state, scheme, a, b) {
       addHate(state, c, b, R().rumorHate);
     }
   }
-  emit(state, "scheme", fill(scheme.text, { A: a, B: b }));
+  emit(state, "scheme", logText(state, scheme.texts, { A: a, B: b }));
   if (rand(state) < R().discoverChance) {
     addHate(state, b, a, R().discoverHate);
     addLove(state, b, a, -10);
-    emit(state, "scheme", fill(DISCOVER_TEXT, { A: a, B: b }));
+    emit(state, "scheme", logText(state, DISCOVER_TEXTS, { A: a, B: b }));
   }
 }
 
 /** 直接動手殺人：不管有沒有殺成，主神都會懲罰動手的人 */
 export function directAttack(state, a, b) {
-  emit(state, "relation", `🔪 ${a.name} 終於忍不住，在主神空間裡直接對 ${b.name} 動手了！`);
+  emit(state, "relation", logText(state, "attack", { A: a, B: b }));
   const pa = effectivePower(a);
   const pb = effectivePower(b);
   if (rand(state) < pa / (pa + pb)) {
@@ -289,7 +289,7 @@ export function directAttack(state, a, b) {
   } else {
     setInjury(b, Math.min(INJURIES.length - 1, b.injury + R().directInjury));
     addHate(state, b, a, R().attackHate);
-    emit(state, "relation", `🩸 ${b.name} 硬撐住了，但受了傷。`);
+    emit(state, "relation", logText(state, "attackSurvive", { A: a, B: b }));
   }
   punish(state, a);
 }
@@ -300,14 +300,14 @@ export function punish(state, a, type = weighted(state, R().punish.weights).type
   if (type === "points") {
     const wasInDebt = state.points < 0;
     state.points = Math.max(CONFIG.debtLimit, state.points - R().punish.points);
-    emit(state, "relation", `⚡ 主神震怒：「在我的空間裡殺人？」扣 ${R().punish.points} 分。`);
+    emit(state, "relation", logText(state, "punishPoints", { A: a, points: R().punish.points }));
     announceDebtIfNew(state, wasInDebt);
   } else if (type === "tag") {
     const id = pick(state, a.tags);
     a.tags = a.tags.filter((t) => t !== id);
-    emit(state, "relation", `⚡ 主神震怒：洗掉了 ${a.name} 的標籤【${getTag(id)?.name ?? id}】。`);
+    emit(state, "relation", logText(state, "punishTag", { A: a, tag: getTag(id)?.name ?? id }));
   } else {
-    emit(state, "relation", `⚡ 主神震怒：直接把 ${a.name} 抹殺了。`);
+    emit(state, "relation", logText(state, "punishErase", { A: a }));
     killSamsarite(state, a, "因為在主神空間動手殺人，被主神抹殺");
     afterDeath(state, a, null);
   }
@@ -315,6 +315,8 @@ export function punish(state, a, type = weighted(state, R().punish.weights).type
 }
 
 // ───────── 死亡連鎖（計畫 6.4）─────────
+
+const MOURN_KEYS = { breakthrough: "mournBreakthrough", broken: "mournBroken", demon: "mournDemon" };
 
 function scaleStats(s, mult) {
   for (const k of ["hp", "power", "defense", "speed", "luck"]) s.stats[k] = Math.max(1, Math.round(s.stats[k] * mult));
@@ -350,14 +352,14 @@ export function afterDeath(state, dead, killer = null) {
       gainTag(m, "demon_path");
       m.stats.sanity = Math.max(0, m.stats.sanity - R().demonSanityLoss);
     }
-    emit(state, "relation", `🕯️ ${dead.name} 死了。` + fill(MOURN_TEXT[type], { B: m }));
+    emit(state, "relation", logText(state, MOURN_KEYS[type], { D: dead, B: m }));
 
     if (killer) {
       const r = ensureRel(state, m, killer);
       r.hate = 100;
       r.revenge = true;
       setPairStatus(state, m, killer, "nemesis");
-      emit(state, "relation", `⚔️ ${m.name} 認定 ${killer.name} 是兇手，下次同隊，第一個房間就要血債血償。`);
+      emit(state, "relation", logText(state, "revengeLock", { A: killer, B: m }));
     }
   }
 
@@ -365,7 +367,7 @@ export function afterDeath(state, dead, killer = null) {
     if (!hasTag(t, "smiling_tiger")) continue;
     scaleStats(t, R().inheritMult);
     for (const o of living) if (o.id !== t.id) addLove(state, o, t, R().inheritLove);
-    emit(state, "relation", `🤑 ${t.name} 笑瞇瞇地把 ${dead.name} 的遺產收進口袋（全屬性永久 +10%）。沒人喜歡他。`);
+    emit(state, "relation", logText(state, "inherit", { A: t, D: dead }));
   }
 
   for (const o of living) o.stats.sanity = Math.max(0, o.stats.sanity - R().deathFearSanity);
@@ -409,11 +411,10 @@ export function pickClash(state, party, roomIndex) {
   return null;
 }
 
-export function clashText(clash) {
+export function clashText(state, clash) {
   const { attacker: a, victim: v, kind } = clash;
-  if (kind === "revenge") return `⚔️ ${a.name} 紅著眼衝向 ${v.name}：「血債血償！」怪物都不管了。`;
-  if (kind === "backstab") return `🔪 ${a.name} 從背後捅了 ${v.name} 一刀。「手滑。」`;
-  return `🗡️ ${a.name} 和 ${v.name} 在副本裡先打了起來，把怪物晾在一邊。`;
+  const key = kind === "revenge" ? "clashRevenge" : kind === "backstab" ? "clashBackstab" : "clashEnemy";
+  return logText(state, key, { A: a, B: v });
 }
 
 /** 內鬥發生後的關係變化：被打的人對兇手仇恨上升，復仇完成 */
