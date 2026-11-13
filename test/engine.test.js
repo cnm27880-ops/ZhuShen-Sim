@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { CONFIG, GACHA_POOLS } from "../src/data/config.js";
 import { DUNGEONS, getDungeon } from "../src/data/dungeons.js";
+import { TAGS, ENV_TAGS, getTag } from "../src/data/tags.js";
 import {
   createNewGame,
   createSamsarite,
@@ -17,8 +18,8 @@ import {
   serialize,
   deserialize,
 } from "../src/engine/core.js";
-import { roomPassRate, clearChance, chanceAtLeast, startRun, stepRun } from "../src/engine/dungeon.js";
-import { planAutoDispatch, step } from "../src/engine/dispatch.js";
+import { roomPassRate, clearChance, chanceAtLeast, startRun, stepRun, partyPower, rewardTierMult } from "../src/engine/dungeon.js";
+import { planAutoDispatch, autoCandidates, step } from "../src/engine/dispatch.js";
 
 const easy = getDungeon("ghost_village");
 
@@ -42,14 +43,97 @@ test("維持費符合計畫書第 12.2 節的四個範例", () => {
   assert.equal(upkeepOf(make(state, "S", 3)), 60);
 });
 
-test("房間通過率：戰力等於推薦戰力時是 70%，並且有上下限", () => {
+test("房間通過率：已有情報、戰力等於推薦戰力時是 55%（50% + 重打 5%），並且有上下限", () => {
   const state = createNewGame(1);
-  const fake = (power) => [{ stats: { power } }];
-  assert.ok(Math.abs(roomPassRate(state, fake(100), easy) - 0.7) < 1e-9);
-  assert.equal(roomPassRate(state, fake(1000), easy), CONFIG.dungeon.maxPassRate);
-  assert.equal(roomPassRate(state, fake(1), easy), CONFIG.dungeon.minPassRate);
+  state.dungeonStats[easy.id] = { attempts: 1, clears: 1 }; // 已有情報
+  const fake = (power) => [{ stats: { power }, tags: [] }];
+  assert.ok(Math.abs(roomPassRate(state, fake(easy.recommendedPower), easy) - 0.55) < 1e-9);
+  assert.equal(roomPassRate(state, fake(100000), easy), CONFIG.dungeon.maxPassRate);
+  assert.equal(roomPassRate(createNewGame(1), fake(1), easy), CONFIG.dungeon.minPassRate); // 首次開荒又超弱 → 吃到下限
   assert.ok(Math.abs(chanceAtLeast(5, 5, 0.7) - 0.7 ** 5) < 1e-9);
-  assert.ok(clearChance(state, fake(100), easy) > 0.8);
+  assert.ok(clearChance(state, fake(400), easy) > 0.8);
+});
+
+test("首次開荒：通過率 -10%；通關後變成有情報", () => {
+  const state = createNewGame(1);
+  const fake = [{ stats: { power: easy.recommendedPower }, tags: [] }];
+  assert.ok(Math.abs(roomPassRate(state, fake, easy) - 0.4) < 1e-9);
+});
+
+test("標籤：戰力加成、類型相性、環境相性、加成上限", () => {
+  const state = createNewGame(1);
+  state.dungeonStats[easy.id] = { attempts: 1, clears: 1 };
+  const base = [{ stats: { power: 100 }, tags: [] }];
+  const strong = [{ stats: { power: 100 }, tags: ["born_strong"] }]; // 戰力 +15%
+  assert.equal(partyPower(strong), 115);
+  assert.ok(roomPassRate(state, strong, easy) > roomPassRate(state, base, easy));
+  const fool = [{ stats: { power: 100 }, tags: ["horror_fool"] }]; // 靈異 +15%
+  assert.ok(Math.abs(roomPassRate(state, fool, easy) - roomPassRate(state, base, easy) - 0.15) < 1e-9);
+  const silence = ENV_TAGS.find((e) => e.id === "absolute_silence");
+  const bgm = [{ stats: { power: 100 }, tags: ["bgm_carrier"] }];
+  assert.ok(roomPassRate(state, bgm, easy, silence) < roomPassRate(state, bgm, easy, null));
+  const many = Array.from({ length: 4 }, () => ({ stats: { power: 100 }, tags: ["horror_fool", "haunted_sleeper"] }));
+  const noTag = Array.from({ length: 4 }, () => ({ stats: { power: 100 }, tags: [] }));
+  const diff = roomPassRate(state, many, easy) - roomPassRate(state, noTag, easy);
+  assert.ok(diff <= CONFIG.tags.tagBonusCap + 1e-9);
+});
+
+test("新輪迴者有 4~5 個標籤：2 基礎數值 + 1~2 性格 + 1 靈魂，且不重複", () => {
+  const state = createNewGame(5);
+  for (let i = 0; i < 100; i++) {
+    const s = createSamsarite(state, "C");
+    assert.ok(s.tags.length === 4 || s.tags.length === 5);
+    assert.equal(new Set(s.tags).size, s.tags.length);
+    const kinds = s.tags.map((id) => getTag(id).kind);
+    assert.equal(kinds.filter((k) => k === "stat").length, 2);
+    assert.equal(kinds.filter((k) => k === "soul").length, 1);
+  }
+});
+
+test("標籤資料表：id 不重複、30 個 MVP 標籤、環境標籤引用的標籤都存在", () => {
+  assert.equal(TAGS.length, 30);
+  assert.equal(new Set(TAGS.map((t) => t.id)).size, TAGS.length);
+  for (const t of TAGS) for (const envId of Object.keys(t.envBonus ?? {})) assert.ok(ENV_TAGS.some((e) => e.id === envId), envId);
+});
+
+test("獎勵遞減：第 1 次基礎、2-3 次 120%、4-5 次 100%、6-10 次 80%、11 次後 60%", () => {
+  const state = createNewGame(1);
+  const mult = (clears) => {
+    state.dungeonStats[easy.id] = { attempts: clears, clears };
+    return rewardTierMult(state, easy);
+  };
+  assert.equal(mult(0), 1); // 即將第 1 次通關
+  assert.equal(mult(1), 1.2); // 第 2 次
+  assert.equal(mult(2), 1.2); // 第 3 次
+  assert.equal(mult(3), 1.0); // 第 4 次
+  assert.equal(mult(5), 0.8); // 第 6 次
+  assert.equal(mult(10), 0.6); // 第 11 次
+  assert.equal(mult(99), 0.6);
+});
+
+test("首次通關：額外 +50 分、掉一個特殊獎勵並收入收藏；第二次不再有", () => {
+  const state = createNewGame(1);
+  state.samsarites = [];
+  const squad = [make(state, "S"), make(state, "S"), make(state, "S"), make(state, "S")];
+  for (const s of squad) s.tags = []; // 排除標籤干擾
+  let first = null;
+  for (let i = 0; i < 20 && !first; i++) {
+    for (const s of state.samsarites) setInjury(s, 0);
+    startRun(state, easy.id, state.samsarites.map((s) => s.id));
+    while (state.run) stepRun(state);
+    if (state.lastRun.success) first = state.lastRun;
+    if (state.samsarites.length < 4) break;
+  }
+  if (first) {
+    assert.equal(first.firstClear, true);
+    assert.ok(first.specialReward);
+    assert.equal(state.collection.length, 1);
+    assert.ok(first.reward >= CONFIG.dungeon.firstClearBonus);
+    startRun(state, easy.id, state.samsarites.map((s) => s.id));
+    while (state.run) stepRun(state);
+    assert.equal(state.lastRun.firstClear, false);
+    assert.equal(state.collection.length, 1);
+  }
 });
 
 test("每日結算：扣維持費、養傷倒數、傷癒", () => {
@@ -129,11 +213,12 @@ test("派遣檢查：人數上限、不能重複出征", () => {
 });
 
 test("自動派遣：不派鎖定的人、不派受傷的人（開關開著時）、挑獎勵最高的可行副本", () => {
+  // 注意：中等 5000、困難 100000 的推薦戰力目前遠超過隊伍戰力（等裝備／血統上線才打得動），所以現階段可行的只有簡單副本
   const state = createNewGame(9);
   state.samsarites = [];
   const strong = [make(state, "S"), make(state, "S"), make(state, "S"), make(state, "S")];
   const plan = planAutoDispatch(state);
-  assert.equal(plan.dungeon.id, "ember_war");
+  assert.equal(plan.dungeon.id, "ghost_village");
 
   strong[0].locked = true;
   setInjury(strong[1], 1);
@@ -142,8 +227,8 @@ test("自動派遣：不派鎖定的人、不派受傷的人（開關開著時�
   assert.ok(!plan2.party.includes(strong[1]));
 
   state.settings.protect.noInjured = false;
-  const plan3 = planAutoDispatch(state);
-  assert.ok(plan3.party.includes(strong[1]));
+  assert.ok(autoCandidates(state).includes(strong[1])); // 保護開關關掉後，受傷的人才會進候選名單
+  assert.ok(planAutoDispatch(state));
 
   for (const s of strong) s.locked = true;
   assert.equal(planAutoDispatch(state), null);
@@ -183,6 +268,7 @@ test("沒人又借不到錢 = 遊戲結束；還借得到就不算", () => {
 test("開著自動派遣放著跑 60 天不會壞掉，存檔讀回來一模一樣", () => {
   const state = createNewGame(123);
   state.settings.autoDispatch = true;
+  for (let i = 0; i < 3; i++) state.samsarites.push(createSamsarite(state, "A")); // 開局 3 個 C 級戰力太低，自動派遣不會出門
   for (let i = 0; i < 600 && !state.gameOver; i++) {
     step(state);
     assert.ok(state.points >= CONFIG.debtLimit);

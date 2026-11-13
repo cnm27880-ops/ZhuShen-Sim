@@ -291,3 +291,11 @@ table.stats td:first-child { color: var(--muted); width: 34%; }
   .route-node-label { width: 60px; font-size: 10px; }
   .decor { font-size: 15px; }
 }
+
+/* 標籤小膠囊（Phase 2） */
+.tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; }
+.tag-chip { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 11px; line-height: 1.5; border: 1px solid #ccc; background: #f4f4f4; color: #555; }
+.tag-R { border-color: #5b9bd5; color: #2f6aa3; background: #eef5fb; }
+.tag-SR { border-color: #a066d3; color: #7a3fb0; background: #f5eefb; }
+.tag-SSR { border-color: #e0a020; color: #a06a00; background: #fff6df; }
+.tag-UR { border-color: #e04040; color: #b02020; background: #fdecec; }
