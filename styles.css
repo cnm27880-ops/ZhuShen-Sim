@@ -91,7 +91,15 @@ main { flex: 1; min-height: 0; display: flex; gap: 14px; padding: 14px 18px; }
 .run-node.fail { background: #c92a2a; }
 .run-party { opacity: 0.9; line-height: 1.4; }
 .run-rate { opacity: 0.7; }
-@media (max-width: 700px) { #run-list { width: 150px; } }
+.run-card[data-action] { cursor: pointer; }
+.run-card.viewing { outline: 2px solid #fff; }
+#dungeon-view { padding-right: 240px; } /* 留位置給右側 #run-list 卡片 */
+.dungeon-back { margin-top: 8px; } .dungeon-back button { font-size: 12px; }
+.dungeon-back small { opacity: 0.75; }
+.follow-btn { cursor: pointer; opacity: 0.35; font-size: 13px; }
+.follow-btn:hover, .follow-btn.on { opacity: 1; }
+.mini.followed .mini-head, .mini.followed .mini-body { border-color: var(--accent); }
+@media (max-width: 700px) { #run-list { width: 150px; } #dungeon-view { padding-right: 170px; } }
 
 /* 主神空間的地板：淡淡的格線 + 中央的柔光 */
 #space-map {

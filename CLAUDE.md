@@ -47,7 +47,7 @@
 | `src/engine/shop.js` | 商店引擎：`buyItem`／`checkBuy`（強化、裝備、藥水）、`nextTierInfo`；`collectionEffects`／`collectionPassBonus`（副本特殊獎勵的效果） |
 | `src/engine/dungeon.js` | 副本結算（5 個房間、成功率公式、通關機率）；並行副本：`startRun` 往 `state.runs` 加一場，`stepDueRooms`／`settleRuns` 依開場順序走房間／結算，結算摘要進 `state.runReports` 排隊；首通在結算時判定；掛鉤 `relationBonus` / `tagBonus`（含收藏加成）/ `rewardMultiplier`（含收藏加成）；首通掉特殊獎勵 id 進 `state.collection` |
 | `src/engine/dispatch.js` | 自動派遣（`tryAutoDispatch` 一次排多隊，直到人手用完）、主迴圈一步 `step()`（走各副本該走的房間 → 時間 +1 → 結算）；含 `areEnemies()` 掛鉤 |
-| `src/ui/main.js` | 畫面層，DOM 操作、CSS transition 滑動、emoji 顯示；含商店面板 |
+| `src/ui/main.js` | 畫面層，DOM 操作、CSS transition 滑動、emoji 顯示；含商店面板、視角鎖定（`viewedRun`／`renderDungeonView`／`toggle-follow`／`peek-run`）；`styles.css` 放所有樣式（`#dungeon-view`、`.route-*`、`.run-card`） |
 | `test/` | 測試檔案（Node.js）：`engine`、`relations`、`templates`、`shop`、`wishes`、`parallel`（並行副本） |
 | `README.md` | 專案說明 + 待確認的設計問題 |
 | `docs/GAME_DESIGN_PLAN.md` | 完整遊戲設計計畫 |
@@ -120,10 +120,10 @@ npm test
 
 **Phase 3-B（已完成）**：許願系統。輪迴者在每日「特殊事件」骰中以 `CONFIG.wish.chance` 機率許願，自動暫停（暫停事件 `wish`，預設開）並彈窗答應／拒絕；4 種許願（吃好的花積分、放假 N 天不能派遣、想去副本通關、想要商店裝備），每人同時最多 1 個，超時算失敗。完成 → 高興（每人通過率 +5%，上限 15%）；拒絕／超時／副本沒通關 → 不爽（戰力 -10%、理智 -10），皆持續 5 天。心情掛在 `s.mood`，不是標籤。許願人死了或被回收就取消。「想去副本」目前只選推薦戰力 ≤ `dungeonPowerCap` 的副本，且照單一副本設計（日後若改成多隊並行副本要重看 `wishesAfterRun`）。
 
-**Phase 3-C（已完成）**：並行副本。`state.run` → `state.runs` 陣列（舊存檔單一 `run` 在 `deserialize` 遷移）；每場有 `id`、`startTick`、隊伍、環境標籤。畫面：主神空間不變，右側「進行中副本」卡片清單（`#run-list`），結算視窗用 `state.runReports` 排隊（一次彈一個，沿用 `runEnd` 暫停事件）。自動派遣一次排多隊。`wishesAfterRun` 本來就依單場的副本／出征名單判斷，並行下仍正確（`test/parallel.test.js` 有驗證）。`#dungeon-view` 與 `.route-*` 樣式保留給下一階段（視角鎖定）使用，目前不顯示。
+**Phase 3-C（已完成）**：並行副本。`state.run` → `state.runs` 陣列（舊存檔單一 `run` 在 `deserialize` 遷移）；每場有 `id`、`startTick`、隊伍、環境標籤。畫面：主神空間不變，右側「進行中副本」卡片清單（`#run-list`），結算視窗用 `state.runReports` 排隊（一次彈一個，沿用 `runEnd` 暫停事件）。自動派遣一次排多隊。`wishesAfterRun` 本來就依單場的副本／出征名單判斷，並行下仍正確（`test/parallel.test.js` 有驗證）。`#dungeon-view` 與 `.route-*` 樣式由 3-D（視角鎖定）使用。
 
-**Phase 3（還沒做）**：狗血擴充 — 生小孩、員工合同、主神搞事（3-C～3-D）；商店的血統／瞳術／技藝／技能。
-**構想（下一個聊天室）**：視角鎖定某個輪迴者並跟隨下副本（只改 `src/ui/`）。
+**Phase 3-D（已完成）**：視角鎖定。名冊卡片的 👁 或詳情視窗的「鎖定視角」按鈕，同時只能鎖定一人，再按取消。鎖定對象在副本時，主畫面自動切到他那場的 `#dungeon-view` 路線圖（5 個房間節點＋小隊滑動＋存活人數／通過率），回家就切回主神空間。沒鎖定時主畫面維持主神空間，點右側 `#run-list` 卡片可手動看那一場，再點一次（或「⬅ 返回」）取消；鎖定對象進／出副本時手動選擇會被清掉。存檔欄位 `state.settings.followId`（`createNewGame` 預設 null，`deserialize` 缺欄位補 null；引擎不讀它，只給畫面用）；`peekRunId` 只存在 UI、不存檔。鎖定的人死了或被回收，`afterChange()` 會自動解除。`renderDungeonView` 骨架每場只建一次，之後只更新節點／位置／隊員（避免重建打斷 CSS 滑動）。
+**Phase 3（還沒做）**：狗血擴充 — 生小孩、員工合同、主神搞事；商店的血統／瞳術／技藝／技能。
 
 **不做**：複雜動畫、音效、背景音樂（MVP 先不要）。
 

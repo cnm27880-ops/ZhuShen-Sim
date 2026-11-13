@@ -54,6 +54,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
       speed: 1,
       paused: false,
       autoDispatch: false,
+      followId: null, // 視角鎖定的輪迴者 id（只給畫面用，引擎不讀）；null = 沒鎖定
       protect: { noInjured: true, noEnemies: true },
       pauseOn,
     },
@@ -302,6 +303,7 @@ export function deserialize(json) {
   state.nextWishId ??= 1 + Math.max(0, ...state.wishes.map((w) => w.id));
   state.relations ??= {};
   state.cooldowns ??= {};
+  state.settings.followId ??= null; // 舊存檔沒有視角鎖定欄位，當沒鎖定
   // 之後新增的暫停事件種類，舊存檔沒有就補上預設值
   for (const [key, def] of Object.entries(PAUSE_EVENTS)) {
     if (!(key in state.settings.pauseOn)) state.settings.pauseOn[key] = def.default;
