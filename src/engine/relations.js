@@ -12,6 +12,7 @@ import { getTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
 import { effectivePower } from "./tags.js";
 import { logText } from "./templates.js";
+import { maybeWish } from "./wishes.js";
 import {
   emit,
   currentDay,
@@ -137,7 +138,7 @@ export function dailyRelations(state) {
     const r = rand(state);
     if (r < roll.work) a.stats.sanity = Math.min(100, a.stats.sanity + R().workSanity); // 日常：健身、包紮、喝咖啡
     else if (r < roll.work + roll.social) socialEvent(state, a);
-    else specialEvent(state, a);
+    else if (!maybeWish(state, a)) specialEvent(state, a); // 特殊事件骰：先看他要不要許願（Phase 3-B）
   }
   promoteSoulmates(state);
   checkGameOver(state);

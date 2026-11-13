@@ -7,6 +7,7 @@ import { rand, randInt, pick, weighted } from "./rng.js";
 import { rollTags } from "./tags.js";
 import { findSpecialRewardByName, getSpecialReward } from "../data/dungeons.js";
 import { logText } from "./templates.js";
+import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
 // ───────── 事件與日誌 ─────────
@@ -39,6 +40,8 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     samsarites: [],
     graveyard: [],
     relations: {}, // 關係矩陣（見 engine/relations.js）
+    wishes: [], // 進行中的許願（見 engine/wishes.js）
+    nextWishId: 1,
     cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
     dungeonStats: {}, // { 副本id: { attempts, clears } }；clears > 0 代表已有該副本情報
     collection: [], // 副本特殊獎勵 id（定義在 data/dungeons.js），永久生效，效果見 engine/shop.js collectionEffects
@@ -90,6 +93,8 @@ export function createSamsarite(state, rank) {
     bought: {}, // 每種強化買過幾次：{ 商品id: 次數 }
     joinedDay: currentDay(state),
     runs: 0,
+    mood: null, // 心情狀態 { kind: "happy"|"upset", daysLeft }（見 engine/wishes.js）
+    vacationDays: 0, // 許願放假：剩幾天不能派遣
     sabotaged: false, // 裝備被人動了手腳（借刀殺人），下次出征會倒楣
   };
 }
@@ -111,6 +116,7 @@ export function setInjury(s, level) {
 /** killer：被同伴害死時的兇手（怪物殺的就不傳）。連鎖反應在 relations.js 的 afterDeath，由呼叫端接著呼叫 */
 export function killSamsarite(state, s, cause, killer = null) {
   state.samsarites = state.samsarites.filter((x) => x.id !== s.id);
+  cancelWishesOf(state, s.id);
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null });
   emit(state, "death", logText(state, "death", { A: s, rank: s.rank, cause }), { samsariteId: s.id, killerId: killer?.id ?? null });
 }
@@ -208,6 +214,7 @@ export function recycle(state, id) {
   state.samsarites = state.samsarites.filter((x) => x.id !== id);
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause: "被主管推進回收爐" });
   forgetRelations(state, id);
+  cancelWishesOf(state, id);
   state.points += CONFIG.recycle.points;
   for (const other of state.samsarites) loseSanity(other, CONFIG.recycle.sanityLoss);
   emit(
@@ -240,6 +247,7 @@ export function advanceTick(state) {
   state.tick += 1;
   if (state.tick % CONFIG.ticksPerDay === 0) {
     endOfDay(state);
+    dailyWishes(state); // 心情／休假倒數、許願超時（Phase 3-B）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
   }
 }
@@ -274,7 +282,11 @@ export function deserialize(json) {
     s.upgrades ??= {};
     s.gear ??= {};
     s.bought ??= {};
+    s.mood ??= null;
+    s.vacationDays ??= 0;
   }
+  state.wishes ??= [];
+  state.nextWishId ??= 1 + Math.max(0, ...state.wishes.map((w) => w.id));
   state.relations ??= {};
   state.cooldowns ??= {};
   // 之後新增的暫停事件種類，舊存檔沒有就補上預設值

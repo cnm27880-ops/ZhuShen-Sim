@@ -16,7 +16,7 @@ export function areEnemies(state, a, b) {
 /** 可以被自動派遣的人：在家、沒鎖定、（保護開關開著時）沒受傷 */
 export function autoCandidates(state) {
   return state.samsarites
-    .filter((s) => s.location === "space" && !s.locked)
+    .filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0))
     .filter((s) => !(state.settings.protect.noInjured && s.injury > 0))
     .sort((a, b) => b.stats.power - a.stats.power)
     .slice(0, CONFIG.auto.maxCandidates);

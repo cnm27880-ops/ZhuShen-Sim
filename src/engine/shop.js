@@ -6,6 +6,7 @@ import { SHOP_ITEMS, SHOP_SLOT_LABELS, getShopItem } from "../data/shop.js";
 import { getSpecialReward } from "../data/dungeons.js";
 import { emit, spend, canAfford, getSamsarite, setInjury, shopTier } from "./core.js";
 import { logText } from "./templates.js";
+import { wishesAfterBuy } from "./wishes.js";
 
 export { shopTier };
 
@@ -61,6 +62,7 @@ export function buyItem(state, itemId, targetId) {
     s.gear[item.slot] = item.id;
     const key = old ? "shopGearSwap" : "shopGear";
     emit(state, "shop", logText(state, key, { ...vars, slot: SHOP_SLOT_LABELS[item.slot], old: old?.name ?? "" }), { samsariteId: s.id });
+    wishesAfterBuy(state, s, item); // 他許的就是這件裝備：許願完成
   } else if (item.kind === "potion") {
     if (item.effect.heal) {
       setInjury(s, Math.max(0, s.injury - item.effect.heal));
