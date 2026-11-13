@@ -11,7 +11,7 @@ export const CONFIG = {
   speeds: [1, 2, 5, 10],
 
   // ── 開局（計畫未定）──
-  startingPoints: 150,
+  startingPoints: 500,
   startingSamsarites: 3,
   startingRank: "C",
 
