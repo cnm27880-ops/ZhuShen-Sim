@@ -20,6 +20,8 @@ export const CONFIG = {
   debtLimit: -500, // 主神高利貸上限
   debtShockSanity: 10, // 負債期間每天電擊一人，理智 -10
   recycle: { points: 30, sanityLoss: 5 }, // 主神回收爐（理智扣多少：計畫未定）
+  // 商店 4 階解鎖門檻（累積花費的積分）。Phase 3-A 才會用到；2026-11-13 由開發者定案為 0/1000/5000/10000
+  shopTierUnlock: [0, 1000, 5000, 10000],
 
   // ── 副本 ──
   partyMax: 4, // 一隊最多幾人（計畫未定）
