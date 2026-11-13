@@ -8,11 +8,12 @@ import { getDungeon } from "../data/dungeons.js";
 import { ENV_TAGS, getEnvTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
 import { effectivePower, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf } from "./tags.js";
+import { partyRelationBonus, pickClash, clashText, afterClash, afterDeath, findProtector } from "./relations.js";
 import { emit, advanceTick, setInjury, killSamsarite, checkGameOver } from "./core.js";
 
-// ── 掛鉤（hook）：關係系統還沒做，relationBonus 先回傳 0（Phase 2 後半接上） ──
-export function relationBonus(_state, _party) {
-  return 0;
+/** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
+export function relationBonus(state, party) {
+  return partyRelationBonus(state, party);
 }
 
 /** 標籤與環境相性：標籤加成（含類型、環境相性）+ 環境本身的修正 */
@@ -116,10 +117,15 @@ export function stepRun(state) {
   const room = dungeon.rooms[run.roomIndex];
   const party = partyOf(state);
   const env = getEnvTag(run.envId) ?? null;
-  const passed = rand(state) < roomPassRate(state, party, dungeon, env, tagSwing(state, party));
   const progress = `[${(run.roomIndex + 1) * 20}%・${room.name}]`;
+  const clash = pickClash(state, party, run.roomIndex); // 仇人／背刺者：先打自己人，這個房間算失敗
+  const passed = clash ? false : rand(state) < roomPassRate(state, party, dungeon, env, tagSwing(state, party));
 
-  if (passed) {
+  if (clash) {
+    emit(state, "clash", `${progress} ${clashText(clash)}`);
+    afterClash(state, clash);
+    hurt(state, run, clash.victim, dungeon, clash.attacker);
+  } else if (passed) {
     emit(state, "roomPass", `${progress} ${room.pass}`);
   } else {
     const victim = pick(state, party);
@@ -139,9 +145,23 @@ export function stepRun(state) {
   if (wiped || run.roomIndex >= CONFIG.dungeon.rooms) finishRun(state);
 }
 
-function hurt(state, run, victim, dungeon) {
+function hurt(state, run, victim, dungeon, attacker = null) {
+  if (!attacker) {
+    // 愛慕／靈魂伴侶的隊友有機會替他擋下這一下
+    const guard = findProtector(state, partyOf(state), victim);
+    if (guard) {
+      emit(state, "social", `🛡️ ${guard.name} 撲上去替 ${victim.name} 擋下了這一擊！`);
+      victim = guard;
+    }
+  }
   // 帶傷出征的人被打中時，先擲一次「直接死亡」（輕傷 20% / 重傷 50% / 致命傷 80%）
-  const deathBonus = INJURIES[run.enteredInjury[victim.id]].deathBonus;
+  let deathBonus = INJURIES[run.enteredInjury[victim.id]].deathBonus;
+  const sabotaged = victim.sabotaged; // 裝備被動過手腳（借刀殺人）：更容易傷重、更容易死
+  if (sabotaged) {
+    victim.sabotaged = false;
+    deathBonus += CONFIG.relations.sabotageDeathBonus;
+    emit(state, "scheme", `🔧 ${victim.name} 的裝備在關鍵時刻壞掉了……`);
+  }
   if (rand(state) < dodgeOf(victim)) {
     emit(state, "dodge", `💨 ${victim.name} 千鈞一髮閃開了，毫髮無傷。`);
     return;
@@ -151,11 +171,12 @@ function hurt(state, run, victim, dungeon) {
   const shield = injuryShieldOf(victim);
   if (shield > 0 && rand(state) < shield) gained = Math.max(1, gained - 1);
   else if (shield < 0 && rand(state) < -shield) gained += 1;
-  const newLevel = victim.injury + gained;
+  const newLevel = victim.injury + gained + (sabotaged ? 1 : 0);
 
   if ((deathBonus > 0 && rand(state) < deathBonus) || newLevel >= INJURIES.length) {
     run.deaths.push(victim.name);
-    killSamsarite(state, victim, `死在了【${dungeon.name}】`);
+    killSamsarite(state, victim, attacker ? `死在了隊友 ${attacker.name} 手上（【${dungeon.name}】）` : `死在了【${dungeon.name}】`, attacker);
+    afterDeath(state, victim, attacker);
     return;
   }
   setInjury(victim, newLevel);
@@ -185,7 +206,10 @@ function finishRun(state) {
     // 失敗但活著回來：一定帶傷
     for (const s of survivors) if (s.injury === 0) setInjury(s, 1);
   }
-  for (const s of survivors) s.location = "space";
+  for (const s of survivors) {
+    s.location = "space";
+    s.sabotaged = false; // 沒被打中就沒用到，動過手腳的裝備回家後已被檢查
+  }
 
   state.lastRun = {
     dungeonId: run.dungeonId,

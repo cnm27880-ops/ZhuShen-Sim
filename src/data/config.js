@@ -65,6 +65,70 @@ export const CONFIG = {
     injuryShieldMax: 0.9, // 傷勢減免機率上限
   },
 
+  // ── 關係系統（Phase 2-B；計畫第 6 節，標「計畫未定」的是暫定值）──
+  relations: {
+    // 關係等級門檻（好感／仇恨 0~100）
+    likeAt: 50, // 喜歡（好感 50~79）
+    adoreAt: 80, // 愛慕（好感 80+）
+    dislikeAt: 50, // 討厭（仇恨 50~79）
+    hateAt: 80, // 仇恨（仇恨 80+）→ 自動派遣「禁止仇恨／死敵同隊」會擋
+    nemesisAt: 100, // 仇恨滿了就結成死敵
+    soulmateAt: 95, // 戀人雙方好感都到這個數字 = 靈魂伴侶
+    // 一起出戰的單房通過率加成（計畫 6.3；靈魂伴侶／死敵的數字計畫未定）
+    passBonus: { like: 0.1, adore: 0.2, soulmate: 0.3, dislike: -0.1, hate: -0.2, nemesis: -0.25 },
+    bonusCap: 0.3, // 全隊關係對「單房通過率」的加減上限（避免 4 人 6 對疊太高）
+    // 每天的行動骰（計畫 13.1：50% 日常 / 30% 找人互動 / 20% 特殊事件）
+    dailyRoll: { work: 0.5, social: 0.3 }, // 其餘 20% 是特殊事件（陰謀、標籤事件）
+    eventCooldownDays: 7, // 同一對人、同一種互動 7 天內不重複
+    hateDecayPerDay: 0.5, // 仇恨每天自然消退一點（死敵不消退）
+    workSanity: 1, // 日常行動：理智 +1
+    confessLove: 50, // 好感到這個數字才會告白
+    confessSanityLoss: 8, // 被拒絕：告白者理智下降
+    // 借刀殺人（計畫 6.6）：仇恨夠高才會動手腳
+    schemeHate: 60,
+    discoverChance: 0.25, // 被害者識破的機率（識破後對兇手仇恨 +discoverHate）
+    discoverHate: 25,
+    frameSanityLoss: 15, // 陷害成功：被害者被主神懲罰，理智下降
+    sabotageDeathBonus: 0.3, // 裝備被破壞：下次出征被打中時，額外直接死亡機率
+    rumorLove: -8, // 散播謠言：其他留守的人對被害者好感下降
+    rumorHate: 5,
+    // 直接動手殺人（會被主神懲罰，計畫 6.6）：只有仇恨極高的人才會
+    directKillHate: 90,
+    directKillChance: 0.15, // 抽到特殊事件、且仇恨夠高時，直接動手的機率
+    directInjury: 1, // 沒殺成：被害者多受幾級傷
+    punish: {
+      points: 500, // 扣積分（可以扣到負債，不低於高利貸上限）
+      weights: [
+        { type: "points", weight: 50 },
+        { type: "tag", weight: 30 }, // 洗掉一個標籤
+        { type: "erase", weight: 20 }, // 直接抹殺
+      ],
+    },
+    // 死亡連鎖（計畫 6.4）
+    mournLove: 60, // 好感到這個數字（或有戀人／靈魂伴侶關係）才算「死者的戀人／死黨」
+    mournerRoll: [
+      { type: "breakthrough", weight: 1 },
+      { type: "broken", weight: 1 },
+      { type: "demon", weight: 1 },
+    ],
+    soulmateRoll: [
+      { type: "broken", weight: 1 },
+      { type: "demon", weight: 1 },
+    ],
+    breakthroughMult: 1.3, // 頓悟：全屬性 +30%
+    brokenMult: 0.8, // 道心破碎：全屬性 -20%
+    demonSanityLoss: 20,
+    brokenSanityLoss: 15,
+    inheritMult: 1.1, // 笑面虎偷遺產：全屬性永久 +10%
+    inheritLove: -5, // 所有人對笑面虎好感 -5（沒人喜歡他）
+    deathFearSanity: 3, // 其他人看到有人死，理智 -3
+    // 副本內的互相傷害
+    infightChance: { hate: 0.3, nemesis: 0.5 }, // 隊內有仇人／死敵時，每個房間互相攻擊的機率
+    backstabChance: 0.1, // 背刺成癮者每個房間背刺隊友的機率
+    protectChance: 0.25, // 愛慕／靈魂伴侶替對方擋下傷害的機率
+    attackHate: 30, // 被隊友打了：對兇手仇恨 +30
+  },
+
   // ── 自動派遣 ──
   auto: {
     minClearChance: 0.6, // 預估通關率低於這個數字就不自動派（計畫未定）
@@ -101,6 +165,8 @@ export const GACHA_POOLS = [
 // 會觸發「自動暫停」的事件種類。之後的 Phase 要加新事件（許願、生小孩…）只要在這裡加一行。
 export const PAUSE_EVENTS = {
   death: { label: "有人死掉", default: true },
+  relation: { label: "關係重大變化（告白、死敵、主神懲罰）", default: true },
+  scheme: { label: "有人搞借刀殺人", default: false },
   runEnd: { label: "副本結算", default: true },
   debt: { label: "開始負債（主神高利貸）", default: true },
   healed: { label: "有人傷癒", default: false },

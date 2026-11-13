@@ -11,7 +11,7 @@
 //   injuryShield：受傷時「少受一級傷」的機率；負數代表有機率「多受一級傷」
 //   dodge：被點名受傷時直接閃過的機率
 //   swing：每個房間的通過率隨機浮動 ±swing（烏鴉嘴、Flag 之類的賭徒標籤）
-//   pending：這個標籤原本設計的關係／事件效果還沒做（Phase 2 後半），目前只有簡化效果
+//   pending：這個標籤原本設計的事件效果還沒做，目前只有簡化效果（Phase 2-B 之後已沒有標籤用到）
 
 export const TAGS = [
   // ───── N（8）─────
@@ -35,14 +35,14 @@ export const TAGS = [
 
   // ───── SR（11）─────
   { id: "horror_fool", name: "恐怖片作死專家", rarity: "SR", kind: "trait", desc: "「我去看看外面」是他的口頭禪。", genreBonus: { 靈異: 0.15 }, injuryShield: -0.15 },
-  { id: "smiling_tiger", name: "功德無量笑面虎", rarity: "SR", kind: "trait", desc: "笑著把死者的遺產收進口袋。", rewardPct: 0.1, pending: "死亡連鎖偷遺產（Phase 2 後半）" },
+  { id: "smiling_tiger", name: "功德無量笑面虎", rarity: "SR", kind: "trait", desc: "笑著把死者的遺產收進口袋。", rewardPct: 0.1 },
   { id: "haunted_sleeper", name: "凶宅試睡員", rarity: "SR", kind: "trait", desc: "睡過的凶宅比你住過的房子還多。", genreBonus: { 靈異: 0.12 } },
   { id: "scam_lecturer", name: "詐騙集團首席講師", rarity: "SR", kind: "trait", desc: "連副本 NPC 都能被他說服。", passBonus: 0.03, rewardPct: 0.1 },
   { id: "pain_convert", name: "痛覺轉化", rarity: "SR", kind: "soul", desc: "越痛越強。", powerPct: 0.1, injuryShield: 0.3 },
-  { id: "green_tea", name: "綠茶／心機蓮花", rarity: "SR", kind: "trait", desc: "笑得很甜，專門製造修羅場。", passBonus: -0.03, pending: "製造修羅場（關係系統，Phase 2 後半）" },
-  { id: "mad_matchmaker", name: "瘋狂月老", rarity: "SR", kind: "trait", desc: "看誰都想湊成一對。", passBonus: 0.02, pending: "加速戀愛事件（關係系統，Phase 2 後半）" },
+  { id: "green_tea", name: "綠茶／心機蓮花", rarity: "SR", kind: "trait", desc: "笑得很甜，專門製造修羅場。", passBonus: -0.03 },
+  { id: "mad_matchmaker", name: "瘋狂月老", rarity: "SR", kind: "trait", desc: "看誰都想湊成一對。", passBonus: 0.02 },
   { id: "emergency_ration", name: "緊急口糧預備役", rarity: "SR", kind: "soul", desc: "隊友看他的眼神總是帶著一點食慾，反而讓他活得更久。", passBonus: 0.02, injuryShield: 0.2 },
-  { id: "backstabber", name: "背刺成癮者", rarity: "SR", kind: "trait", desc: "不背刺隊友渾身不對勁。", powerPct: 0.1, passBonus: -0.03, pending: "副本內背刺隊友（關係系統，Phase 2 後半）" },
+  { id: "backstabber", name: "背刺成癮者", rarity: "SR", kind: "trait", desc: "不背刺隊友渾身不對勁。", powerPct: 0.1, passBonus: -0.03 },
   { id: "bgm_carrier", name: "BGM 自帶者", rarity: "SR", kind: "soul", desc: "走到哪都有配樂，鼓舞士氣，但潛行就別想了。", passBonus: 0.03, envBonus: { live_show: 0.1, absolute_silence: -0.2 } },
   { id: "gourmet", name: "美食家", rarity: "SR", kind: "trait", desc: "連怪物的肉都要品評一番。", passBonus: 0.02, rewardPct: 0.05 },
 
@@ -63,8 +63,14 @@ export const ENV_TAGS = [
   { id: "god_watching", name: "主神親自督戰", desc: "主神在旁邊看，難度更高，獎勵也更好。", passMod: -0.05, rewardMult: 1.2 },
 ];
 
+// 事件獲得的標籤（死亡連鎖等）：不會被抽卡抽到，所以不放在 TAGS（MVP 標籤維持 30 個）
+export const ACQUIRED_TAGS = [
+  { id: "broken_heart", name: "道心破碎", rarity: "R", kind: "acquired", desc: "失去重要的人之後，再也提不起勁。", passBonus: -0.03 },
+  { id: "demon_path", name: "走火入魔", rarity: "SR", kind: "acquired", desc: "力量變強了，人也變得不太穩定。", powerPct: 0.15, passBonus: -0.04, injuryShield: -0.2 },
+];
+
 export function getTag(id) {
-  return TAGS.find((t) => t.id === id);
+  return TAGS.find((t) => t.id === id) ?? ACQUIRED_TAGS.find((t) => t.id === id);
 }
 export function getEnvTag(id) {
   return ENV_TAGS.find((t) => t.id === id);

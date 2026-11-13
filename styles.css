@@ -211,6 +211,14 @@ main { flex: 1; min-height: 0; display: flex; gap: 14px; padding: 14px 18px; }
 .log-runStart { color: #74c0fc; border-left-color: #339af0; }
 .log-runEnd { color: #fff; font-weight: 700; border-left-color: #fff; }
 .log-gacha { color: #e599f7; font-weight: 700; border-left-color: #cc5de8; }
+.log-social { color: #a5b4d4; border-left-color: #5c7cfa; }
+.log-relation { color: #faa2c1; font-weight: 700; border-left-color: #f06595; background: rgba(240, 101, 149, 0.08); }
+.log-scheme { color: #d0bfff; border-left-color: #845ef7; }
+.log-clash { color: #ff8787; border-left-color: #fa5252; }
+.rel-list { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
+.rel-row { padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; line-height: 1.7; }
+.rel-label { display: inline-block; min-width: 86px; margin: 0 8px; font-weight: 700; }
+.rel-row small { margin-left: 6px; color: var(--muted); }
 .log-healed { color: #8ce99a; border-left-color: #40c057; }
 .log-dayEnd { color: #91a7ff; border-left-color: #4c6ef5; }
 

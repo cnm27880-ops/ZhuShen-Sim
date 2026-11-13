@@ -5,6 +5,7 @@ import { CONFIG, RANKS, INJURIES, GACHA_POOLS, PAUSE_EVENTS } from "../data/conf
 import { SURNAMES, GIVEN_NAMES } from "../data/names.js";
 import { rand, randInt, pick, weighted } from "./rng.js";
 import { rollTags } from "./tags.js";
+import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
 // ───────── 事件與日誌 ─────────
 
@@ -35,6 +36,8 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     nextId: 1,
     samsarites: [],
     graveyard: [],
+    relations: {}, // 關係矩陣（見 engine/relations.js）
+    cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
     dungeonStats: {}, // { 副本id: { attempts, clears } }；clears > 0 代表已有該副本情報
     collection: [], // 副本特殊獎勵（血統／術法／義體…），目前只收集，Phase 3 才有效果
     run: null, // 進行中的副本
@@ -82,6 +85,7 @@ export function createSamsarite(state, rank) {
     tags: rollTags(state), // 標籤 id 陣列，資料在 src/data/tags.js
     joinedDay: currentDay(state),
     runs: 0,
+    sabotaged: false, // 裝備被人動了手腳（借刀殺人），下次出征會倒楣
   };
 }
 
@@ -99,10 +103,19 @@ export function setInjury(s, level) {
   s.restDaysLeft = INJURIES[level].restDays;
 }
 
-export function killSamsarite(state, s, cause) {
+/** killer：被同伴害死時的兇手（怪物殺的就不傳）。連鎖反應在 relations.js 的 afterDeath，由呼叫端接著呼叫 */
+export function killSamsarite(state, s, cause, killer = null) {
   state.samsarites = state.samsarites.filter((x) => x.id !== s.id);
-  state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause });
-  emit(state, "death", `☠️ ${s.name}（${s.rank} 級）${cause}。永久死亡。`, { samsariteId: s.id });
+  state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null });
+  emit(state, "death", `☠️ ${s.name}（${s.rank} 級）${cause}。永久死亡。`, { samsariteId: s.id, killerId: killer?.id ?? null });
+}
+
+/** 把某人從關係矩陣裡清掉（死亡或被回收之後） */
+export function forgetRelations(state, id) {
+  for (const key of Object.keys(state.relations ?? {})) {
+    const [a, b] = key.split(">").map(Number);
+    if (a === id || b === id) delete state.relations[key];
+  }
 }
 
 function loseSanity(s, amount) {
@@ -125,7 +138,7 @@ export function spend(state, cost) {
   return true;
 }
 
-function announceDebtIfNew(state, wasInDebt) {
+export function announceDebtIfNew(state, wasInDebt) {
   if (!wasInDebt && state.points < 0) {
     emit(state, "debt", `💸 積分變成負數了。主神：「借你。利息嘛……每天電一個人。」（上限 ${CONFIG.debtLimit} 分）`);
   }
@@ -175,6 +188,7 @@ export function recycle(state, id) {
   if (!s || s.location !== "space") return false;
   state.samsarites = state.samsarites.filter((x) => x.id !== id);
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause: "被主管推進回收爐" });
+  forgetRelations(state, id);
   state.points += CONFIG.recycle.points;
   for (const other of state.samsarites) loseSanity(other, CONFIG.recycle.sanityLoss);
   emit(
@@ -205,7 +219,10 @@ export function pullGacha(state, poolId) {
 /** 時間前進一個時段；跨日就做每日結算 */
 export function advanceTick(state) {
   state.tick += 1;
-  if (state.tick % CONFIG.ticksPerDay === 0) endOfDay(state);
+  if (state.tick % CONFIG.ticksPerDay === 0) {
+    endOfDay(state);
+    dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
+  }
 }
 
 /** 沒人可用、又抽不起最便宜的卡池 = 遊戲結束 */
@@ -230,6 +247,8 @@ export function deserialize(json) {
   if (state.version !== 1) throw new Error("存檔版本不符");
   state.events = [];
   state.collection ??= []; // 舊存檔沒有這個欄位
+  state.relations ??= {};
+  state.cooldowns ??= {};
   // 之後新增的暫停事件種類，舊存檔沒有就補上預設值
   for (const [key, def] of Object.entries(PAUSE_EVENTS)) {
     if (!(key in state.settings.pauseOn)) state.settings.pauseOn[key] = def.default;
