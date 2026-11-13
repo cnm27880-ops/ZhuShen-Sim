@@ -159,6 +159,8 @@ export const CONFIG = {
     dispatchAtTick: 5, // 每天第幾個時段檢查一次自動派遣
   },
 
+  runReportMax: 20, // 排隊等玩家看的副本結算摘要最多留幾筆
+
   logMax: 300,
 };
 

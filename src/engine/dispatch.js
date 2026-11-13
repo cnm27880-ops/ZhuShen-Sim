@@ -6,7 +6,7 @@ import { DUNGEONS } from "../data/dungeons.js";
 import { emit, advanceTick, checkGameOver } from "./core.js";
 import { logText } from "./templates.js";
 import { areEnemies as pairEnemies } from "./relations.js";
-import { clearChance, partyPower, startRun, stepRun } from "./dungeon.js";
+import { clearChance, partyPower, startRun, stepDueRooms, settleRuns } from "./dungeon.js";
 
 // 兩人是否為仇恨／死敵（關係系統在 engine/relations.js）
 export function areEnemies(state, a, b) {
@@ -65,28 +65,27 @@ export function planAutoDispatch(state) {
   return best;
 }
 
+/** 一次排出多隊：每輪挑最划算的一隊，剩下的人再組下一隊，直到沒有達標的組合（人手用完）。回傳派出幾隊 */
 export function tryAutoDispatch(state) {
-  const plan = planAutoDispatch(state);
-  if (!plan) {
-    emit(state, "autoIdle", logText(state, "autoIdle"));
-    return false;
+  let sent = 0;
+  for (;;) {
+    const plan = planAutoDispatch(state);
+    if (!plan) break;
+    const result = startRun(state, plan.dungeon.id, plan.party.map((s) => s.id));
+    if (!result.ok) break;
+    sent += 1;
   }
-  return startRun(
-    state,
-    plan.dungeon.id,
-    plan.party.map((s) => s.id)
-  ).ok;
+  if (sent === 0) emit(state, "autoIdle", logText(state, "autoIdle"));
+  return sent;
 }
 
-/** 遊戲主迴圈的「一步」：副本中就走一個房間，否則主神空間過一個時段 */
+/** 遊戲主迴圈的「一步」= 主神空間與所有副本同步前進一個時段：先走各副本該走的房間，再推進時間，再結算結束的副本 */
 export function step(state) {
   if (state.gameOver) return;
-  if (state.run) {
-    stepRun(state);
-  } else {
-    advanceTick(state);
-    const isDispatchTick = state.tick % CONFIG.ticksPerDay === CONFIG.auto.dispatchAtTick;
-    if (state.settings.autoDispatch && isDispatchTick) tryAutoDispatch(state);
-  }
+  stepDueRooms(state);
+  advanceTick(state);
+  settleRuns(state);
+  const isDispatchTick = state.tick % CONFIG.ticksPerDay === CONFIG.auto.dispatchAtTick;
+  if (state.settings.autoDispatch && isDispatchTick) tryAutoDispatch(state);
   checkGameOver(state);
 }

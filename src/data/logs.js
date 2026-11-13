@@ -94,6 +94,10 @@ export const LOGS = {
     "🚪 傳送門一閃，{names} 消失在白光裡，目的地：【{dungeon}】（總戰力 {power} / 推薦 {rec}）。",
     "🚪 {names} 踏進了【{dungeon}】（總戰力 {power} / 推薦 {rec}）。主神：「祝你們好運。」",
   ],
+  runParallel: [
+    "🧭 目前共有 {n} 場副本同時進行（最新開的是【{dungeon}】）。",
+    "🧭 主神的傳送門同時開了 {n} 道，最新一道通往【{dungeon}】。",
+  ],
   env: [
     "🌐 環境：【{env}】{desc}",
     "🌐 這次的副本環境是【{env}】。{desc}",

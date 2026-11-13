@@ -45,10 +45,10 @@
 | `src/engine/relations.js` | 關係矩陣、每日互動、告白／戀人／靈魂伴侶／死敵、借刀殺人、直接殺人與主神懲罰、死亡連鎖、副本內內鬥／背刺／擋刀 |
 | `src/engine/core.js` | 狀態、輪迴者、維持費、傷勢、高利貸、回收爐、抽卡、時間 tick、存檔、遊戲結束判定；`spend()` 累積花費並宣布商店解鎖、`shopTier()` 算階層 |
 | `src/engine/shop.js` | 商店引擎：`buyItem`／`checkBuy`（強化、裝備、藥水）、`nextTierInfo`；`collectionEffects`／`collectionPassBonus`（副本特殊獎勵的效果） |
-| `src/engine/dungeon.js` | 副本結算（5 個房間、成功率公式、通關機率）；掛鉤 `relationBonus` / `tagBonus`（含收藏加成）/ `rewardMultiplier`（含收藏加成）；首通掉特殊獎勵 id 進 `state.collection` |
-| `src/engine/dispatch.js` | 自動派遣、主迴圈一步 `step()`；含 `areEnemies()` 掛鉤 |
+| `src/engine/dungeon.js` | 副本結算（5 個房間、成功率公式、通關機率）；並行副本：`startRun` 往 `state.runs` 加一場，`stepDueRooms`／`settleRuns` 依開場順序走房間／結算，結算摘要進 `state.runReports` 排隊；首通在結算時判定；掛鉤 `relationBonus` / `tagBonus`（含收藏加成）/ `rewardMultiplier`（含收藏加成）；首通掉特殊獎勵 id 進 `state.collection` |
+| `src/engine/dispatch.js` | 自動派遣（`tryAutoDispatch` 一次排多隊，直到人手用完）、主迴圈一步 `step()`（走各副本該走的房間 → 時間 +1 → 結算）；含 `areEnemies()` 掛鉤 |
 | `src/ui/main.js` | 畫面層，DOM 操作、CSS transition 滑動、emoji 顯示；含商店面板 |
-| `test/` | 測試檔案（Node.js）：`engine`、`relations`、`templates`、`shop`、`wishes` |
+| `test/` | 測試檔案（Node.js）：`engine`、`relations`、`templates`、`shop`、`wishes`、`parallel`（並行副本） |
 | `README.md` | 專案說明 + 待確認的設計問題 |
 | `docs/GAME_DESIGN_PLAN.md` | 完整遊戲設計計畫 |
 | `server.mjs` | 本機預覽用迷你伺服器（`npm start` → http://localhost:5173） |
@@ -72,7 +72,7 @@
 
 - **遊戲類型**：養成管理模擬器，不是回合制、不是動作遊戲。時間自動跑，玩家看小人、做管理決策。
 - **沒有強制下副本期限**：玩家自己決定要不要派人去，壓力來自每日維持費跟主神無聊搞事。
-- **一場副本 = 主神空間 1 天**：副本 5 個房間，每個房間算 0.2 天。進副本時主神空間暫停。
+- **一場副本 = 主神空間 1 天**：副本 5 個房間，每個房間 `roomTicks` 個時段（0.2 天）。主神空間與所有副本同步前進（`step()` 一步 = 1 個時段），可同時多場（含同一副本），不同隊不能有同一個人；副本中的人不扣維持費、不參與日常／關係／許願事件。同副本多場：成功率與傷勢表鎖定開場時的首次開荒／重打，首通與獎勵遞減在結算時依序計算（先結算的吃首通）。全滅的副本也要等時間到才結算。
 - **成功率公式**：房間通過率 =（小隊總戰力 / 副本推薦戰力）× 50% + 標籤與環境相性 + 情報修正（首次開荒 -10%、重打 +5%）；關係加成 `relationBonus`（喜歡+10%、愛慕+20%、討厭-10%、仇恨-20%、靈魂伴侶+30%、死敵-25%，全隊上限 ±30%）。5 間通過 3 間以上算通關。
 - **傷勢三級**：輕傷（休息 1 天）、重傷（3 天）、致命傷（7 天）。帶傷出征死亡率上升。
 - **每日維持費**：基礎 10 分 + 階級加成（C+0、B+5、A+10、S+20）+ 傷勢加成（輕傷+5、重傷+15、致命傷+30）。只有待在主神空間才扣，副本裡不扣。
@@ -89,12 +89,12 @@
 npm test
 ```
 
-75 項測試都要通過。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
+85 項測試都要通過。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
 
 ## 不可違反的規則
 
 1. 這是獨立專案，與舊 AI-TRPG 專案無關；舊專案的規則（六維十技能、Prompt 快取契約等）不適用。
-2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，75 項都要通過。
+2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，85 項都要通過。
 3. 所有可調數字都要放在 `src/data/config.js`，不要寫死在引擎裡。
 4. 引擎不要碰 DOM，畫面邏輯不要寫進引擎。
 5. 機密（Token、金鑰）永遠不能進 git。
@@ -104,7 +104,7 @@ npm test
 - 推上 `main` ＝ 自動部署到 Cloudflare Pages，合併前先確認測試都過。
 - 儲存庫：`ZhuShen-Sim`，子網域待定。
 - Cloudflare Pages 設定：Framework preset 選 None、Build command 留空、Build output directory 填 `/`。
-- 部署前確認 `npm test` 75 項全過。
+- 部署前確認 `npm test` 85 項全過。
 
 ## 開發階段（現在不要做，除非我明確要求）
 
@@ -120,8 +120,10 @@ npm test
 
 **Phase 3-B（已完成）**：許願系統。輪迴者在每日「特殊事件」骰中以 `CONFIG.wish.chance` 機率許願，自動暫停（暫停事件 `wish`，預設開）並彈窗答應／拒絕；4 種許願（吃好的花積分、放假 N 天不能派遣、想去副本通關、想要商店裝備），每人同時最多 1 個，超時算失敗。完成 → 高興（每人通過率 +5%，上限 15%）；拒絕／超時／副本沒通關 → 不爽（戰力 -10%、理智 -10），皆持續 5 天。心情掛在 `s.mood`，不是標籤。許願人死了或被回收就取消。「想去副本」目前只選推薦戰力 ≤ `dungeonPowerCap` 的副本，且照單一副本設計（日後若改成多隊並行副本要重看 `wishesAfterRun`）。
 
+**Phase 3-C（已完成）**：並行副本。`state.run` → `state.runs` 陣列（舊存檔單一 `run` 在 `deserialize` 遷移）；每場有 `id`、`startTick`、隊伍、環境標籤。畫面：主神空間不變，右側「進行中副本」卡片清單（`#run-list`），結算視窗用 `state.runReports` 排隊（一次彈一個，沿用 `runEnd` 暫停事件）。自動派遣一次排多隊。`wishesAfterRun` 本來就依單場的副本／出征名單判斷，並行下仍正確（`test/parallel.test.js` 有驗證）。`#dungeon-view` 與 `.route-*` 樣式保留給下一階段（視角鎖定）使用，目前不顯示。
+
 **Phase 3（還沒做）**：狗血擴充 — 生小孩、員工合同、主神搞事（3-C～3-D）；商店的血統／瞳術／技藝／技能。
-**構想（尚未排入）**：同時派多個副本（手動＋自動）、視角鎖定某個輪迴者並跟隨下副本；會動到「一場副本 = 1 天、進副本時主神空間暫停」的核心設計，需另開新聊天室討論。
+**構想（下一個聊天室）**：視角鎖定某個輪迴者並跟隨下副本（只改 `src/ui/`）。
 
 **不做**：複雜動畫、音效、背景音樂（MVP 先不要）。
 
