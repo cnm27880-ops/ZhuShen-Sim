@@ -1,33 +1,55 @@
 // 副本：成功率公式、逐房間檢定、傷亡、結算。
 // 公式（計畫第 5.8 節）：
-//   房間通過率 = (小隊總戰力 / 副本推薦戰力) × 70% + 關係加成 + 標籤與環境相性
+//   房間通過率 = (小隊總戰力 / 副本推薦戰力) × 50% + 關係加成 + 標籤與環境相性
+//   （另外：首次開荒 -10%、重打有情報 +5%；賭徒型標籤每房間再隨機浮動）
 
 import { CONFIG, INJURIES } from "../data/config.js";
 import { getDungeon } from "../data/dungeons.js";
+import { ENV_TAGS, getEnvTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
+import { effectivePower, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf } from "./tags.js";
 import { emit, advanceTick, setInjury, killSamsarite, checkGameOver } from "./core.js";
 
-// ── Phase 2 的掛鉤（hook）：現在一律回傳 0 / 1，之後在這裡接上關係、標籤、獎勵遞減 ──
+// ── 掛鉤（hook）：關係系統還沒做，relationBonus 先回傳 0（Phase 2 後半接上） ──
 export function relationBonus(_state, _party) {
   return 0;
 }
-export function tagBonus(_state, _party, _dungeon) {
-  return 0;
+
+/** 標籤與環境相性：標籤加成（含類型、環境相性）+ 環境本身的修正 */
+export function tagBonus(_state, party, dungeon, env = null) {
+  return tagPassBonus(party, dungeon, env) + (env?.passMod ?? 0);
 }
-export function rewardMultiplier(_state, _dungeon) {
-  return 1;
+
+/** 副本情報：通關過一次就有情報（重打 +5%）；沒通關過就是首次開荒（-10%） */
+export function hasIntel(state, dungeon) {
+  return (state.dungeonStats[dungeon.id]?.clears ?? 0) > 0;
+}
+export function intelBonus(state, dungeon) {
+  return hasIntel(state, dungeon) ? CONFIG.dungeon.replayBonus : -CONFIG.dungeon.firstClearPenalty;
+}
+
+/** 這一次通關的獎勵倍率（獎勵遞減 × 標籤加成 × 環境倍率）。不含首次開荒的固定加分 */
+export function rewardTierMult(state, dungeon) {
+  const nth = (state.dungeonStats[dungeon.id]?.clears ?? 0) + 1; // 這是第幾次通關
+  return CONFIG.dungeon.rewardTiers.find((t) => nth <= t.upTo).mult;
+}
+export function rewardMultiplier(state, dungeon, party = [], env = null) {
+  return rewardTierMult(state, dungeon) * (1 + tagRewardPct(party)) * (env?.rewardMult ?? 1);
 }
 
 export function partyPower(party) {
-  return party.reduce((sum, s) => sum + s.stats.power, 0);
+  return party.reduce((sum, s) => sum + effectivePower(s), 0);
 }
 
-export function roomPassRate(state, party, dungeon) {
+/** env：本次副本的環境標籤（規劃自動派遣時還沒抽，傳 null）；swing：標籤的隨機浮動 */
+export function roomPassRate(state, party, dungeon, env = null, swing = 0) {
   if (party.length === 0) return 0;
   const raw =
     (partyPower(party) / dungeon.recommendedPower) * CONFIG.dungeon.basePassRate +
     relationBonus(state, party) +
-    tagBonus(state, party, dungeon);
+    tagBonus(state, party, dungeon, env) +
+    intelBonus(state, dungeon) +
+    swing;
   return Math.min(CONFIG.dungeon.maxPassRate, Math.max(CONFIG.dungeon.minPassRate, raw));
 }
 
@@ -44,8 +66,8 @@ export function chanceAtLeast(n, k, p) {
 }
 
 /** 預估通關率（不考慮中途有人死掉導致戰力下降，所以是樂觀估計） */
-export function clearChance(state, party, dungeon) {
-  const p = roomPassRate(state, party, dungeon);
+export function clearChance(state, party, dungeon, env = null) {
+  const p = roomPassRate(state, party, dungeon, env);
   return chanceAtLeast(CONFIG.dungeon.rooms, CONFIG.dungeon.roomsToClear, p);
 }
 
@@ -73,12 +95,16 @@ export function startRun(state, dungeonId, partyIds) {
   const stats = (state.dungeonStats[dungeonId] ??= { attempts: 0, clears: 0 });
   stats.attempts += 1;
 
-  state.run = { dungeonId, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
+  const env = pick(state, ENV_TAGS); // 每次進副本隨機抽一個環境標籤
+  const firstTime = !hasIntel(state, dungeon);
+  state.run = { dungeonId, envId: env.id, firstTime, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
   emit(
     state,
     "runStart",
     `🚪 ${party.map((s) => s.name).join("、")} 被傳送進【${dungeon.name}】（總戰力 ${partyPower(party)} / 推薦 ${dungeon.recommendedPower}）。`
   );
+  emit(state, "env", `🌐 環境：【${env.name}】${env.desc}`);
+  if (firstTime) emit(state, "intel", "🗺️ 首次開荒：沒有任何情報，成功率較低、傷勢會更重。");
   return { ok: true };
 }
 
@@ -89,7 +115,8 @@ export function stepRun(state) {
   const dungeon = getDungeon(run.dungeonId);
   const room = dungeon.rooms[run.roomIndex];
   const party = partyOf(state);
-  const passed = rand(state) < roomPassRate(state, party, dungeon);
+  const env = getEnvTag(run.envId) ?? null;
+  const passed = rand(state) < roomPassRate(state, party, dungeon, env, tagSwing(state, party));
   const progress = `[${(run.roomIndex + 1) * 20}%・${room.name}]`;
 
   if (passed) {
@@ -115,7 +142,15 @@ export function stepRun(state) {
 function hurt(state, run, victim, dungeon) {
   // 帶傷出征的人被打中時，先擲一次「直接死亡」（輕傷 20% / 重傷 50% / 致命傷 80%）
   const deathBonus = INJURIES[run.enteredInjury[victim.id]].deathBonus;
-  const gained = weighted(state, CONFIG.dungeon.injuryRoll).levels;
+  if (rand(state) < dodgeOf(victim)) {
+    emit(state, "dodge", `💨 ${victim.name} 千鈞一髮閃開了，毫髮無傷。`);
+    return;
+  }
+  const table = run.firstTime ? CONFIG.dungeon.firstClearInjuryRoll : CONFIG.dungeon.injuryRoll;
+  let gained = weighted(state, table).levels;
+  const shield = injuryShieldOf(victim);
+  if (shield > 0 && rand(state) < shield) gained = Math.max(1, gained - 1);
+  else if (shield < 0 && rand(state) < -shield) gained += 1;
   const newLevel = victim.injury + gained;
 
   if ((deathBonus > 0 && rand(state) < deathBonus) || newLevel >= INJURIES.length) {
@@ -134,9 +169,16 @@ function finishRun(state) {
   const passedCount = run.results.filter(Boolean).length;
   const success = survivors.length > 0 && passedCount >= CONFIG.dungeon.roomsToClear;
   let reward = 0;
+  let specialReward = null;
 
   if (success) {
-    reward = Math.round(dungeon.reward * rewardMultiplier(state, dungeon));
+    const env = getEnvTag(run.envId) ?? null;
+    reward = Math.round(dungeon.reward * rewardMultiplier(state, dungeon, survivors, env));
+    if (run.firstTime) {
+      reward += CONFIG.dungeon.firstClearBonus;
+      specialReward = pick(state, dungeon.specialRewards ?? ["神秘戰利品"]);
+      state.collection.push(specialReward);
+    }
     state.points += reward;
     state.dungeonStats[run.dungeonId].clears += 1;
   } else {
@@ -150,6 +192,9 @@ function finishRun(state) {
     dungeonName: dungeon.name,
     success,
     reward,
+    firstClear: success && run.firstTime,
+    specialReward,
+    envName: getEnvTag(run.envId)?.name ?? null,
     passedCount,
     results: run.results,
     deaths: run.deaths,
@@ -158,7 +203,7 @@ function finishRun(state) {
   state.run = null;
 
   const text = success
-    ? `🏆 【${dungeon.name}】通關（${passedCount}/${CONFIG.dungeon.rooms} 房間），+${reward} 分。`
+    ? `🏆 【${dungeon.name}】${run.firstTime ? "首次通關" : "通關"}（${passedCount}/${CONFIG.dungeon.rooms} 房間），+${reward} 分。${specialReward ? `\n🎁 首通特殊獎勵：【${specialReward}】（已收入收藏，效果 Phase 3 開放）` : ""}`
     : survivors.length > 0
       ? `💀 【${dungeon.name}】失敗（只通過 ${passedCount}/${CONFIG.dungeon.rooms} 房間），倖存者全員帶傷逃回。`
       : `💀 【${dungeon.name}】全滅。沒有人回來。`;

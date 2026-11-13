@@ -4,6 +4,7 @@
 import { CONFIG, RANKS, INJURIES, GACHA_POOLS, PAUSE_EVENTS } from "../data/config.js";
 import { SURNAMES, GIVEN_NAMES } from "../data/names.js";
 import { rand, randInt, pick, weighted } from "./rng.js";
+import { rollTags } from "./tags.js";
 
 // ───────── 事件與日誌 ─────────
 
@@ -34,7 +35,8 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     nextId: 1,
     samsarites: [],
     graveyard: [],
-    dungeonStats: {}, // { 副本id: { attempts, clears } }
+    dungeonStats: {}, // { 副本id: { attempts, clears } }；clears > 0 代表已有該副本情報
+    collection: [], // 副本特殊獎勵（血統／術法／義體…），目前只收集，Phase 3 才有效果
     run: null, // 進行中的副本
     lastRun: null, // 上一場副本的結算摘要
     gameOver: false,
@@ -77,7 +79,7 @@ export function createSamsarite(state, rank) {
     restDaysLeft: 0,
     locked: false, // 🔒 鎖定後不參與自動派遣
     location: "space", // "space" 主神空間 / "dungeon" 副本中
-    tags: [], // Phase 2 才會填
+    tags: rollTags(state), // 標籤 id 陣列，資料在 src/data/tags.js
     joinedDay: currentDay(state),
     runs: 0,
   };
@@ -227,6 +229,7 @@ export function deserialize(json) {
   const state = JSON.parse(json);
   if (state.version !== 1) throw new Error("存檔版本不符");
   state.events = [];
+  state.collection ??= []; // 舊存檔沒有這個欄位
   // 之後新增的暫停事件種類，舊存檔沒有就補上預設值
   for (const [key, def] of Object.entries(PAUSE_EVENTS)) {
     if (!(key in state.settings.pauseOn)) state.settings.pauseOn[key] = def.default;

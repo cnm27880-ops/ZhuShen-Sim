@@ -14,7 +14,9 @@ import {
   serialize,
   deserialize,
 } from "../engine/core.js";
-import { roomPassRate, clearChance, partyPower, startRun } from "../engine/dungeon.js";
+import { roomPassRate, clearChance, partyPower, startRun, hasIntel, rewardTierMult } from "../engine/dungeon.js";
+import { effectivePower } from "../engine/tags.js";
+import { getTag } from "../data/tags.js";
 import { step } from "../engine/dispatch.js";
 
 const SAVE_KEY = "zhushen-sim-save-v1";
@@ -248,6 +250,14 @@ function rankBadge(rank) {
   return `<span class="rank rank-${rank}">${rank}</span>`;
 }
 
+function tagChips(s) {
+  return (s.tags ?? [])
+    .map(getTag)
+    .filter(Boolean)
+    .map((t) => `<span class="tag-chip tag-${t.rarity}" title="${t.desc}">${t.name}</span>`)
+    .join("");
+}
+
 function renderRoster() {
   if (state.samsarites.length === 0) {
     $("roster").innerHTML = `<div class="empty">你手下一個輪迴者都沒有了。去抽卡吧。</div>`;
@@ -258,7 +268,8 @@ function renderRoster() {
       (s) => `
       <div class="card rank-border-${s.rank} ${s.location === "dungeon" ? "away" : ""}" data-action="open-detail" data-id="${s.id}">
         <div class="card-top">${rankBadge(s.rank)}<span class="grow">${s.name}</span><span>${s.locked ? "🔒" : ""}</span></div>
-        <div class="card-meta"><span>⚔️ ${s.stats.power}</span><span>🧠 ${s.stats.sanity}</span><span>💸 ${upkeepOf(s)}/天</span></div>
+        <div class="card-meta"><span>⚔️ ${effectivePower(s)}</span><span>🧠 ${s.stats.sanity}</span><span>💸 ${upkeepOf(s)}/天</span></div>
+        <div class="tags">${tagChips(s)}</div>
         <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
         <div class="card-status">${s.location === "dungeon" ? "🚪 副本中" : injuryLabel(s)}</div>
       </div>`
@@ -301,7 +312,7 @@ function dispatch() {
     return `<div class="option ${d.id === dungeon.id ? "selected" : ""}" data-action="pick-dungeon" data-id="${d.id}">
       <span class="option-icon">${d.icon}</span>
       <span class="grow"><b>${d.name}</b> <small>${d.genre}・${d.difficulty}</small><br /><small>${d.intro}</small></span>
-      <small>推薦戰力 ${d.recommendedPower}<br />獎勵 ${d.reward} 分<br />通關 ${st.clears}/${st.attempts}</small>
+      <small>推薦戰力 ${d.recommendedPower}<br />獎勵 ${d.reward} 分 ×${rewardTierMult(state, d)}${hasIntel(state, d) ? "" : "（首通 +" + CONFIG.dungeon.firstClearBonus + "）"}<br />${hasIntel(state, d) ? "🗺️ 有情報" : "❓ 首次開荒"}・通關 ${st.clears}/${st.attempts}</small>
     </div>`;
   }).join("");
 
@@ -310,7 +321,7 @@ function dispatch() {
         .map(
           (s) => `<div class="option ${dispatchPick.party.has(s.id) ? "selected" : ""}" data-action="toggle-member" data-id="${s.id}">
             ${rankBadge(s.rank)}<span class="grow">${s.name} ${s.locked ? "🔒" : ""}</span>
-            <small>戰力 ${s.stats.power}・${injuryLabel(s)}</small>
+            <small>戰力 ${effectivePower(s)}・${injuryLabel(s)}</small>
           </div>`
         )
         .join("")
@@ -323,7 +334,10 @@ function dispatch() {
     const cls = chance >= 75 ? "good" : chance >= 50 ? "warn" : "bad";
     summary = `小隊總戰力 <b>${partyPower(party)}</b> / 推薦 ${dungeon.recommendedPower}<br />
       每個房間通過率 <b>${rate}%</b>，${CONFIG.dungeon.rooms} 個房間通過 ${CONFIG.dungeon.roomsToClear} 個以上才算通關<br />
-      預估通關率 <b class="${cls}">${chance}%</b>`;
+      預估通關率 <b class="${cls}">${chance}%</b>（進副本時才會抽環境標籤，實際會再浮動）`;
+    if (!hasIntel(state, dungeon)) {
+      summary += `<br /><span class="warn">❓ 首次開荒：沒有情報，通過率 -${Math.round(CONFIG.dungeon.firstClearPenalty * 100)}%、傷勢更重；首通有額外 ${CONFIG.dungeon.firstClearBonus} 分與特殊獎勵。</span>`;
+    }
     if (injured.length > 0) {
       summary += `<br /><span class="bad">⚠ 帶傷出征：${injured
         .map((s) => `${s.name}（被打中時 ${Math.round(INJURIES[s.injury].deathBonus * 100)}% 直接死亡）`)
@@ -370,14 +384,18 @@ function detail() {
     <table class="stats">
       <tr><td>狀態</td><td>${home ? "主神空間" : "副本中"}・${injuryLabel(s)}</td></tr>
       <tr><td>生命</td><td>${s.stats.hp}</td></tr>
-      <tr><td>戰力</td><td>${s.stats.power}</td></tr>
+      <tr><td>戰力</td><td>${effectivePower(s)}（基礎 ${s.stats.power}，標籤加成後）</td></tr>
       <tr><td>防禦</td><td>${s.stats.defense}</td></tr>
       <tr><td>速度</td><td>${s.stats.speed}</td></tr>
       <tr><td>理智</td><td>${s.stats.sanity}</td></tr>
       <tr><td>運氣</td><td>${s.stats.luck}</td></tr>
       <tr><td>維持費</td><td>${upkeepOf(s)} 分 / 天（基礎 ${CONFIG.upkeepBase} + 階級 ${RANKS[s.rank].upkeep} + 傷勢 ${INJURIES[s.injury].upkeep}）</td></tr>
       <tr><td>資歷</td><td>第 ${s.joinedDay} 天加入・出征 ${s.runs} 次</td></tr>
-      <tr><td>標籤</td><td>（Phase 2 開放）</td></tr>
+      <tr><td>標籤</td><td>${(s.tags ?? [])
+        .map(getTag)
+        .filter(Boolean)
+        .map((t) => `<div><span class="tag-chip tag-${t.rarity}">${t.rarity}・${t.name}</span> <small>${t.desc}${t.pending ? `<br /><i>（${t.pending}）</i>` : ""}</small></div>`)
+        .join("")}</td></tr>
     </table>
     <div class="modal-actions">
       <button class="danger" data-action="ask-recycle" data-id="${s.id}" ${home ? "" : "disabled"}>♻️ 推進回收爐（+${CONFIG.recycle.points} 分）</button>
@@ -427,7 +445,8 @@ function runResult() {
   return `<h3>${r.success ? "🏆 通關" : "💀 失敗"}：${r.dungeonName}</h3>
     <div class="summary">
       <span class="result-rooms">${rooms}</span><br />房間通過 ${r.passedCount}/${CONFIG.dungeon.rooms}<br />
-      獎勵：<b class="${r.success ? "good" : "bad"}">+${r.reward} 分</b><br />
+      ${r.envName ? `環境：${r.envName}<br />` : ""}獎勵：<b class="${r.success ? "good" : "bad"}">+${r.reward} 分</b>${r.firstClear ? "（含首通 +" + CONFIG.dungeon.firstClearBonus + "）" : ""}<br />
+      ${r.specialReward ? `🎁 特殊獎勵：<b class="good">${r.specialReward}</b>（已收入收藏）<br />` : ""}
       生還：${survivors}<br />
       死亡：<span class="${r.deaths.length ? "bad" : ""}">${r.deaths.length ? r.deaths.join("、") : "無"}</span>
     </div>

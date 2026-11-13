@@ -26,7 +26,7 @@ export const CONFIG = {
   dungeon: {
     rooms: 5,
     roomsToClear: 3, // 5 個房間要通過幾個才算通關（計畫寫法有歧義，見 README「待確認」）
-    basePassRate: 0.7,
+    basePassRate: 0.5, // 計畫書 5.8：戰力剛好等於推薦戰力時，單房通過率只有 50%
     minPassRate: 0.05,
     maxPassRate: 0.95,
     // 房間失敗時，受害者傷勢「加重幾級」的機率權重（計畫只寫「隨機決定」）
@@ -35,6 +35,34 @@ export const CONFIG = {
       { levels: 2, weight: 27 },
       { levels: 3, weight: 8 },
     ],
+    // 首次開荒（還沒通關過、沒有情報）：通過率扣分、受傷更重（計畫 5.6，數字為建議值）
+    firstClearPenalty: 0.1,
+    firstClearInjuryRoll: [
+      { levels: 1, weight: 45 },
+      { levels: 2, weight: 38 },
+      { levels: 3, weight: 17 },
+    ],
+    firstClearBonus: 50, // 首次通關額外 +50 分
+    replayBonus: 0.05, // 重打已通關副本（有情報）通過率 +5%（計畫 5.5）
+    // 獎勵遞減（計畫 5.7）：用「這是第幾次通關」查表，從上往下第一個符合的生效
+    rewardTiers: [
+      { upTo: 1, mult: 1.0 }, // 首次通關：基礎值（另外加 firstClearBonus）
+      { upTo: 3, mult: 1.2 },
+      { upTo: 5, mult: 1.0 },
+      { upTo: 10, mult: 0.8 },
+      { upTo: Infinity, mult: 0.6 }, // 地板價
+    ],
+  },
+
+  // ── 標籤（Phase 2）──
+  tags: {
+    tagBonusCap: 0.3, // 全隊標籤對「單房通過率」的加減上限（避免標籤疊太高）
+    // 新輪迴者的標籤數量：基礎數值標籤 2 個 + 性格機制標籤 1~2 個 + 靈魂核心標籤 1 個
+    statCount: 2,
+    traitCount: [1, 2],
+    // 稀有度抽選權重（計畫 4.2；MVP 沒有 UR 標籤，抽不到就自動略過）
+    rarityWeights: { N: 45, R: 30, SR: 15, SSR: 8, UR: 2 },
+    injuryShieldMax: 0.9, // 傷勢減免機率上限
   },
 
   // ── 自動派遣 ──
