@@ -19,6 +19,17 @@
 
 ## 二、Cloudflare：建資料庫
 
+> 如果你在 2026-11-14 這個版本之前就已經執行過舊版 `schema.sql`，`scores` 表缺少新欄位，要在主控台另外執行：
+> ```sql
+> ALTER TABLE scores ADD COLUMN best_power INTEGER NOT NULL DEFAULT 0;
+> ALTER TABLE scores ADD COLUMN best_power_name TEXT NOT NULL DEFAULT '';
+> ALTER TABLE scores ADD COLUMN longest_life INTEGER NOT NULL DEFAULT 0;
+> ALTER TABLE scores ADD COLUMN longest_life_name TEXT NOT NULL DEFAULT '';
+> CREATE INDEX IF NOT EXISTS idx_scores_power ON scores(best_power DESC);
+> CREATE INDEX IF NOT EXISTS idx_scores_life ON scores(longest_life DESC);
+> ```
+> 還沒執行過的人直接貼整份 `schema.sql` 就好。
+
 1. Cloudflare 後台 → 左側「儲存空間與資料庫」→ D1 SQL 資料庫 →「建立資料庫」（需驗證）。
 2. 名稱填 `zhushen-sim`，建立。
 3. 進入這個資料庫 →「主控台 (Console)」分頁，把 `worker/schema.sql` 的內容**整份貼進去**執行。成功後左邊會看到 5 張表：`users`、`sessions`、`saves`、`scores`、`rank_snap`。
@@ -59,9 +70,9 @@
 | `POST /api/logout` | 登出 |
 | `GET /api/save`、`GET /api/save?meta=1` | 讀雲端存檔／只讀版本號 |
 | `PUT /api/save` | 寫存檔，`{data, baseUpdatedAt, force?}`；版本對不上回 409 |
-| `PUT /api/score` | 更新成績，`{score, level, roster, clears}`，只增不減，30 秒內不能重送 |
+| `PUT /api/score` | 更新成績，`{score, level, roster, clears, power, powerName, life, lifeName}`，每項只增不減，30 秒內不能重送。`power`／`powerName` = 歷來最強輪迴者的戰力與名字；`life`／`lifeName` = 歷來最長壽輪迴者的存活天數與名字 |
 | `PUT /api/settings` | `{hidden: true}` = 不上排行榜 |
-| `GET /api/leaderboard?board=score\|level\|clears` | 前 20 名＋自己的名次＋相對昨天的升降 |
+| `GET /api/leaderboard?board=score\|level\|clears\|power\|life` | 五個榜單（總積分、空間等級、副本通關數、最強輪迴者、最長壽輪迴者）：前 20 名＋自己的名次＋相對昨天的升降 |
 
 ## 已知限制
 

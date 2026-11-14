@@ -31,6 +31,9 @@ function fakeD1() {
   return { prepare: (sql) => stmt(sql), batch: async (list) => { for (const s of list) await s.run(); } };
 }
 
+/** 成績的完整內容（測試只想改其中幾項時用） */
+const sc = (o) => ({ score: 0, level: 1, roster: 1, clears: 0, power: 10, powerName: "阿角", life: 5, lifeName: "阿角", ...o });
+
 const idToken = (claims) => `x.${b64url(new TextEncoder().encode(JSON.stringify(claims)))}.y`;
 
 /** 一個假世界：假 Google（回傳指定使用者）＋可調的時鐘 */
@@ -144,9 +147,12 @@ test("雲端存檔：太大、不是 JSON 都拒絕；每人只能碰自己的",
 });
 
 test("成績檢查：不合理的數字拒絕", () => {
-  const ok = { score: 100, level: 2, roster: 5, clears: 3 };
+  const ok = sc({ score: 100, level: 2, roster: 5, clears: 3 });
   assert.deepEqual(cleanScore(ok), ok);
-  for (const bad of [{ ...ok, score: -1 }, { ...ok, level: 6 }, { ...ok, level: 0 }, { ...ok, roster: 1.5 }, { ...ok, clears: 999 }, { ...ok, score: "9" }, null]) assert.equal(cleanScore(bad), null);
+  for (const bad of [{ ...ok, score: -1 }, { ...ok, level: 6 }, { ...ok, level: 0 }, { ...ok, roster: 1.5 }, { ...ok, clears: 999 }, { ...ok, score: "9" }, { ...ok, power: -5 }, { ...ok, life: 1e9 }, { ...ok, powerName: 123 }, { ...ok, power: undefined }, null]) assert.equal(cleanScore(bad), null);
+  // 輪迴者名字：拿掉控制字元與 < >、限制長度
+  const dirty = cleanScore({ ...ok, powerName: "<b>阿\n角</b>" + "長".repeat(40) });
+  assert.ok(!/[<>\n]/.test(dirty.powerName) && dirty.powerName.length <= 20);
 });
 
 test("排行榜：只增不減、太頻繁拒絕、名次與自己的名次、隱藏、不重複", { skip }, async () => {
@@ -155,13 +161,13 @@ test("排行榜：只增不減、太頻繁拒絕、名次與自己的名次、�
   const cookies = {};
   for (const [sub, name, score] of users) {
     cookies[sub] = await w.login({ sub, name, picture: null });
-    assert.equal((await w.call("PUT", "/api/score", { cookie: cookies[sub], body: { score, level: 1, roster: 3, clears: 1 } })).status, 200);
+    assert.equal((await w.call("PUT", "/api/score", { cookie: cookies[sub], body: sc({ score, level: 1, roster: 3, clears: 1 }) })).status, 200);
   }
   // 更新太頻繁
-  assert.equal((await w.call("PUT", "/api/score", { cookie: cookies.u1, body: { score: 1, level: 1, roster: 1, clears: 0 } })).status, 429);
+  assert.equal((await w.call("PUT", "/api/score", { cookie: cookies.u1, body: sc({ score: 1, level: 1, roster: 1, clears: 0 }) })).status, 429);
   w.tick(31_000);
   // 分數變低不會蓋掉最佳紀錄
-  await w.call("PUT", "/api/score", { cookie: cookies.u1, body: { score: 50, level: 1, roster: 3, clears: 1 } });
+  await w.call("PUT", "/api/score", { cookie: cookies.u1, body: sc({ score: 50, level: 1, roster: 3, clears: 1 }) });
   const board = await (await w.call("GET", "/api/leaderboard?board=score", { cookie: cookies.u1 })).json();
   assert.deepEqual(board.entries.map((e) => [e.name, e.rank]), [["丙", 1], ["乙", 1], ["甲", 3], ["丁", 4]]); // 同分同名次
   assert.equal(board.me.rank, 3);
@@ -182,13 +188,33 @@ test("排行榜：隔天看得到名次上升／下降", { skip }, async () => {
   const w = world();
   const a = await w.login({ sub: "a", name: "A", picture: null });
   const b = await w.login({ sub: "b", name: "B", picture: null });
-  await w.call("PUT", "/api/score", { cookie: a, body: { score: 200, level: 1, roster: 1, clears: 0 } });
-  await w.call("PUT", "/api/score", { cookie: b, body: { score: 100, level: 1, roster: 1, clears: 0 } });
+  await w.call("PUT", "/api/score", { cookie: a, body: sc({ score: 200, level: 1, roster: 1, clears: 0 }) });
+  await w.call("PUT", "/api/score", { cookie: b, body: sc({ score: 100, level: 1, roster: 1, clears: 0 }) });
   const day1 = await (await w.call("GET", "/api/leaderboard?board=score", { cookie: b })).json();
   assert.equal(day1.entries[0].change, null); // 第一天沒有昨天可比
   w.tick(86400000 + 60_000);
-  await w.call("PUT", "/api/score", { cookie: b, body: { score: 300, level: 1, roster: 1, clears: 0 } });
+  await w.call("PUT", "/api/score", { cookie: b, body: sc({ score: 300, level: 1, roster: 1, clears: 0 }) });
   const day2 = await (await w.call("GET", "/api/leaderboard?board=score", { cookie: b })).json();
   assert.deepEqual(day2.entries.map((e) => [e.name, e.rank, e.change]), [["B", 1, 1], ["A", 2, -1]]);
   assert.equal(day2.me.change, 1);
+});
+
+test("最強／最長壽輪迴者榜：記錄名字、只增不減、名字跟著最高紀錄走", { skip }, async () => {
+  const w = world();
+  const a = await w.login({ sub: "a", name: "玩家A", picture: null });
+  const b = await w.login({ sub: "b", name: "玩家B", picture: null });
+  await w.call("PUT", "/api/score", { cookie: a, body: sc({ power: 500, powerName: "劍聖", life: 30, lifeName: "老兵" }) });
+  await w.call("PUT", "/api/score", { cookie: b, body: sc({ power: 900, powerName: "魔王", life: 10, lifeName: "新兵" }) });
+  w.tick(31_000);
+  // A 的新紀錄比舊的低：名字不能被換掉；壽命更長：名字換成新的
+  await w.call("PUT", "/api/score", { cookie: a, body: sc({ power: 100, powerName: "弱雞", life: 60, lifeName: "長老" }) });
+  const power = await (await w.call("GET", "/api/leaderboard?board=power", { cookie: a })).json();
+  assert.deepEqual(power.entries.map((e) => [e.name, e.powerName, e.power, e.rank]), [["玩家B", "魔王", 900, 1], ["玩家A", "劍聖", 500, 2]]);
+  assert.equal(power.me.rank, 2);
+  const life = await (await w.call("GET", "/api/leaderboard?board=life", { cookie: b })).json();
+  assert.deepEqual(life.entries.map((e) => [e.name, e.lifeName, e.life, e.rank]), [["玩家A", "長老", 60, 1], ["玩家B", "新兵", 10, 2]]);
+  assert.equal(life.me.rank, 2);
+  // 五個榜單名稱都能查；其他名稱 400
+  for (const board of ["score", "level", "clears", "power", "life"]) assert.equal((await w.call("GET", `/api/leaderboard?board=${board}`)).status, 200);
+  assert.equal((await w.call("GET", "/api/leaderboard?board=best_power")).status, 400);
 });

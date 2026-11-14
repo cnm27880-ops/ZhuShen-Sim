@@ -29,11 +29,17 @@ CREATE TABLE IF NOT EXISTS scores (
   level INTEGER NOT NULL DEFAULT 1,
   roster INTEGER NOT NULL DEFAULT 0,
   clears INTEGER NOT NULL DEFAULT 0,
+  best_power INTEGER NOT NULL DEFAULT 0,        -- 最強輪迴者：歷來最高的有效戰力
+  best_power_name TEXT NOT NULL DEFAULT '',
+  longest_life INTEGER NOT NULL DEFAULT 0,      -- 最長壽輪迴者：歷來最長的存活天數（還活著的算到今天）
+  longest_life_name TEXT NOT NULL DEFAULT '',
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_scores_score ON scores(score DESC);
 CREATE INDEX IF NOT EXISTS idx_scores_level ON scores(level DESC);
 CREATE INDEX IF NOT EXISTS idx_scores_clears ON scores(clears DESC);
+CREATE INDEX IF NOT EXISTS idx_scores_power ON scores(best_power DESC);
+CREATE INDEX IF NOT EXISTS idx_scores_life ON scores(longest_life DESC);
 
 -- 每日排名快照：算「比昨天上升／下降幾名」用
 CREATE TABLE IF NOT EXISTS rank_snap (
