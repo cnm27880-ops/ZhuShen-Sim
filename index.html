@@ -10,7 +10,11 @@
     <!-- 上面：積分、時間、速度控制、暫停 -->
     <header id="topbar">
       <div class="brand"><span class="brand-orb"></span><span>主神空間<small>主管終端 v0.1</small></span></div>
-      <div class="stat"><span class="stat-label">積分</span><span id="points" class="stat-value">0</span></div>
+      <div class="stat"><span class="stat-label">主神公庫</span><span id="points" class="stat-value">0</span></div>
+      <div class="stat" title="副本結算先抽稅入公庫，剩下由存活隊員平分成私房錢。稅率高：公庫肥但理智下降；稅率低：輪迴者有錢自己逛街、強化。">
+        <span class="stat-label">稅率</span>
+        <span class="tax-ctl"><button data-action="tax-down" title="降低稅率">−</button><span id="tax-rate" class="stat-value small">40%</span><button data-action="tax-up" title="提高稅率">＋</button></span>
+      </div>
       <div class="stat">
         <span class="stat-label" id="day-label">第 1 天</span>
         <div id="day-bar"><div id="day-bar-fill"></div></div>

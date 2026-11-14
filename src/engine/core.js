@@ -69,6 +69,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
     market: newMarketState(seed), // 8 格分槽黑市（含獨立亂數流 market.rngState；見 engine/market.js）
     aiShopRngState: (seed ^ 0x5b0b) | 0, // 輪迴者自主逛街的獨立亂數流（見 engine/shopping.js）
+    squad: { captainId: null, style: null }, // 預留（4-E 隊長與五大小隊流派，目前不實裝邏輯）
     board: newBoardState(), // 動態任務榜：3 個常規任務槽，每槽附帶 1 個突變詞綴（見 engine/board.js）
     relicCodex: [], // 奇物永久圖鑑（奇物 id；見 engine/relics.js，全隊戰力加成封頂 +25%）
     cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
@@ -140,6 +141,7 @@ export function createSamsarite(state, rank, rng = state) {
     wallet: 0, // 私房錢（4-D-1）：副本分潤進來，輪迴者自己逛街、強化用（見 engine/shopping.js）；戰死 50% 充公，回收 100% 歸公庫
     consumables: [], // 出征耗材緩衝區：商品 id 陣列，下次出發時全部套用成單場 runBuff（4-D-2）
     runBuff: null, // 單場 buff { injuryShield, defense, speed }，出征時由 consumables 轉成、回家清空
+    customProfile: null, // 預留（未來自訂姓名／頭像與分享卡片，目前不實裝邏輯）
     shopLog: [], // 最近的自主購買紀錄 [{ day, text }]（4-D-3，UI 查閱用）
     lockedInPodBy: null, // 被誰鎖進私人休眠艙（0 = 主管）；podLockDays 倒數，期間不能派遣、不能逛街（4-D-2 狗血黑貨）
     podLockDays: 0,
@@ -544,6 +546,7 @@ export function deserialize(json) {
   state.market.slots ??= [];
   state.aiShopRngState ??= (state.rngState ^ 0x5b0b) | 0;
   if (state.market.slots.length === 0) refreshMarket(state, { silent: true });
+  state.squad ??= { captainId: null, style: null }; // 預留欄位（4-E）
   state.board ??= newBoardState(); // Phase 4-D-4 之前的存檔沒有任務榜與奇物圖鑑
   state.board.slots ??= [];
   for (const slot of state.board.slots) slot.running = state.runs.some((r) => r.slotId === slot.id);
@@ -561,6 +564,7 @@ export function deserialize(json) {
     s.soulbound ??= {};
     s.consumables ??= [];
     s.shopLog ??= [];
+    s.customProfile ??= null;
     s.runBuff ??= null;
     s.lockedInPodBy ??= null;
     s.podLockDays ??= 0;

@@ -18,6 +18,10 @@ import {
   deserialize,
 } from "../engine/core.js";
 import { roomPassRate, clearChance, chanceAtLeast, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, bossGateInfo, roomCount, roomsToClear, dungeonOfRun } from "../engine/dungeon.js";
+import { boardTargets, boardOf } from "../engine/board.js";
+import { marketInfo, manualRefresh, lockSlot, buyMarketSlot, checkMarketBuy, intelFull } from "../engine/market.js";
+import { relicInfo } from "../engine/relics.js";
+import { setTaxRate, taxRateOf } from "../engine/wallet.js";
 import { steleBonusOf } from "../engine/memorial.js";
 import { MANDATORY_ID, pendingMandatory, buildMandatoryDungeon } from "../engine/mandatory.js";
 import {
@@ -32,8 +36,8 @@ import {
   geneTierOf,
 } from "../engine/growth.js";
 import { effectivePower, subStat, defenseChance, speedSaveChance } from "../engine/tags.js";
-import { shopTier, nextTierInfo, checkBuy, buyItem, collectionEffects } from "../engine/shop.js";
-import { SHOP_ITEMS, SHOP_KIND_LABELS, SHOP_SLOT_LABELS, getShopItem } from "../data/shop.js";
+import { shopTier, nextTierInfo, checkBuy, buyItem, collectionEffects, shopItemsOfTier } from "../engine/shop.js";
+import { SHOP_KIND_LABELS, SHOP_CATEGORY_LABELS, SHOP_SLOT_LABELS, getShopItem } from "../data/shopItems.js";
 import { getSpecialReward } from "../data/dungeons.js";
 import { getTag, getEnvTag } from "../data/tags.js";
 import { step, areEnemies } from "../engine/dispatch.js";
@@ -63,7 +67,7 @@ let timer = null;
 let modal = null; // 目前開著的彈出視窗：{ name, ...參數 }
 let bannerText = "";
 const minis = new Map(); // 輪迴者 id → { el, room }
-const dispatchPick = { dungeonId: DUNGEONS[0].id, party: new Set() };
+const dispatchPick = { dungeonId: null, slotId: null, party: new Set(), greedy: false }; // slotId：任務榜的槽（尾王／指定任務／強制任務為 null）
 let peekRunId = null; // 玩家點右側卡片、手動想看的那一場副本 id（只給畫面用，不存檔）
 let lastFollowRunId = null; // 上一次鎖定對象所在的副本 id，用來偵測他進／出副本
 
@@ -146,6 +150,7 @@ function render() {
 function renderTopbar() {
   $("points").textContent = state.points;
   $("points").classList.toggle("debt", state.points < 0);
+  $("tax-rate").textContent = `${Math.round(taxRateOf(state) * 100)}%`;
   $("day-label").textContent = `第 ${currentDay(state)} 天`;
   $("day-bar-fill").style.width = `${((state.tick % CONFIG.ticksPerDay) / CONFIG.ticksPerDay) * 100}%`;
   const upkeep = state.samsarites.filter((s) => s.location !== "dungeon").reduce((sum, s) => sum + upkeepOf(s, state), 0);
@@ -425,7 +430,7 @@ function renderRoster() {
       (s) => `
       <div class="card rank-border-${s.rank} ${s.location === "dungeon" ? "away" : s.location === "pod" ? "pod" : ""}" data-action="open-detail" data-id="${s.id}">
         <div class="card-top">${rankBadge(s.rank)}<span class="grow">${s.name}</span><span>${s.locked ? "🔒" : ""}</span><span class="follow-btn ${s.id === state.settings.followId ? "on" : ""}" data-action="toggle-follow" data-id="${s.id}" title="${s.id === state.settings.followId ? "取消鎖定視角" : "鎖定視角（他下副本時畫面跟著切）"}">👁</span></div>
-        <div class="card-meta"><span>⚔️ ${effectivePower(s)}</span><span>🧠 ${s.stats.sanity}</span><span>💸 ${upkeepOf(s, state)}/天</span></div>
+        <div class="card-meta"><span>⚔️ ${effectivePower(s)}</span><span>🧠 ${s.stats.sanity}</span><span>💸 ${upkeepOf(s, state)}/天</span><span title="私房錢">💰 ${s.wallet ?? 0}</span></div>
         <div class="tags">${tagChips(s)}</div>
         <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
         <div class="card-status">${locationLabel(s)}${statusExtras(s)}</div>
@@ -462,48 +467,94 @@ function dungeonById(id) {
   return id === MANDATORY_ID ? buildMandatoryDungeon(state) : getDungeon(id);
 }
 
+/** 主神突襲任務、許願「想去副本」指定的副本：不在任務榜上也要能派（不附突變詞綴） */
+function requestedDungeonIds() {
+  const ids = new Set();
+  const m = activeMission(state);
+  if (m?.dungeonId) ids.add(m.dungeonId);
+  for (const w of state.wishes ?? []) if (w.mode === "dungeon" && w.status === "active" && w.params?.dungeonId) ids.add(w.params.dungeonId);
+  return [...ids];
+}
+
 function dispatch() {
-  if (dispatchPick.dungeonId === MANDATORY_ID && !pendingMandatory(state)) dispatchPick.dungeonId = DUNGEONS[0].id; // 任務沒了（已派出或已逾時）
-  const dungeon = dungeonById(dispatchPick.dungeonId);
-  const isMand = Boolean(dungeon.mandatory);
+  const mand = pendingMandatory(state);
+  const targets = boardTargets(state); // 任務榜三個槽：{ slot, dungeon（已套 R 倍率）, mutation }
+  const bosses = DUNGEONS.filter((d) => d.boss && d.chapter <= state.spaceLevel + 1);
+  const extraIds = requestedDungeonIds().filter((id) => !targets.some((t) => t.slot.dungeonId === id));
+
+  // 選擇狀態：強制任務／任務榜槽（slotId）／尾王與指定副本（slotId = null）。目標消失就重選
+  let pickedTarget = dispatchPick.slotId != null ? targets.find((t) => t.slot.id === dispatchPick.slotId && !t.slot.running) : null;
+  if (dispatchPick.dungeonId === MANDATORY_ID && !mand) dispatchPick.dungeonId = null;
+  if (dispatchPick.slotId != null && !pickedTarget) dispatchPick.slotId = dispatchPick.dungeonId = null;
+  if (!dispatchPick.dungeonId) {
+    const first = targets.find((t) => !t.slot.running);
+    if (first) Object.assign(dispatchPick, { dungeonId: first.slot.dungeonId, slotId: first.slot.id });
+    else Object.assign(dispatchPick, { dungeonId: bosses.find((d) => isUnlocked(state, d))?.id ?? DUNGEONS[0].id, slotId: null });
+    pickedTarget = dispatchPick.slotId != null ? targets.find((t) => t.slot.id === dispatchPick.slotId) : null;
+  }
+  const isMand = dispatchPick.dungeonId === MANDATORY_ID;
+  const mutation = pickedTarget?.mutation ?? null;
+  const dungeon = pickedTarget ? pickedTarget.dungeon : dungeonById(dispatchPick.dungeonId);
+  const canGreedy = !isMand && intelFull(state, dungeon.id);
+  if (!canGreedy) dispatchPick.greedy = false;
+
   const home = state.samsarites.filter((s) => s.location === "space");
   for (const id of [...dispatchPick.party]) if (!home.some((s) => s.id === id)) dispatchPick.party.delete(id);
   const party = home.filter((s) => dispatchPick.party.has(s.id));
   const injured = party.filter((s) => s.injury > 0);
 
   const pct = (v) => `${v >= 0 ? "+" : ""}${Math.round(v * 1000) / 10}%`;
-  // 尾王守門提示：章節已解鎖、但前 3 關通關次數還不夠
+  // 尾王守門提示：章節已解鎖、但該章常規關通關次數還不夠
   const gateNote = (d) => {
     const gate = bossGateInfo(state, d);
     return d.chapter <= state.spaceLevel && !gate.open
-      ? `<br /><small class="bad">🔒 尾王未開放：本章前 3 關合計通關 ${gate.have}/${gate.need} 次</small>`
+      ? `<br /><small class="bad">🔒 尾王未開放：本章任一常規關合計通關 ${gate.have}/${gate.need} 次</small>`
       : "";
   };
-  const mandatoryOption = pendingMandatory(state)
+  const statLine = (d, mut) => {
+    const st = state.dungeonStats[d.id] ?? { attempts: 0, clears: 0 };
+    const rewardPct = mut?.rewardPct ?? 0;
+    return `推薦戰力 ${d.recommendedPower}<br />獎勵 ${Math.round(d.reward * (1 + rewardPct))} 分 ×${rewardTierMult(state, d)}${hasIntel(state, d) ? "" : "（首通 +" + Math.round(d.reward * CONFIG.dungeon.firstClearBonusPct) + "）"}<br />${hasIntel(state, d) ? "🗺️ 已通關" : "❓ 首次開荒"}・情報 ${pct(intelBonus(state, d))}${intelFull(state, d.id) ? "（滿格✨）" : ""}・通關 ${st.clears}/${st.attempts}`;
+  };
+  const mutChip = (mut) => (mut ? `<span class="mut-chip ${mut.id}" title="${mut.desc}">${mut.icon} ${mut.name}</span>` : "");
+
+  const mandatoryOption = mand
     ? `<h4 class="chapter-head">☠️ 主神強制任務（限時，不能化解）</h4><div class="option ${isMand ? "selected" : ""}" data-action="pick-dungeon" data-id="${MANDATORY_ID}">
       <span class="option-icon">${dungeonById(MANDATORY_ID).icon}</span>
-      <span class="grow"><b>${dungeonById(MANDATORY_ID).name}</b> <small class="bad">第 ${pendingMandatory(state).deadlineDay} 天前要派隊，逾時主神隨機抹殺 ${CONFIG.forcedMission.purgeMin}～${CONFIG.forcedMission.purgeMax} 人、全員理智 -${CONFIG.forcedMission.purgeSanityLoss}</small><br /><small>${dungeonById(MANDATORY_ID).intro}</small></span>
+      <span class="grow"><b>${dungeonById(MANDATORY_ID).name}</b> <small class="bad">第 ${mand.deadlineDay} 天前要派隊，逾時主神隨機抹殺 ${CONFIG.forcedMission.purgeMin}～${CONFIG.forcedMission.purgeMax} 人、全員理智 -${CONFIG.forcedMission.purgeSanityLoss}</small><br /><small>${dungeonById(MANDATORY_ID).intro}</small></span>
       <small>推薦戰力 ${dungeonById(MANDATORY_ID).recommendedPower}<br />獎勵 ${dungeonById(MANDATORY_ID).reward} 分（每戰死 1 人 +${Math.round(CONFIG.forcedMission.deathRewardPct * 100)}%）<br />${roomCount(dungeonById(MANDATORY_ID))} 房過 ${roomsToClear(dungeonById(MANDATORY_ID))}・單房上限 ${Math.round(CONFIG.forcedMission.passCap * 100)}%</small>
     </div>`
     : "";
-  // 只列出已解鎖的章節＋下一章（鎖住、預告用），其餘不顯示
-  const dungeonOptions = DUNGEONS.filter((d) => d.chapter <= state.spaceLevel + 1).map((d) => {
-    const st = state.dungeonStats[d.id] ?? { attempts: 0, clears: 0 };
+
+  const daysToRotate = Math.max(0, boardOf(state).nextRotateDay - currentDay(state));
+  const boardOptions = targets
+    .map(({ slot, dungeon: d, mutation: mut }) => {
+      const sel = dispatchPick.slotId === slot.id;
+      return `<div class="option ${sel ? "selected" : ""}" style="${slot.running ? "opacity:.5" : ""}" data-action="pick-slot" data-id="${slot.id}">
+        <span class="option-icon">${d.icon}</span>
+        <span class="grow"><b>${d.name}</b> <small>第 ${d.chapter} 章・${d.genre}・${roomCount(d)} 房過 ${roomsToClear(d)}</small> ${mutChip(mut)}<br /><small>${mut ? mut.desc : ""}</small>${slot.running ? `<br /><small class="warn">🚪 已有隊伍出發中（結算後補新任務）</small>` : ""}</span>
+        <small>${statLine(d, mut)}</small>
+      </div>`;
+    })
+    .join("");
+
+  const fixedOption = (d, tag) => {
     const open = isUnlocked(state, d);
-    const head = d === DUNGEONS.find((x) => x.chapter === d.chapter) ? `<h4 class="chapter-head">第 ${d.chapter} 章${open ? "" : `（🔒 首通第 ${d.chapter - 1} 章尾王解鎖）`}・${roomCount(d)} 房過 ${roomsToClear(d)}</h4>` : "";
-    return `${head}<div class="option ${d.id === dungeon.id ? "selected" : ""} ${open ? "" : "locked"}" style="${open ? "" : "opacity:.45"}" data-action="pick-dungeon" data-id="${d.id}">
+    return `<div class="option ${!dispatchPick.slotId && d.id === dungeon.id ? "selected" : ""}" style="${open ? "" : "opacity:.45"}" data-action="pick-dungeon" data-id="${d.id}">
       <span class="option-icon">${d.icon}</span>
-      <span class="grow"><b>${d.name}</b> <small>${d.genre}${d.boss ? "・👑 尾王" : ""}</small><br /><small>${d.intro}</small>${gateNote(d)}</span>
-      <small>推薦戰力 ${d.recommendedPower}<br />獎勵 ${d.reward} 分 ×${rewardTierMult(state, d)}${hasIntel(state, d) ? "" : "（首通 +" + Math.round(d.reward * CONFIG.dungeon.firstClearBonusPct) + "）"}<br />${hasIntel(state, d) ? "🗺️ 已通關" : "❓ 首次開荒"}・情報 ${pct(intelBonus(state, d))}・通關 ${st.clears}/${st.attempts}</small>
+      <span class="grow"><b>${d.name}</b> <small>第 ${d.chapter} 章・${d.genre}${tag}・${roomCount(d)} 房過 ${roomsToClear(d)}</small>${d.chapter > state.spaceLevel ? `<small>（🔒 首通第 ${d.chapter - 1} 章尾王解鎖）</small>` : ""}<br /><small>${d.intro}</small>${gateNote(d)}</span>
+      <small>${statLine(d, null)}</small>
     </div>`;
-  }).join("");
+  };
+  const bossOptions = bosses.map((d) => fixedOption(d, "・👑 尾王")).join("");
+  const extraOptions = extraIds.map((id) => fixedOption(getDungeon(id), "・📌 指定任務")).join("");
 
   const memberOptions = home.length
     ? home
         .map(
           (s) => `<div class="option ${dispatchPick.party.has(s.id) ? "selected" : ""}" data-action="toggle-member" data-id="${s.id}">
             ${rankBadge(s.rank)}<span class="grow">${s.name} ${s.locked ? "🔒" : ""}</span>
-            <small>戰力 ${effectivePower(s)}・${injuryLabel(s)}${s.vacationDays > 0 ? "・🏖️ 休假中" : ""}${s.mood ? "・" + moodLabel(s) : ""}</small>
+            <small>戰力 ${effectivePower(s)}・${injuryLabel(s)}${s.vacationDays > 0 ? "・🏖️ 休假中" : ""}${s.podLockDays > 0 ? `・🛏️ 休眠艙（${s.podLockDays} 天）` : ""}${s.mood ? "・" + moodLabel(s) : ""}</small>
           </div>`
         )
         .join("")
@@ -529,22 +580,34 @@ function dispatch() {
       summary += `<br /><span class="bad">⚔️ 隊內有仇人：${enemyPairs.join("、")}（每個房間有機率先打起來）</span>`;
     }
     if (!isMand && !hasIntel(state, dungeon)) {
-      summary += `<br /><span class="warn">❓ 首次開荒：傷勢更重；首通有額外 ${Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct)} 分${dungeon.specialRewards?.length ? "與特殊獎勵" : ""}${dungeon.boss ? (dungeon.chapter >= CONFIG.space.maxLevel ? "，並完成主線" : "，並讓主神空間升級、解鎖下一章") : ""}。</span>`;
+      summary += `<br /><span class="warn">❓ 首次開荒：傷勢更重；首通有額外 ${Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct)} 分${dungeon.specialRewards?.length ? "與特殊獎勵" : ""}、一件首通奇物${dungeon.boss ? (dungeon.chapter >= CONFIG.space.maxLevel ? "，並完成主線" : "，並讓主神空間升級、解鎖下一章") : ""}。</span>`;
     }
     if (injured.length > 0) {
       summary += `<br /><span class="bad">⚠ 帶傷出征：${injured
         .map((s) => `${s.name}（被打中時 ${Math.round(INJURIES[s.injury].deathBonus * 100)}% 直接死亡）`)
         .join("、")}</span>`;
     }
+    const stocked = party.filter((s) => s.consumables?.length);
+    if (stocked.length > 0) summary += `<br /><small>🎒 出征耗材會一起生效：${stocked.map((s) => `${s.name} ×${s.consumables.length}`).join("、")}</small>`;
   }
+  if (mutation) summary += `<br />${mutChip(mutation)} <small>${mutation.desc}</small>`;
+  const greedyBox = canGreedy
+    ? `<label class="toggle"><input type="checkbox" data-greedy ${dispatchPick.greedy ? "checked" : ""} /> 🔍 貪婪探索：通關最後一房後有 ${Math.round(CONFIG.relic.greedyChance * (mutation?.relicChanceMult ?? 1) * 100)}% 機率追加一間 R×${CONFIG.relic.hiddenRMult} 的高危隱藏房（通過掉隱藏奇物，多耗 ${(CONFIG.roomTicks / CONFIG.ticksPerDay).toFixed(1)} 天）</label>`
+    : isMand
+      ? ""
+      : `<small>🔍 這個副本情報滿格（${Math.round(CONFIG.dungeon.intel.max * 100)}%）後可勾選「貪婪探索」。</small>`;
 
   return `<h3>🚪 派遣</h3>
-    <div class="option-list">${mandatoryOption}${dungeonOptions}</div>
+    <div class="option-list">${mandatoryOption}
+      <h4 class="chapter-head">📋 任務榜（${CONFIG.board.slots} 槽・每 ${CONFIG.board.rotateDays} 天輪換，下次輪換還有 ${daysToRotate} 天）</h4>${boardOptions}
+      <h4 class="chapter-head">👑 尾王挑戰區（常駐）</h4>${bossOptions}
+      ${extraOptions ? `<h4 class="chapter-head">📌 指定任務（主神突襲／許願，沒有突變詞綴）</h4>${extraOptions}` : ""}
+    </div>
     <h3 style="margin-top:14px">選擇隊員（最多 ${CONFIG.partyMax} 人，已選 ${party.length}）</h3>
     <div class="option-list">${memberOptions}</div>
-    <div class="summary">${summary}</div>
+    <div class="summary">${summary}<div style="margin-top:6px">${greedyBox}</div></div>
     <div class="modal-actions">${closeButton}
-      <button class="primary" data-action="confirm-dispatch" ${party.length === 0 ? "disabled" : ""}>出發（耗時 1 天）</button>
+      <button class="primary" data-action="confirm-dispatch" ${party.length === 0 ? "disabled" : ""}>出發（耗時約 ${(roomCount(dungeon) * CONFIG.roomTicks) / CONFIG.ticksPerDay} 天）</button>
     </div>`;
 }
 
@@ -580,48 +643,71 @@ function gacha() {
     <div class="modal-actions">${closeButton}</div>`;
 }
 
-/** 商店：選人 → 買東西。Tier 還沒解鎖的商品會灰掉並顯示解鎖條件 */
+/** 商店：三個分頁——常駐制式商店／8 格分槽黑市／奇物圖鑑。商店與黑市都要先選「給誰用」 */
 function shop() {
+  const tab = modal.tab ?? "shop";
   const tier = shopTier(state);
   const next = nextTierInfo(state);
   const home = state.samsarites.filter((s) => s.location === "space");
   if (!home.some((s) => s.id === modal.targetId)) modal.targetId = home[0]?.id ?? null;
   const target = getSamsarite(state, modal.targetId);
+  if (!home.some((s) => s.id === modal.victimId && s.id !== modal.targetId)) modal.victimId = home.find((s) => s.id !== modal.targetId)?.id ?? null;
+  const progress = next
+    ? `累積花費 <b>${state.totalSpent}</b> 分，再花 <b>${next.remaining}</b> 分解鎖 Tier ${next.tier}`
+    : `累積花費 <b>${state.totalSpent}</b> 分，商店已全部解鎖`;
 
+  const tabs = [["shop", "🛒 常駐制式商店"], ["market", "🕶️ 8 格黑市"], ["relics", `🏺 奇物圖鑑 ${relicInfo(state).owned}/${relicInfo(state).total}`]]
+    .map(([id, label]) => `<button data-action="shop-tab" data-id="${id}" class="${tab === id ? "active" : ""}">${label}</button>`)
+    .join("");
+
+  const gearLine = (s) =>
+    Object.entries(SHOP_SLOT_LABELS)
+      .map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}${s.soulbound?.[slot] ? "🔒" : ""}`)
+      .join("・");
   const people = home.length
     ? home
         .map((s) => `<div class="option ${s.id === modal.targetId ? "selected" : ""}" data-action="shop-target" data-id="${s.id}">
           ${rankBadge(s.rank)}<span class="grow">${s.name}</span>
-          <small>戰力 ${effectivePower(s)}・${injuryLabel(s)}・理智 ${s.stats.sanity}</small></div>`)
+          <small>戰力 ${effectivePower(s)}・${injuryLabel(s)}・理智 ${s.stats.sanity}・💰 ${s.wallet ?? 0}</small></div>`)
         .join("")
     : `<div class="empty">主神空間裡沒有人可以用。</div>`;
+  const picker = `<h3 style="margin-top:10px">要給誰用？${target ? `<small>（${gearLine(target)}）</small>` : ""}</h3>
+    <div class="option-list">${people}</div>
+    <p><small>公庫（積分 <b>${state.points}</b>）買裝備＝「賞賜」：綁定（輪迴者自己逛街時不會換掉）、理智 +${CONFIG.wallet.giftSanity}。輪迴者也會用自己的私房錢逛街，所以花費一律累加進累積花費。</small></p>`;
 
-  const gearLine = target
-    ? Object.entries(SHOP_SLOT_LABELS)
-        .map(([slot, label]) => `${label}：${getShopItem(target.gear?.[slot])?.name ?? "（空）"}`)
-        .join("・")
-    : "";
+  let body = "";
+  if (tab === "shop") body = shopStandardTab(tier, target);
+  else if (tab === "market") body = shopMarketTab(home, target);
+  else body = shopRelicTab();
 
+  return `<h3>🛒 商店 <small>（目前 Tier ${tier}）</small></h3>
+    <p>主神公庫：<b>${state.points}</b>。${progress}。抽卡的花費也算累積花費。</p>
+    <div class="tabs">${tabs}</div>
+    ${tab === "relics" ? "" : picker}
+    ${body}
+    <div class="modal-actions">${closeButton}</div>`;
+}
+
+function shopStandardTab(tier, target) {
   const itemRow = (item) => {
     const locked = item.tier > tier;
     const check = locked ? { ok: false, reason: "" } : checkBuy(state, item, target);
-    const owned = "";
     const slot = item.kind === "gear" ? `・${SHOP_SLOT_LABELS[item.slot]}` : "";
     const why = !locked && !check.ok ? `<br /><small class="bad">${check.reason}</small>` : "";
     return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
       <span class="option-icon">${item.icon}</span>
-      <span class="grow"><b>${item.name}</b> <small>${SHOP_KIND_LABELS[item.kind]}${slot}${owned}</small><br /><small>${item.desc}</small>${why}</span>
+      <span class="grow"><b>${item.name}</b> <small>${SHOP_CATEGORY_LABELS[item.category]}・${SHOP_KIND_LABELS[item.kind]}${slot}</small><br /><small>${item.desc}</small>${why}</span>
       <button class="primary" data-action="buy" data-id="${item.id}" ${check.ok ? "" : "disabled"}>${locked ? "🔒" : item.price + " 分"}</button>
     </div>`;
   };
-  const sections = CONFIG.shopTierUnlock.map((_, i) => i + 1)
+  const sections = CONFIG.shopTierUnlock
+    .map((_, i) => i + 1)
     .map((t) => {
       const need = CONFIG.shopTierUnlock[t - 1];
       const head = t <= tier ? `Tier ${t}` : `🔒 Tier ${t}（累積花費 ${need} 分解鎖）`;
-      return `<h3 style="margin-top:14px">${head}</h3><div class="option-list">${SHOP_ITEMS.filter((i) => i.tier === t).map(itemRow).join("")}</div>`;
+      return `<h3 style="margin-top:14px">${head}</h3><div class="option-list">${shopItemsOfTier(t).map(itemRow).join("")}</div>`;
     })
     .join("");
-
   const fx = collectionEffects(state);
   const collection = state.collection.length
     ? state.collection
@@ -630,18 +716,59 @@ function shop() {
         .map((r) => `<div>🎁 <b>${r.name}</b>：${r.desc}</div>`)
         .join("")
     : "（還沒有。首次通關副本會掉特殊獎勵，永久生效。）";
-  const progress = next
-    ? `累積花費 <b>${state.totalSpent}</b> 分，再花 <b>${next.remaining}</b> 分解鎖 Tier ${next.tier}`
-    : `累積花費 <b>${state.totalSpent}</b> 分，商店已全部解鎖`;
   const shield = Math.round(fx.injuryShield * 100);
-  return `<h3>🛒 商店 <small>（目前 Tier ${tier}）</small></h3>
-    <p>積分：<b>${state.points}</b>。${progress}。抽卡的花費也算累積花費。</p>
-    <h3 style="margin-top:10px">要給誰用？${target ? `<small>（${gearLine}）</small>` : ""}</h3>
-    <div class="option-list">${people}</div>
-    ${sections}
+  return `<p><small>常駐商店只賣制式武防與常備藥；世界特產、血統、耗材、黑貨請到「黑市」。</small></p>${sections}
     <h3 style="margin-top:14px">🎁 副本特殊獎勵（永久生效）</h3>
-    <div class="summary">${collection}${shield ? `<div><small>全員傷勢減免合計 +${shield}%</small></div>` : ""}</div>
-    <div class="modal-actions">${closeButton}</div>`;
+    <div class="summary">${collection}${shield ? `<div><small>全員傷勢減免合計 +${shield}%</small></div>` : ""}</div>`;
+}
+
+function shopMarketTab(home, target) {
+  const info = marketInfo(state);
+  const hasContra = info.slots.some((s) => s.item?.kind === "contraband" && !s.sold);
+  const victims = home.filter((s) => s.id !== modal.targetId);
+  const victimPicker = hasContra
+    ? `<h4 class="chapter-head">狗血黑貨的對象（使用者 = 上面選的人）</h4><div class="option-list">${
+        victims.length
+          ? victims.map((s) => `<div class="option ${s.id === modal.victimId ? "selected" : ""}" data-action="market-victim" data-id="${s.id}">${rankBadge(s.rank)}<span class="grow">${s.name}</span></div>`).join("")
+          : `<div class="empty">沒有其他人可以當對象。</div>`
+      }</div>`
+    : "";
+  const cards = info.slots
+    .map((slot) => {
+      const item = slot.item;
+      if (!item) return `<div class="slot sold"><small>（這格沒有貨）</small></div>`;
+      const check = slot.sold ? { ok: false, reason: "已售罄" } : checkMarketBuy(state, slot.index, modal.targetId, { victimId: modal.victimId });
+      const world = item.worldId ? `<br /><small>🌐 綁定世界：${getDungeon(item.worldId)?.name ?? item.worldId}${slot.discounted ? " <b class=\"good\">・情報滿格 85 折</b>" : ""}</small>` : "";
+      const priceHtml = slot.discounted ? `<s>${item.price}</s> <b class="good">${slot.price}</b> 分` : `${slot.price} 分`;
+      return `<div class="slot ${slot.sold ? "sold" : ""} ${slot.locked ? "locked-slot" : ""}">
+        <div class="slot-head"><span class="option-icon">${item.icon}</span><span class="grow"><b>${item.name}</b><br /><small>${SHOP_CATEGORY_LABELS[item.category]}・T${item.tier}${item.kind === "gear" ? "・" + SHOP_SLOT_LABELS[item.slot] : ""}</small></span>${slot.locked ? "🔒" : ""}</div>
+        <small>${item.desc}</small>${world}
+        ${!slot.sold && !check.ok ? `<small class="bad">${check.reason}</small>` : ""}
+        <div class="slot-actions">
+          <button data-action="market-lock" data-id="${slot.index}" ${slot.sold ? "disabled" : ""}>${slot.locked ? "🔓 解除鎖定" : "🔒 鎖定"}</button>
+          <button class="primary" data-action="market-buy" data-id="${slot.index}" ${check.ok ? "" : "disabled"}>${slot.sold ? "售罄" : priceHtml}</button>
+        </div>
+      </div>`;
+    })
+    .join("");
+  return `<div class="summary">⏳ 下次自動換貨：<b>${info.daysLeft}</b> 天後（每 ${CONFIG.market.refreshDays} 天；3 特產武防＋2 特產血統＋2 耗材＋1 黑貨，每格限購 1 次）。
+    可鎖定 ${info.lockLimit} 格不被洗掉。
+    <button data-action="market-refresh" ${canAfford(state, info.manualCost) ? "" : "disabled"}>🔄 手動刷新（公庫 ${info.manualCost} 分，同日遞增）</button></div>
+    ${victimPicker}
+    <div class="slot-grid" style="margin-top:10px">${cards}</div>
+    ${target ? "" : ""}`;
+}
+
+function shopRelicTab() {
+  const r = relicInfo(state);
+  const byChapter = [1, 2, 3, 4, 5].map((c) => {
+    const items = r.list.filter((x) => x.chapter === c);
+    return `<h4 class="chapter-head">第 ${c} 章（${items.filter((x) => x.have).length}/${items.length}）</h4><div class="relic-grid">${items
+      .map((x) => `<div class="relic ${x.have ? "have" : ""}" title="${x.desc}">${x.icon} <b>${x.name}</b><br /><small>${getDungeon(x.worldId)?.name ?? x.worldId}・${x.kind === "first" ? "首通" : "隱藏房"}</small><br /><small>${x.have ? "+" + (x.powerPct * 100).toFixed(2) + "%" : "？？？"}</small></div>`)
+      .join("")}</div>`;
+  });
+  return `<div class="summary">奇物收集 <b>${r.owned} / ${r.total}</b>・全隊有效戰力加成 <b class="good">+${(r.bonus * 100).toFixed(2)}%</b>（原始 +${(r.raw * 100).toFixed(2)}%，硬封頂 +${r.cap * 100}%）。<br />
+    首通每張副本必得「首通奇物」；情報滿格後勾選貪婪探索，通關後有機率打開隱藏房，通過掉「隱藏奇物」（重複則轉為額外積分）。</div>${byChapter.join("")}`;
 }
 
 function detail() {
@@ -668,7 +795,9 @@ function detail() {
       <tr><td>運氣</td><td>${subStat(s, "luck")}（每點 +${CONFIG.combat.luckReward.perPoint * 100}% 通關積分，看隊伍平均）</td></tr>
       <tr><td>維持費</td><td>${upkeepOf(s, state)} 分 / 天${s.location === "pod" ? "（催熟艙固定費用）" : `（（基因鎖 ${upkeepPartsOf(s, state).gene} + 空間 ${upkeepPartsOf(s, state).space}）×（1 + 階級 ${Math.round(RANKS[s.rank].upkeepPct * 100)}% + 傷勢 ${Math.round(INJURIES[s.injury].upkeepPct * 100)}%））`}</td></tr>
       <tr><td>資歷</td><td>第 ${s.joinedDay} 天加入・出征 ${s.runs} 次</td></tr>
-      <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}`).join("・")}</td></tr>
+      <tr><td>私房錢</td><td>💰 <b>${s.wallet ?? 0}</b> 分<br /><small>副本結算先抽 ${Math.round(taxRateOf(state) * 100)}% 稅入公庫，其餘由存活隊員平分；他會自己逛街、強化（戰死 ${Math.round(CONFIG.wallet.deathForfeitPct * 100)}% 充公，回收 100% 歸公庫）</small></td></tr>
+      <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}${s.soulbound?.[slot] ? ' <span class="badge-bound">🔒綁定</span>' : ""}`).join("<br />")}${s.consumables?.length ? `<br />🎒 出征耗材：${s.consumables.map((id) => getShopItem(id)?.name ?? id).join("、")}` : ""}${s.podLockDays > 0 ? `<br />🛏️ 被鎖在私人休眠艙（還要 ${s.podLockDays} 天）` : ""}</td></tr>
+      <tr><td>自主購買</td><td class="shop-log">${s.shopLog?.length ? s.shopLog.slice().reverse().map((l) => `第 ${l.day} 天：${l.text}`).join("<br />") : "（還沒有）"}</td></tr>
       <tr><td>標籤</td><td>${(s.tags ?? [])
         .map(getTag)
         .filter(Boolean)
@@ -801,7 +930,9 @@ function runResult() {
   return `<h3>${r.success ? "🏆 通關" : "💀 失敗"}：${r.dungeonName}</h3>
     <div class="summary">
       <span class="result-rooms">${rooms}</span><br />房間通過 ${r.passedCount}/${r.rooms ?? r.results.length}<br />
-      ${r.envName ? `環境：${r.envName}<br />` : ""}獎勵：<b class="${r.success ? "good" : "bad"}">+${r.reward} 分</b>${r.firstClear ? "（含首通加成）" : ""}<br />
+      ${r.envName ? `環境：${r.envName}<br />` : ""}${r.mutation ? `突變詞綴：<b>${r.mutation.icon} ${r.mutation.name}</b><br />` : ""}獎勵：<b class="${r.success ? "good" : "bad"}">+${r.reward} 分</b>${r.firstClear ? "（含首通加成）" : ""}${r.success ? `　<small>入公庫 ${r.tax}、存活隊員各分 ${r.share} 私房錢</small>` : ""}<br />
+      ${r.hidden ? `🔍 貪婪探索：隱藏房 <b class="${r.hidden === "passed" ? "good" : "bad"}">${r.hidden === "passed" ? "闖過了" : "失敗"}</b><br />` : r.greedy ? "🔍 貪婪探索：這次沒有開出隱藏房<br />" : ""}
+      ${r.relics?.length ? `🏺 奇物：<b class="good">${r.relics.map((x) => `${x.name}（${x.kind === "first" ? "首通" : "隱藏"}${x.dup ? "・已擁有，轉為積分" : ""}）`).join("、")}</b><br />` : ""}
       ${r.levelUp ? `🏛️ <b class="good">主神空間升到 Lv.${r.levelUp}，第 ${r.levelUp} 章解鎖！</b><br />` : ""}
       ${r.specialReward ? `🎁 特殊獎勵：<b class="good">${r.specialReward}</b>（已永久生效）<br />` : ""}
       ${r.karma ? `🔮 因果結晶 <b class="good">+${r.karma}</b> 顆（持有 ${state.karmaCrystals ?? 0} 顆）<br />` : ""}
@@ -898,13 +1029,44 @@ const actions = {
   },
   "open-mandatory"() {
     dispatchPick.dungeonId = MANDATORY_ID; // 直接跳到強制任務的派遣畫面
+    dispatchPick.slotId = null;
     modal = { name: "dispatch" };
   },
   "open-gacha"() {
     modal = { name: "gacha" };
   },
   "open-shop"() {
-    modal = { name: "shop", targetId: modal?.targetId ?? null };
+    modal = { name: "shop", tab: modal?.tab ?? "shop", targetId: modal?.targetId ?? null, victimId: modal?.victimId ?? null };
+  },
+  "shop-tab"(el) {
+    modal.tab = el.dataset.id;
+  },
+  "market-victim"(el) {
+    modal.victimId = Number(el.dataset.id);
+  },
+  "market-buy"(el) {
+    const r = buyMarketSlot(state, Number(el.dataset.id), modal.targetId, { victimId: modal.victimId });
+    if (!r.ok) alert(r.reason);
+    saveGame();
+  },
+  "market-lock"(el) {
+    const idx = Number(el.dataset.id);
+    const r = lockSlot(state, idx, !marketInfo(state).slots[idx]?.locked);
+    if (!r.ok) alert(r.reason);
+    saveGame();
+  },
+  "market-refresh"() {
+    const r = manualRefresh(state);
+    if (!r.ok) alert(r.reason);
+    saveGame();
+  },
+  "tax-up"() {
+    setTaxRate(state, taxRateOf(state) + CONFIG.tax.step);
+    saveGame();
+  },
+  "tax-down"() {
+    setTaxRate(state, taxRateOf(state) - CONFIG.tax.step);
+    saveGame();
   },
   "shop-target"(el) {
     modal.targetId = Number(el.dataset.id);
@@ -965,6 +1127,13 @@ const actions = {
   "pick-dungeon"(el) {
     if (el.dataset.id !== MANDATORY_ID && !isUnlocked(state, getDungeon(el.dataset.id))) return; // 還沒解鎖的章節只能看不能選
     dispatchPick.dungeonId = el.dataset.id;
+    dispatchPick.slotId = null;
+  },
+  "pick-slot"(el) {
+    const slot = boardOf(state).slots.find((s) => s.id === Number(el.dataset.id));
+    if (!slot || slot.running) return; // 已經有隊伍出發的槽不能再接
+    dispatchPick.dungeonId = slot.dungeonId;
+    dispatchPick.slotId = slot.id;
   },
   "toggle-member"(el) {
     const id = Number(el.dataset.id);
@@ -973,9 +1142,11 @@ const actions = {
     else if (dispatchPick.party.size < CONFIG.partyMax) dispatchPick.party.add(id);
   },
   "confirm-dispatch"() {
-    const result = startRun(state, dispatchPick.dungeonId, [...dispatchPick.party]);
+    const result = startRun(state, dispatchPick.dungeonId, [...dispatchPick.party], { slotId: dispatchPick.slotId, greedy: dispatchPick.greedy });
     if (!result.ok) return alert(result.reason);
     dispatchPick.party.clear();
+    dispatchPick.dungeonId = dispatchPick.slotId = null; // 那一槽出發了，下次開派遣畫面重選
+    dispatchPick.greedy = false;
     modal = null;
     state.settings.paused = false;
     bannerText = "";
@@ -1048,7 +1219,11 @@ document.addEventListener("change", (event) => {
   else if (el.id === "protect-injured") state.settings.protect.noInjured = el.checked;
   else if (el.id === "protect-enemies") state.settings.protect.noEnemies = el.checked;
   else if (el.dataset.pauseKey) state.settings.pauseOn[el.dataset.pauseKey] = el.checked;
-  else return;
+  else if ("greedy" in el.dataset) {
+    dispatchPick.greedy = el.checked;
+    render();
+    return;
+  } else return;
   saveGame();
 });
 
