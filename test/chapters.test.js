@@ -137,7 +137,8 @@ test("維持費與破產線跟空間等級走", () => {
   const s = state.samsarites[0];
   CONFIG.space.upkeepSpace.forEach((spaceFee, i) => {
     state.spaceLevel = i + 1;
-    assert.equal(upkeepOf(s, state), CONFIG.space.upkeepGene[s.geneLock ?? 0] + spaceFee);
+    const base = CONFIG.space.upkeepGene[s.geneLock ?? 0] + spaceFee;
+    assert.equal(upkeepOf(s, state), i === 0 ? Math.round(base * CONFIG.space.newbieUpkeepMult) : base, "空間 Lv.1 是新手期，維持費減免（4-E-7）");
     assert.equal(debtLimitOf(state), CONFIG.space.debtLimit[i]);
   });
   state.spaceLevel = 2;

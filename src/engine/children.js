@@ -67,7 +67,7 @@ export function dailyNursery(state) {
 export function giveBirth(state, a, b, opts = {}) {
   const g = opts.rng ?? nursery(state);
   state.cooldowns ??= {};
-  state.cooldowns[`birth:${pairKey(a, b)}`] = currentDay(state) + (opts.cooldownDays ?? C().cooldownDays);
+  state.cooldowns[`birth:${pairKey(a, b)}`] = currentDay(state) + (opts.cooldownDays ?? CONFIG.lineage.cooldownDays) // 3-F 與 4-E 共用同一把雙親冷卻鎖（4-E-7）;
 
   // 階級：隨機一位家長的階級，有機會再升一階（最高 S）
   const ranks = Object.keys(RANKS);

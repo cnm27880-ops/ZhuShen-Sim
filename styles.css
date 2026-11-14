@@ -379,3 +379,4 @@ table.stats td:first-child { color: var(--muted); width: 34%; }
 .heir-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .log-squad { color: #ffd43b; font-weight: 700; border-left-color: #fab005; background: rgba(250, 176, 5, 0.08); }
 .log-drama { color: #f783ac; border-left-color: #f06595; }
+.modal-open #run-list { display: none !important; } /* 4-E-7：放大視窗開著時隱藏角落迷你小窗 */

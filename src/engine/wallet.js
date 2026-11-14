@@ -31,8 +31,11 @@ export function setTaxRate(state, value) {
  */
 export function distributeLoot(state, team, totalPoints, opts = {}) {
   const total = Math.max(0, Math.round(totalPoints));
-  const rate = opts.rate ?? taxRateOf(state);
+  let rate = opts.rate ?? taxRateOf(state);
   const members = team.filter(Boolean);
+  // 赤字緊急徵用（4-E-7）：公庫為負時，臨時以較高的有效稅率優先抵債；只是這一次分潤的算法，不改 state.taxRate（不會誤觸高稅率每日扣理智）
+  const deficit = state.points < 0 && members.length > 0 && rate < CONFIG.tax.deficitMinRate;
+  if (deficit) rate = CONFIG.tax.deficitMinRate;
   let tax = members.length === 0 ? total : Math.round(total * rate);
   const shares = {};
   let share = 0;
@@ -82,7 +85,8 @@ export function distributeLoot(state, team, totalPoints, opts = {}) {
     share = Math.floor(vals.reduce((n, v) => n + v, 0) / members.length);
   }
   state.points += tax;
-  return { tax, share, shares, members: members.length, style };
+  if (deficit) emit(state, "wallet", logText(state, "deficitTax", { rate: Math.round(rate * 100), tax }));
+  return { tax, share, shares, members: members.length, style, deficit };
 }
 
 /** 稅率的每日理智影響（只對在空間的人，endOfDay 逐人呼叫）：低稅 +1、高稅 -2、極高稅 -4 */

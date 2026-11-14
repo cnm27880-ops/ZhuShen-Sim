@@ -196,10 +196,11 @@ export function isDefectImmune(state, s) {
   return !!s.customProfile;
 }
 
-/** 長期壓榨：對隊長淨好感 <= -55 且理智 < 25 */
+/** 長期壓榨：對隊長淨好感 <= rogueAffinity 且（理智 < rogueSanity 或持有走火入魔詞條） */
+// （4-E-7 放寬：淨好感 <= -45 且（理智 < 45 或持有 demon_path））
 export const defectEligible = (state, s) => {
   const cap = captainOf(state);
-  return !!cap && s.location === "space" && affinity(state, s, cap) <= L().rogueAffinity && s.stats.sanity < L().rogueSanity;
+  return !!cap && s.location === "space" && affinity(state, s, cap) <= L().rogueAffinity && (s.stats.sanity < L().rogueSanity || (s.tags ?? []).includes(L().rogueTag));
 };
 
 /** 叛逃：帶著私房錢離開空間，轉化成野生 Boss（不進墳場、不入碑） */

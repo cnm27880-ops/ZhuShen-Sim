@@ -16,7 +16,7 @@ import { marketOf, checkMarketBuy, buyMarketSlot, slotPrice } from "./market.js"
 import { enhance, checkEnhance, breakGene, checkBreakGene } from "./growth.js";
 import { getRel, pairStatus } from "./relations.js";
 import { getTag } from "../data/tags.js";
-import { styleOf, squadOf } from "./squad.js";
+import { styleOf, squadOf, captainOf } from "./squad.js";
 
 /** 把 state.aiShopRngState 包成 rand() 吃得下的亂數物件（讀寫都落回 state） */
 export function aiRng(state) {
@@ -181,31 +181,41 @@ function isVeteranGear(state, s) {
   return s.injury === 0 && ["weapon", "armor"].every((slot) => (getShopItem(s.gear?.[slot])?.tier ?? 0) >= tier);
 }
 
-/** 菜鳥最迫切要買的東西要多少錢（治傷藥 → 制式裝 → 第 1 階基因鎖）；沒有需求回 0 */
+/**
+ * 互助金補貼的需求（回傳最迫切要買的東西價錢；沒有需求回 0）：
+ *   全隊：傷病治療費（重傷以上）、基因鎖低於現任隊長且目前為 1 階者衝刺 2 階基因鎖（4-E-7）；
+ *   菜鳥（非老鳥）另外：制式武防、第 1 階基因鎖。
+ */
 function communalNeed(state, s) {
   const tier = shopTier(state);
   if (s.injury >= 2) {
     const heal = SHOP_ITEMS.filter((i) => i.kind === "potion" && i.effect.heal && (i.category === "standard" || i.permanent)).map((i) => i.price);
     if (heal.length) return Math.min(...heal);
   }
-  for (const slot of ["weapon", "armor"]) {
-    if (s.soulbound?.[slot]) continue;
-    const cur = getShopItem(s.gear?.[slot]);
-    if (cur && cur.tier >= tier) continue;
-    const best = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard" && i.slot === slot && i.tier <= tier).sort((a, b) => b.tier - a.tier)[0];
-    if (best) return best.price;
+  const rookie = !isVeteranGear(state, s);
+  if (rookie) {
+    for (const slot of ["weapon", "armor"]) {
+      if (s.soulbound?.[slot]) continue;
+      const cur = getShopItem(s.gear?.[slot]);
+      if (cur && cur.tier >= tier) continue;
+      const best = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard" && i.slot === slot && i.tier <= tier).sort((a, b) => b.tier - a.tier)[0];
+      if (best) return best.price;
+    }
   }
-  if ((s.geneLock ?? 0) === 0) {
+  const cap = captainOf(state);
+  const wantsFirst = rookie && (s.geneLock ?? 0) === 0;
+  const wantsSecond = (s.geneLock ?? 0) === 1 && cap && (cap.geneLock ?? 0) > 1; // 基因鎖低於現任隊長、目前 1 階：衝 2 階
+  if (wantsFirst || wantsSecond) {
     const bg = checkBreakGene(state, s.id);
-    if (bg.ok) return bg.cost;
+    if (bg.ok) return Math.ceil(bg.cost / (1 - CONFIG.shopping.reservePct)); // 自主突破要留 20% 備用金，所以補貼要補到「費用 ÷ 0.8」才買得下去（沒花掉的會退回）
   }
   return 0;
 }
 
-/** 補貼：菜鳥錢不夠買最迫切的東西時，從互助金補差額（先放進他的私房錢，當天沒花掉的會在 communalSettle 退回）。回傳補貼金額 */
+/** 補貼：錢不夠買最迫切的東西時，從互助金補差額（先放進他的私房錢，當天沒花掉的會在 communalSettle 退回）。回傳補貼金額 */
 function communalSubsidy(state, s) {
   const sq = squadOf(state);
-  if (sq.communalFund <= 0 || isVeteranGear(state, s)) return 0;
+  if (sq.communalFund <= 0) return 0;
   const deficit = communalNeed(state, s) - (s.wallet ?? 0);
   if (deficit <= 0) return 0;
   const give = Math.min(deficit, sq.communalFund);
@@ -223,7 +233,8 @@ function communalSettle(state, s, subsidy) {
     s.wallet -= back;
     sq.communalFund += back;
   }
-  if (isVeteranGear(state, s) && (s.wallet ?? 0) > 0) {
+  const full = sq.communalFund >= CONFIG.squad.communal.fundCapPerLevel * (state.spaceLevel ?? 1); // 互助金軟上限：滿了老鳥暫停捐獻，私房錢留著自購高階裝（4-E-7）
+  if (!full && isVeteranGear(state, s) && (s.wallet ?? 0) > 0) {
     const donate = Math.floor(s.wallet * CONFIG.squad.communal.donatePct);
     if (donate > 0) {
       s.wallet -= donate;

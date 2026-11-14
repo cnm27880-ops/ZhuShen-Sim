@@ -18,7 +18,7 @@ export const GOD_EVENTS = [
     name: "臨時開銷稅",
     icon: "💸",
     acceptDesc: "照辦：主神直接從帳上扣 {loss} 分",
-    payDesc: "花 {cost} 分打點一下主神，這筆稅就免了",
+    payDesc: "花 {cost} 分打點主神，但全體留守者要陪笑臉、理智各 -{extra}，這筆稅才免得掉",
     ignoreDesc: "視同照辦，直接扣 {loss} 分",
   },
   {

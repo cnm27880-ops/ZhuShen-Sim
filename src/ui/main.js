@@ -87,7 +87,12 @@ function loadGame() {
 
 function saveGame() {
   try {
-    localStorage.setItem(SAVE_KEY, serialize(state));
+    // 自動暫停只是暫時的：存檔時寫回「開窗前」的暫停狀態，免得重新整理後莫名停住
+    const real = state.settings.paused;
+    if (autoPause) state.settings.paused = autoPause.wasPaused;
+    const json = serialize(state);
+    state.settings.paused = real;
+    localStorage.setItem(SAVE_KEY, json);
   } catch {
     /* 存不了就算了，遊戲照常進行 */
   }
@@ -486,7 +491,25 @@ function closeModal() {
   schedule();
 }
 
+// 派遣頁、許願／抽卡彈窗、主神事件彈窗、小隊指揮部（任命／撤換隊長）開著時自動暫停計時，關窗後恢復原本的播放狀態與倍速（4-E-7）
+const AUTO_PAUSE_MODALS = new Set(["dispatch", "gacha", "wish", "godEvent", "squad"]);
+let autoPause = null; // { wasPaused, speed }：開窗前的狀態；開窗前就是手動暫停的，關窗後維持暫停
+
+function syncAutoPause() {
+  const want = Boolean(modal && AUTO_PAUSE_MODALS.has(modal.name));
+  if (want && !autoPause) {
+    autoPause = { wasPaused: state.settings.paused, speed: state.settings.speed };
+    state.settings.paused = true;
+  } else if (!want && autoPause) {
+    state.settings.paused = autoPause.wasPaused;
+    state.settings.speed = autoPause.speed;
+    autoPause = null;
+  }
+}
+
 function renderModal() {
+  syncAutoPause();
+  document.body.classList.toggle("modal-open", Boolean(modal)); // 開著放大視窗時，角落的副本迷你小窗（#run-list）自動隱藏，關窗恢復（雙視窗互斥，4-E-7）
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
   const builders = { guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent };
@@ -511,9 +534,10 @@ function requestedDungeonIds() {
 
 function dispatch() {
   const mand = pendingMandatory(state);
-  const targets = boardTargets(state); // 任務榜三個槽：{ slot, dungeon（已套 R 倍率）, mutation }
-  const bosses = DUNGEONS.filter((d) => d.boss && d.chapter <= state.spaceLevel + 1);
-  const extraIds = requestedDungeonIds().filter((id) => !targets.some((t) => t.slot.dungeonId === id));
+  // 一律依推薦戰力 R 由低到高排列（4-E-7）：任務榜用「套上突變詞綴後的實際 R」（t.dungeon 已套）
+  const targets = boardTargets(state).slice().sort((a, b) => a.dungeon.recommendedPower - b.dungeon.recommendedPower || a.slot.id - b.slot.id); // 任務榜三個槽：{ slot, dungeon（已套 R 倍率）, mutation }
+  const bosses = DUNGEONS.filter((d) => d.boss && d.chapter <= state.spaceLevel + 1).sort((a, b) => a.recommendedPower - b.recommendedPower);
+  const extraIds = requestedDungeonIds().filter((id) => !targets.some((t) => t.slot.dungeonId === id)).sort((a, b) => getDungeon(a).recommendedPower - getDungeon(b).recommendedPower);
 
   // 選擇狀態：強制任務／任務榜槽（slotId）／尾王與指定副本（slotId = null）。目標消失就重選
   let pickedTarget = dispatchPick.slotId != null ? targets.find((t) => t.slot.id === dispatchPick.slotId && !t.slot.running) : null;
@@ -797,7 +821,7 @@ function shopMarketTab(home, target) {
 function shopRelicTab() {
   const r = relicInfo(state);
   const byChapter = [1, 2, 3, 4, 5].map((c) => {
-    const items = r.list.filter((x) => x.chapter === c);
+    const items = r.list.filter((x) => x.chapter === c).sort((a, b) => (getDungeon(a.worldId)?.recommendedPower ?? 0) - (getDungeon(b.worldId)?.recommendedPower ?? 0)); // 依世界推薦戰力由低到高（4-E-7）
     return `<h4 class="chapter-head">第 ${c} 章（${items.filter((x) => x.have).length}/${items.length}）</h4><div class="relic-grid">${items
       .map((x) => `<div class="relic ${x.have ? "have" : ""}" title="${x.desc}">${x.icon} <b>${x.name}</b><br /><small>${getDungeon(x.worldId)?.name ?? x.worldId}・${x.kind === "first" ? "首通" : "隱藏房"}</small><br /><small>${x.have ? "+" + (x.powerPct * 100).toFixed(2) + "%" : "？？？"}</small></div>`)
       .join("")}</div>`;

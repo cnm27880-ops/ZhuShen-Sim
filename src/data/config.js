@@ -23,6 +23,7 @@ export const CONFIG = {
     upkeepGene: [8, 16, 35, 80, 180], // 個人基因鎖基準費，索引 = geneLock 0～4
     upkeepSpace: [0, 3, 7, 16, 36], // 空間環境底費，索引 = 空間等級 - 1
     debtLimit: [-500, -1500, -4500, -12000, -30000], // 主神高利貸上限（破產線）
+    newbieUpkeepMult: 0.5, // 新手期（空間 Lv.1）每日維持費倍率（4-E-7：前期連負吃土，減免 50%）
   },
 
   // ── 經濟 ──
@@ -49,6 +50,7 @@ export const CONFIG = {
     highSanity: 2,
     crushAt: 0.8, // taxRate >= crushAt：每日理智 -crushSanity
     crushSanity: 4,
+    deficitMinRate: 0.75, // 公庫赤字（積分 < 0）時，結算分潤臨時以 max(稅率, 這個數字) 抽稅抵債（不改 state.taxRate；4-E-7）
   },
   wallet: {
     giftSanity: 5, // 公庫買裝備賞賜給角色：該角色理智 +5（並標記綁定）
@@ -258,7 +260,7 @@ export const CONFIG = {
     seniorityLoveWeight: 2, // 和平順延（共產／羈絆）：分數 = 資歷天數 + 隊內平均好感 × 這個權重
     chronicleMax: 100, // 空間編年史最多留幾條
     // 流派機制（4-E-2）
-    communal: { defenseBonus: 0.08, donatePct: 0.5, subsidyReserve: 0 },
+    communal: { defenseBonus: 0.08, donatePct: 0.25, fundCapPerLevel: 15000, subsidyReserve: 0 }, // 4-E-7：捐獻率 50%→25%；互助金 >= 15000×空間等級 時老鳥暫停捐獻
     bond: { woundedWeight: 1.25, guardAffinity: 45, guardChance: 0.5, guardLove: 10, clearSanity: 4, steleMult: 1.5 },
     farming: { captainShare: 0.8, guardFeePct: 0.35, rookieUpkeepMult: 0.5, pigDeathReward: 0.2, pigStacks: 2, pigPowerPct: 0.12, dailyAffinity: -1, dailySanity: -1 },
     elite: { powerExp: 1.4, bossPowerMult: 1.15, failSanityMult: 2 },
@@ -288,7 +290,7 @@ export const CONFIG = {
   lineage: {
     pairAffinity: 75, // 雙向淨好感 >= 75（而且都不是重傷以上）才有機會孕育
     birthChance: 0.05, // 符合條件的一對，每天孕育機率
-    cooldownDays: 30, // 同一對孕育冷卻
+    cooldownDays: 60, // 同一對孕育冷卻（4-E-7：30→60；3-F 戀人生子與孕育共用同一把雙親冷卻鎖）
     podDays: 7, // 培育期
     speedUpCostPerDay: 60, // 加速培育：每剩 1 天花公庫的積分 = 這個數字 × 空間等級
     talentPerGene: 0.05, // 天賦白值加成：家長平均基因鎖每 1 階 +5% 的子嗣基礎戰力
@@ -300,8 +302,9 @@ export const CONFIG = {
     heirloomFriendAffinity: 60, // 摯友門檻（淨好感）
     heirloomSanity: 10, // 子嗣／摯友穿上遺物：緬懷，理智 +10
     rogueMax: 5, // 叛逃野生 Boss 上限
-    rogueAffinity: -55, // 叛逃條件：對隊長淨好感 <= -55
-    rogueSanity: 25, // 且理智 < 25
+    rogueAffinity: -45, // 叛逃條件（4-E-7 放寬）：對隊長淨好感 <= -45
+    rogueSanity: 45, // 且（理智 < 45 或持有 rogueTag 詞條）
+    rogueTag: "demon_path",
     rogueChance: 0.15, // 符合條件者每天叛逃機率
     rogueEncounter: 0.1, // 常規副本出征遭遇叛逃 Boss 的機率
     rogueRMult: 1.0, // 叛逃 Boss 戰力 = 該章常規關平均 R × 這個倍率
@@ -316,7 +319,8 @@ export const CONFIG = {
     answerDays: 1, // 事件彈出後幾天內要回覆，沒回覆就視同「照辦」（突襲任務則視同抗命受罰）
     // 各種事件的數字。resolveCost = 花積分化解要多少（都比不化解的損失便宜）
     kinds: {
-      tax: { weight: 30, loss: [60, 120], resolveCost: 40 }, // 臨時開銷稅：扣 loss 範圍內的積分（可扣到負債，不低於高利貸上限）
+      // 臨時開銷稅：直接後果是純扣積分，所以化解不能只花更少的積分（4-E-7 修套利）：要花 resolveCost 分，再加全體留守者理智 -resolveSanityAll（異質代價）
+      tax: { weight: 30, loss: [60, 120], resolveCost: 40, resolveSanityAll: 5 },
       shock: { weight: 30, sanityLoss: 20, resolveCost: 30 }, // 電擊抽查：點名一人理智 -20
       checkup: {
         weight: 25,

@@ -182,7 +182,7 @@ export function upkeepPartsOf(s, state = null) {
 export function upkeepOf(s, state = null) {
   if (s.location === "pod") return CONFIG.child.podUpkeep; // 催熟艙的嬰兒只吃固定的小額
   const { gene, space } = upkeepPartsOf(s, state);
-  return Math.round((gene + space) * (1 + RANKS[s.rank].upkeepPct + INJURIES[s.injury].upkeepPct) * (state ? squadUpkeepMult(state, s) : 1)); // 養殖流：零階新人 -50%（4-E-2）
+  return Math.round((gene + space) * (1 + RANKS[s.rank].upkeepPct + INJURIES[s.injury].upkeepPct) * (state ? squadUpkeepMult(state, s) : 1) * (state && (state.spaceLevel ?? 1) === 1 ? CONFIG.space.newbieUpkeepMult : 1)); // 養殖流零階新人 -50%（4-E-2）；新手期空間 Lv.1 -50%（4-E-7）
 }
 
 export function setInjury(s, level) {
