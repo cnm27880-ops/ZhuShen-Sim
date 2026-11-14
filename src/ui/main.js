@@ -1,7 +1,7 @@
 // 畫面層：只負責「把 state 畫出來」跟「把玩家的點擊轉成引擎呼叫」。
 // 所有遊戲規則都在 src/engine/，這裡不做任何數值計算以外的決定。
 
-import { CONFIG, RANKS, INJURIES, GACHA_POOLS, PAUSE_EVENTS } from "../data/config.js";
+import { CONFIG, RANKS, INJURIES, PAUSE_EVENTS } from "../data/config.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
 import {
   createNewGame,
@@ -12,6 +12,7 @@ import {
   debtLimitOf,
   canAfford,
   pullGacha,
+  gachaInfo,
   recycle,
   serialize,
   deserialize,
@@ -508,14 +509,24 @@ function dispatch() {
 }
 
 function gacha() {
-  const pools = GACHA_POOLS.map((p) => {
-    const total = p.odds.reduce((sum, o) => sum + o.weight, 0);
-    const odds = p.odds.map((o) => `${Math.round((o.weight / total) * 100)}% ${o.rank}`).join("、");
-    return `<div class="option">
-      <span class="grow"><b>${p.name}</b><br /><small>${odds}・純隨機不保底</small></span>
-      <button class="primary" data-action="pull" data-id="${p.id}" ${canAfford(state, p.cost) ? "" : "disabled"}>抽一次（${p.cost} 分）</button>
-    </div>`;
-  }).join("");
+  const pools = gachaInfo(state)
+    .map((info) => {
+      const p = info.pool;
+      const odds = ["C", "B", "A", "S"]
+        .filter((r) => p.odds[r] > 0)
+        .map((r) => `${p.odds[r]}% ${r}`)
+        .join("、");
+      const pity = p.pity ? `・保底：第 ${p.pity.every} 抽必出 ${p.pity.minRank} 以上（目前 ${info.pity}/${p.pity.every - 1}）` : "・無保底";
+      const price = `${info.cost} 分${p.crystal ? ` + ${p.crystal} 顆結晶` : ""}`;
+      const locked = (state.spaceLevel ?? 1) < p.spaceLevel;
+      return `<div class="option">
+        <span class="grow"><b>${p.name}</b><br /><small>${odds}${pity}・本週已抽 ${info.pulls} 次（每抽 +${p.step} 分）</small>${
+          locked ? `<br /><small class="bad">🔒 ${info.reason}</small>` : ""
+        }</span>
+        <button class="primary" data-action="pull" data-id="${p.id}" ${info.ok ? "" : "disabled"} ${info.ok || locked ? "" : `title="${info.reason}"`}>抽一次（${price}）</button>
+      </div>`;
+    })
+    .join("");
   const last = modal.lastId ? getSamsarite(state, modal.lastId) : null;
   const result = last
     ? `<div class="summary gacha-result" style="--rank-color:var(--rank-${last.rank})">${rankBadge(last.rank)}
@@ -523,7 +534,8 @@ function gacha() {
     : "";
   const debtNote = state.points < 0 ? `<span class="bad">（負債中）</span>` : "";
   return `<h3>🎴 抽卡</h3>
-    <p>目前積分：<b>${state.points}</b> ${debtNote}。積分不夠時可以向主神借，最多借到 ${debtLimitOf(state)} 分。</p>
+    <p>目前積分：<b>${state.points}</b> ${debtNote}。積分不夠時可以向主神借，最多借到 ${debtLimitOf(state)} 分。
+      持有因果結晶：<b>${state.karmaCrystals ?? 0}</b> 顆（神級池每抽消耗 1 顆）。每 ${CONFIG.gacha.resetDays} 天重置「本週抽數」與漲價；保底計數不會重置。</p>
     <div class="option-list">${pools}</div>${result}
     <div class="modal-actions">${closeButton}</div>`;
 }

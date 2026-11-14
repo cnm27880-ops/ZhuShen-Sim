@@ -12,7 +12,7 @@
 //   派遣交給引擎的自動派遣（通關率 ≥ CONFIG.auto.minClearChance 才出門）
 // 注意：基因鎖、四卡池、新強化系統在 Phase 4-B 才做，所以現在第 2 章以後的天數還不準。
 
-import { CONFIG, GACHA_POOLS } from "../src/data/config.js";
+import { CONFIG } from "../src/data/config.js";
 import { SHOP_ITEMS } from "../src/data/shop.js";
 import { createNewGame, currentDay, canAfford, pullGacha, upkeepOf } from "../src/engine/core.js";
 import { step } from "../src/engine/dispatch.js";
@@ -46,9 +46,9 @@ function gearPower(id) {
 
 function botDay(state) {
   // 1. 補人
-  const cheapest = [...GACHA_POOLS].sort((a, b) => a.cost - b.cost)[0];
-  while (state.samsarites.filter((s) => s.location !== "pod").length < TEAM_TARGET && canSpare(state, cheapest.cost)) {
-    if (!pullGacha(state, cheapest.id)) break;
+  // （暫時版本：只抽初級池；步驟 11 會改成會選池、會強化的機器人）
+  while (state.samsarites.filter((s) => s.location !== "pod").length < TEAM_TARGET && canSpare(state, CONFIG.gacha.pools[0].base)) {
+    if (!pullGacha(state, CONFIG.gacha.pools[0].id)) break;
   }
   // 2. 裝備（只幫在家的戰力前 4 名買）
   const top = state.samsarites

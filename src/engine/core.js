@@ -1,7 +1,7 @@
 // 核心：遊戲狀態、輪迴者、經濟（維持費／高利貸／回收爐）、抽卡、時間推進。
 // 這裡完全不碰畫面（DOM），所以可以直接用 Node 跑測試。
 
-import { CONFIG, RANKS, INJURIES, GACHA_POOLS, PAUSE_EVENTS } from "../data/config.js";
+import { CONFIG, RANKS, INJURIES, PAUSE_EVENTS } from "../data/config.js";
 import { SURNAMES, GIVEN_NAMES } from "../data/names.js";
 import { rand, randInt, pick, weighted } from "./rng.js";
 import { rollTags } from "./tags.js";
@@ -10,6 +10,7 @@ import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
 import { dailyGod, cancelGodOf, newGodState } from "./godEvents.js"; // 同上（Phase 3-E 主神搞事）
 import { dailyNursery, newNurseryState, podCost } from "./children.js"; // 同上（Phase 3-F 生小孩）
+import { newGrowthState } from "./growth.js"; // 同上（Phase 4-B 基因鎖／強化／頓悟；growth.js 也會 import 這個檔案）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
 // ───────── 事件與日誌 ─────────
@@ -40,6 +41,10 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     totalSpent: 0, // 累積花費（Phase 3 商店階級解鎖會用到）
     spaceLevel: 1, // 空間等級 Lv.1~5（Phase 4-A）：每首通一章尾王 +1，決定維持費、破產線、解鎖到第幾章
     chapterClearDay: {}, // { 章節: 首通尾王是第幾天 }（npm run sim 統計用）
+    chapterClears: {}, // { 章節: 該章前 3 關合計成功結算幾次 }，尾王守門用（CONFIG.bossGate，見 engine/dungeon.js）
+    karmaCrystals: 0, // 因果結晶（神級卡池每抽消耗 1 顆；副本掉落，見 engine/dungeon.js）
+    gacha: newGachaState(), // 四卡池：本週抽數（漲價計數）與保底計數
+    growth: newGrowthState(seed), // 頓悟：獨立亂數流（見 engine/growth.js）
     nextId: 1,
     samsarites: [],
     graveyard: [],
@@ -100,6 +105,10 @@ export function createSamsarite(state, rank, rng = state) {
     podDaysLeft: 0, // 催熟艙剩幾天（location "pod" 才有意義）
     parents: null, // 小孩才有：[家長id, 家長id]
     tags: rollTags(rng), // 標籤 id 陣列，資料在 src/data/tags.js
+    geneLock: 0, // 基因鎖階數 0~4（上限依階級，見 RANKS.maxGene；engine/growth.js）
+    enhanceCount: 0, // 個人強化累計次數（上限跟基因鎖階數走）
+    insightCount: 0, // 通關頓悟累計次數（上限 = (基因鎖階數 + 1) × 4）
+    inheritPower: 0, // 子嗣繼承值（4-E 才會用，先預留；算進本體值、會吃基因鎖乘區）
     upgrades: {}, // 商店強化累積的數值：{ power, dodge… }（見 data/shop.js）
     gear: {}, // 商店裝備：{ weapon: 商品id, armor: 商品id }
     bought: {}, // 每種強化買過幾次：{ 商品id: 次數 }
@@ -252,15 +261,75 @@ export function recycle(state, id) {
   return true;
 }
 
-// ───────── 抽卡 ─────────
+// ───────── 抽卡（Phase 4-B：四階卡池）─────────
+// 每個卡池有「本週已抽次數」（每 resetDays 天重置，用來漲價）與「保底計數」（跨週保留，抽中保底階級才歸零）。
+// 週數是從目前天數算出來的（第 1~7 天 = 第 0 週，第 8~14 天 = 第 1 週…），所以讀檔後也不會錯。
+
+const RANK_ORDER = ["C", "B", "A", "S"];
+
+export function newGachaState() {
+  const pools = {};
+  for (const p of CONFIG.gacha.pools) pools[p.id] = { pulls: 0, pity: 0 };
+  return { week: 0, pools };
+}
+
+/** 確保 state.gacha 存在、跨週就把「本週已抽次數」歸零（保底計數不動），回傳某池的狀態 */
+function gachaPoolState(state, poolId) {
+  state.gacha ??= newGachaState();
+  const week = Math.floor((currentDay(state) - 1) / CONFIG.gacha.resetDays);
+  if (state.gacha.week !== week) {
+    state.gacha.week = week;
+    for (const p of Object.values(state.gacha.pools)) p.pulls = 0;
+  }
+  return (state.gacha.pools[poolId] ??= { pulls: 0, pity: 0 });
+}
+
+export const gachaPoolOf = (poolId) => CONFIG.gacha.pools.find((p) => p.id === poolId);
+
+/** 現在抽某個池的狀況：{ ok, reason, pool, cost, crystal, pulls, pity }。reason 是給畫面看的繁體中文 */
+export function checkGacha(state, poolId) {
+  const pool = gachaPoolOf(poolId);
+  if (!pool) return { ok: false, reason: "沒有這個卡池" };
+  const ps = gachaPoolState(state, poolId);
+  const cost = pool.base + pool.step * ps.pulls;
+  const info = { pool, cost, crystal: pool.crystal, pulls: ps.pulls, pity: ps.pity };
+  if ((state.spaceLevel ?? 1) < pool.spaceLevel) return { ...info, ok: false, reason: `需要空間等級 Lv.${pool.spaceLevel}` };
+  if ((state.karmaCrystals ?? 0) < pool.crystal) return { ...info, ok: false, reason: `需要 ${pool.crystal} 顆因果結晶` };
+  if (!canAfford(state, cost)) return { ...info, ok: false, reason: "積分不夠（已達高利貸上限）" };
+  return { ...info, ok: true };
+}
+
+/** 全部卡池的狀況（畫面用） */
+export function gachaInfo(state) {
+  return CONFIG.gacha.pools.map((p) => checkGacha(state, p.id));
+}
 
 export function pullGacha(state, poolId) {
-  const pool = GACHA_POOLS.find((p) => p.id === poolId);
-  if (!pool || !spend(state, pool.cost)) return null;
-  const rank = weighted(state, pool.odds).rank;
+  const check = checkGacha(state, poolId);
+  if (!check.ok) return null;
+  const { pool, cost } = check;
+  const ps = state.gacha.pools[pool.id];
+
+  // 保底：第 every 抽（本池保底計數 + 1 達標）保證出 minRank 以上
+  const minIdx = pool.pity ? RANK_ORDER.indexOf(pool.pity.minRank) : 0;
+  const forced = !!pool.pity && ps.pity + 1 >= pool.pity.every;
+  let items = RANK_ORDER.map((rank) => ({ rank, weight: pool.odds[rank] ?? 0 })).filter((it) => it.weight > 0);
+  if (forced) {
+    items = items.filter((it) => RANK_ORDER.indexOf(it.rank) >= minIdx);
+    if (items.length === 0) items = [{ rank: pool.pity.minRank, weight: 1 }]; // 設定漏寫時的保險
+  }
+
+  spend(state, cost);
+  state.karmaCrystals = (state.karmaCrystals ?? 0) - pool.crystal;
+  const rank = weighted(state, items).rank;
+  const pityN = ps.pity + 1;
+  ps.pulls += 1;
+  if (pool.pity) ps.pity = RANK_ORDER.indexOf(rank) >= minIdx ? 0 : ps.pity + 1;
+
   const s = createSamsarite(state, rank);
   state.samsarites.push(s);
-  emit(state, "gacha", logText(state, "gacha", { pool: pool.name, cost: pool.cost, rank, A: s, power: s.stats.power }), {
+  if (forced) emit(state, "gachaPity", logText(state, "gachaPity", { pool: pool.name, n: pityN, need: pool.pity.minRank }));
+  emit(state, "gacha", logText(state, "gacha", { pool: pool.name, cost, rank, A: s, power: s.stats.power }), {
     samsariteId: s.id,
   });
   return s;
@@ -283,7 +352,12 @@ export function advanceTick(state) {
 /** 沒人可用、又抽不起最便宜的卡池 = 遊戲結束 */
 export function checkGameOver(state) {
   if (state.gameOver) return true;
-  const cheapest = Math.min(...GACHA_POOLS.map((p) => p.cost));
+  // 用「基礎價」判斷（不含本週漲價）：沒人時沒有維持費，等到下週重置價格就回來了，不算卡死
+  const cheapest = Math.min(
+    ...CONFIG.gacha.pools
+      .filter((p) => p.spaceLevel <= (state.spaceLevel ?? 1) && p.crystal <= (state.karmaCrystals ?? 0))
+      .map((p) => p.base)
+  );
   if (state.samsarites.length === 0 && !canAfford(state, cheapest)) {
     state.gameOver = true;
     emit(state, "gameOver", logText(state, "gameOver"));
@@ -334,6 +408,18 @@ export function deserialize(json) {
   }
   state.spaceLevel ??= 1; // Phase 4-A 之前的存檔沒有空間等級
   state.chapterClearDay ??= {};
+  // Phase 4-B 之前的存檔：補基因鎖／強化／頓悟／卡池／結晶欄位（不退費、舊卡池狀態不保留，見 CLAUDE.md）
+  state.chapterClears ??= {};
+  state.karmaCrystals ??= 0;
+  state.gacha ??= newGachaState();
+  for (const p of CONFIG.gacha.pools) state.gacha.pools[p.id] ??= { pulls: 0, pity: 0 };
+  state.growth ??= newGrowthState(state.rngState);
+  for (const s of state.samsarites) {
+    s.geneLock ??= 0;
+    s.enhanceCount ??= 0;
+    s.insightCount ??= 0;
+    s.inheritPower ??= 0;
+  }
   state.wishes ??= [];
   state.nextWishId ??= 1 + Math.max(0, ...state.wishes.map((w) => w.id));
   state.relations ??= {};

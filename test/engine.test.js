@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { CONFIG, GACHA_POOLS } from "../src/data/config.js";
+import { CONFIG } from "../src/data/config.js";
 import { DUNGEONS, getDungeon } from "../src/data/dungeons.js";
 import { TAGS, ENV_TAGS, getTag } from "../src/data/tags.js";
 import {
@@ -173,21 +173,25 @@ test("高利貸：積分不會低於上限，負債時會電擊扣理智", () =>
   assert.ok(state.events.some((e) => e.type === "shock"));
 });
 
-test("抽卡：扣對的錢、只出該池的階級、借不到錢就抽不了", () => {
+test("抽卡：扣對的錢（含本週漲價）、只出該池的階級、借不到錢就抽不了", () => {
   const state = createNewGame(7);
-  state.points = 100000;
-  for (const pool of GACHA_POOLS) {
-    const allowed = pool.odds.map((o) => o.rank);
-    for (let i = 0; i < 50; i++) {
+  state.points = 1000000;
+  state.spaceLevel = 4; // 四個池都解鎖
+  state.karmaCrystals = 100;
+  for (const pool of CONFIG.gacha.pools) {
+    const allowed = Object.entries(pool.odds).filter(([, w]) => w > 0).map(([rank]) => rank);
+    for (let i = 0; i < 20; i++) {
       const before = state.points;
       const s = pullGacha(state, pool.id);
-      assert.ok(allowed.includes(s.rank));
-      assert.equal(state.points, before - pool.cost);
+      assert.ok(allowed.includes(s.rank), `${pool.id} 抽到了不在機率表的階級 ${s.rank}`);
+      assert.equal(state.points, before - (pool.base + pool.step * i), `${pool.id} 第 ${i + 1} 抽的價格`);
     }
   }
-  state.points = CONFIG.space.debtLimit[0] + 100;
-  assert.equal(pullGacha(state, "ba"), null);
-  assert.equal(canAfford(state, 100), true);
+  const poor = createNewGame(7);
+  poor.points = CONFIG.space.debtLimit[0] + 100; // 剩 100 分可用，初級池基礎價 120
+  assert.equal(pullGacha(poor, "basic"), null);
+  assert.equal(pullGacha(poor, "mid"), null, "空間 Lv.1 抽不到中級池");
+  assert.equal(canAfford(poor, 100), true);
 });
 
 test("一場副本剛好過 1 天，而且出征的人不扣維持費", () => {
@@ -222,7 +226,7 @@ test("戰力嚴重不足的隊伍會傷亡；失敗生還者一定帶傷", () =>
 test("派遣檢查：人數上限、同一個人不能同時在兩場副本", () => {
   const state = createNewGame(5);
   state.points = 100000;
-  while (state.samsarites.length <= CONFIG.partyMax) pullGacha(state, "ba");
+  while (state.samsarites.length <= CONFIG.partyMax) pullGacha(state, "basic");
   assert.equal(startRun(state, easy.id, state.samsarites.map((s) => s.id)).ok, false);
   assert.equal(startRun(state, easy.id, []).ok, false);
   assert.equal(startRun(state, easy.id, [state.samsarites[0].id]).ok, true);

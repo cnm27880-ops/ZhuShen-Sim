@@ -134,10 +134,10 @@ test("副本裡的人不能用商店", () => {
 test("花費跨過門檻時主神會宣布解鎖（抽卡的花費也算）", () => {
   const { state } = setup(100000);
   state.totalSpent = 500;
-  pullGacha(state, "ba"); // 150 → 650
+  pullGacha(state, "basic"); // 120 → 620
   assert.equal(shopTier(state), 2);
   assert.ok(state.log.some((e) => e.type === "shopTier" && e.text.includes("Tier 2")));
-  pullGacha(state, "ba"); // 還是 Tier 2，不再宣布
+  pullGacha(state, "basic"); // 還是 Tier 2，不再宣布
   assert.equal(state.log.filter((e) => e.type === "shopTier").length, 1);
 });
 

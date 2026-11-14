@@ -306,12 +306,6 @@ export const INJURIES = [
   { name: "致命傷", restDays: 7, upkeepPct: 1.5, deathBonus: 0.8 },
 ];
 
-// 卡池：純隨機、不保底
-export const GACHA_POOLS = [
-  { id: "ba", name: "B~A 池", cost: 150, odds: [{ rank: "B", weight: 70 }, { rank: "A", weight: 30 }] },
-  { id: "as", name: "A~S 池", cost: 400, odds: [{ rank: "A", weight: 70 }, { rank: "S", weight: 30 }] },
-];
-
 // 會觸發「自動暫停」的事件種類。之後的 Phase 要加新事件（許願、生小孩…）只要在這裡加一行。
 export const PAUSE_EVENTS = {
   death: { label: "有人死掉", default: true },
