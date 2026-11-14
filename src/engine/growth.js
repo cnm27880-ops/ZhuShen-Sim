@@ -102,7 +102,7 @@ export function enhance(state, id, opts = null) {
 
 // ───────── 突破基因鎖 ─────────
 
-/** 破鎖費用：持有對應階級的基因鎖助推 Buff（破鎖丹等耗材）時打折（4-E-8；沒有失敗判定，所以 rateBonus 目前不產生效果） */
+/** 破鎖費用：持有對應階級的基因鎖助推 Buff（破鎖丹等耗材）時打折（4-E-8；破鎖沒有失敗判定，所以只有花費折扣） */
 export function geneCostOf(s, next, base) {
   const b = s.geneBuff;
   return b && b.target === next ? Math.round(base * (1 - (b.costDiscount ?? 0))) : base;

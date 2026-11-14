@@ -11,7 +11,7 @@ import { noteContraband, squadRng, bump } from "./squad.js"; // 黑貨使用紀�
 import { CONFIG, INJURIES } from "../data/config.js";
 import { SHOP_ITEMS, SHOP_SLOT_LABELS, getShopItem, isNewItem } from "../data/shopItems.js";
 import { getSpecialReward } from "../data/dungeons.js";
-import { emit, spend, spendWallet, canAfford, getSamsarite, setInjury, shopTier } from "./core.js";
+import { emit, spend, spendWallet, canAfford, getSamsarite, setInjury, shopTier, currentDay } from "./core.js";
 import { addLove, softenHate, addHate } from "./relations.js";
 import { intelTargets, gainIntel, marketOf } from "./market.js";
 import { pregnancyPartner, inducePregnancy } from "./lineage.js";
@@ -153,7 +153,7 @@ function applyUse(state, item, s) {
     notes.push(`理智 +${e.sanity}`);
   }
   if (e.geneLockTarget) {
-    s.geneBuff = { target: e.geneLockTarget, costDiscount: e.costDiscount ?? 0, rateBonus: e.rateBonus ?? 0 };
+    s.geneBuff = { target: e.geneLockTarget, costDiscount: e.costDiscount ?? 0 };
     notes.push(`下次衝刺 ${e.geneLockTarget} 階基因鎖花費 -${Math.round((e.costDiscount ?? 0) * 100)}%`);
   }
   if (e.deathWard) {
@@ -181,7 +181,10 @@ function applyUse(state, item, s) {
         if (e.clearHate || e.hateDelta) softenHate(state, a, b, { reduce: -(e.hateDelta ?? 0), clear: !!e.clearHate });
       }
     }
-    if (e.teamLove) notes.push(`全隊雙向好感 +${e.teamLove}`);
+    if (e.teamLove) {
+      for (const m of group) m.cozyUntilDay = currentDay(state) + CONFIG.lineage.cozyDays; // 社交助興：這幾天孕育檢定 +1.5%（4-E-8 收尾）
+      notes.push(`全隊雙向好感 +${e.teamLove}`);
+    }
     if (e.clearHate) notes.push("全隊仇恨清零");
     else if (e.hateDelta) notes.push(`全隊仇恨 ${e.hateDelta}`);
   }

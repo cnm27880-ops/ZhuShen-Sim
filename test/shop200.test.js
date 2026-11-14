@@ -122,11 +122,11 @@ test("基因鎖助推：對應階級破鎖折抵花費，突破後消耗；同�
   assert.equal(base, CONFIG.gene.tiers[2].cost);
   assert.equal(buyItem(state, "t3_29", s.id).ok, true);
   assert.equal(s.geneBuff.target, 2);
-  assert.equal(checkBreakGene(state, s.id).cost, Math.round(base * 0.8));
+  assert.equal(checkBreakGene(state, s.id).cost, Math.round(base * 0.75));
   assert.equal(checkBuy(state, getShopItem("t2_29"), s).ok, false, "同階不疊加");
   const pts = state.points;
   assert.equal(breakGene(state, s.id).ok, true);
-  assert.equal(pts - state.points, Math.round(base * 0.8));
+  assert.equal(pts - state.points, Math.round(base * 0.75));
   assert.equal(s.geneBuff, null, "突破後消耗");
   assert.equal(checkBuy(state, getShopItem("t2_29"), s).ok, false, "已經 2 階了");
 });
@@ -354,4 +354,104 @@ test("AI 催生黑貨：只有愛搞事、有雙向淨好感 >= 60 的對象時�
     CONFIG.shopping.dramaChance = keep;
   }
   assert.ok(affinity);
+});
+
+// ───────── 4-E-8 收尾：孕育 1%/天＋助孕、破鎖耗材去誤導化、前 3 世界房間文字 ─────────
+import { birthChanceOf, isCozy, dailyLineage } from "../src/engine/lineage.js";
+import { currentDay as dayOf } from "../src/engine/core.js";
+
+test("自然孕育：基礎 1.0%/天；bond 流派 +0.5%；雙方留守、沒重傷且社交助興再 +1.5%（可疊加）", () => {
+  assert.equal(CONFIG.lineage.birthChance, 0.01);
+  const state = setup(4);
+  const [cap, a, b] = state.samsarites;
+  love(state, a, b, 80);
+  assert.ok(Math.abs(birthChanceOf(state, a, b) - 0.01) < 1e-9, "沒有隊長／流派：只有基礎");
+  // bond 流派
+  cap.tags = ["mad_matchmaker"];
+  appointCaptain(state, cap.id);
+  assert.equal(state.squad.style, "bond");
+  assert.ok(Math.abs(birthChanceOf(state, a, b) - 0.015) < 1e-9, "bond +0.5%");
+  // 社交助興之一：帶著沒用掉的同行好感耗材（同心香囊）
+  a.consumables = ["t3_32"];
+  assert.equal(isCozy(state, a, b), true);
+  assert.ok(Math.abs(birthChanceOf(state, a, b) - 0.03) < 1e-9, "bond 0.5% + 助興 1.5% + 基礎 1%");
+  a.consumables = [];
+  assert.equal(isCozy(state, a, b), false);
+  // 之二：雙向淨好感 >= 85 且私房錢充裕
+  love(state, a, b, 10);
+  a.wallet = 600;
+  b.wallet = 600;
+  assert.equal(isCozy(state, a, b), true);
+  b.wallet = 100;
+  assert.equal(isCozy(state, a, b), false, "私房錢不夠");
+  // 重傷或不在空間：不加成
+  b.wallet = 600;
+  b.injury = 2;
+  assert.ok(Math.abs(birthChanceOf(state, a, b) - 0.015) < 1e-9, "重傷：沒有助興加成");
+  b.injury = 0;
+  b.location = "dungeon";
+  assert.ok(Math.abs(birthChanceOf(state, a, b) - 0.015) < 1e-9);
+});
+
+test("合道仙露：全隊進入 3 天社交助興狀態，孕育檢定 +1.5%", () => {
+  const state = setup(3);
+  const [a, b] = state.samsarites;
+  love(state, a, b, 80);
+  assert.equal(isCozy(state, a, b), false);
+  assert.equal(buyItem(state, "t5_32", a.id).ok, true);
+  assert.equal(a.cozyUntilDay, dayOf(state) + CONFIG.lineage.cozyDays);
+  assert.equal(isCozy(state, a, b), true);
+  state.tick += CONFIG.ticksPerDay * (CONFIG.lineage.cozyDays + 1);
+  assert.equal(isCozy(state, a, b), false, "過期");
+});
+
+test("自然孕育實測：符合條件的一對每天約 1%（統計），冷卻與雙向淨好感 >= 75 照舊", () => {
+  let births = 0;
+  const trials = 4000;
+  for (let i = 0; i < trials; i++) {
+    const state = setup(2, { seed: 300 + i });
+    const [a, b] = state.samsarites;
+    love(state, a, b, 80);
+    state.squad.captainId = null;
+    dailyLineage(state);
+    if (state.samsarites.some((s) => s.location === "pod")) births++;
+  }
+  assert.ok(births / trials > 0.005 && births / trials < 0.02, `孕育比例 ${(births / trials).toFixed(4)}`);
+});
+
+test("破鎖耗材去誤導化：只有花費折扣（T1～2 20%／T3～4 25%／T5 30%），結構與描述都沒有成功率", () => {
+  const want = { t1_30: 0.2, t2_29: 0.2, t3_29: 0.25, t4_29: 0.25, t5_29: 0.3 };
+  for (const [id, disc] of Object.entries(want)) {
+    const item = getShopItem(id);
+    assert.equal(item.effect.costDiscount, disc, id);
+    assert.equal("rateBonus" in item.effect, false, `${id} 不該有 rateBonus`);
+    assert.ok(!item.desc.includes("成功率"), `${id} 描述不該提成功率`);
+    assert.ok(item.desc.includes(`-${Math.round(disc * 100)}%`), `${id} 描述要寫折扣`);
+  }
+  const state = setup(1, { level: 3 });
+  const [s] = state.samsarites;
+  s.rank = "A";
+  s.geneLock = 1;
+  buyItem(state, "t3_29", s.id);
+  assert.deepEqual(Object.keys(s.geneBuff).sort(), ["costDiscount", "target"]);
+});
+
+test("前 3 個世界（密室殺陣、喪屍危城、猛鬼宿舍）：房間文字與首通獎勵名稱對齊新世界觀，不再是舊題材或佔位字", () => {
+  for (const id of ["ghost_village", "ch1_02", "silent_ark"]) {
+    const d = DUNGEONS.find((x) => x.id === id);
+    assert.equal(d.rooms.length, CONFIG.dungeon.chapters[0].rooms);
+    for (const r of d.rooms) {
+      assert.ok(!/待命名|佔位/.test(r.name + r.pass + r.fail), `${id} 還有佔位字`);
+      assert.ok(r.fail.includes("{name}"), `${id}／${r.name} 的失敗句要有 {name}`);
+    }
+  }
+  const old = /紙紮|祠堂|餓鬼宴席|氣閘艙|冷凍艙|反應爐|艦橋|殖民船/;
+  for (const id of ["ghost_village", "silent_ark"]) {
+    const d = DUNGEONS.find((x) => x.id === id);
+    assert.ok(!old.test(d.rooms.map((r) => r.name + r.pass + r.fail).join("")), `${id} 還有舊題材房間文字`);
+    assert.ok(!/鬼道|陰陽眼|神經加速器|義體|脈衝切割/.test(d.specialRewards.map((r) => r.name).join("")), `${id} 首通獎勵名稱還是舊的`);
+    assert.equal(d.specialRewards.length, 3);
+  }
+  assert.equal(DUNGEONS.find((x) => x.id === "ghost_village").specialRewards[0].name, "破局者手札");
+  assert.equal(DUNGEONS.find((x) => x.id === "silent_ark").specialRewards[2].name, "桃木驅鬼釘");
 });

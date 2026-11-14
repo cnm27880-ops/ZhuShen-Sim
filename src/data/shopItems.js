@@ -6,7 +6,7 @@
 //   source：「常駐」／世界 id（特產）／「耗材」／「黑貨」
 //   kind：gear 穿戴／use 買了立刻用（治療、情報、好感、孕育…）／buff 放進出征耗材緩衝區、下次出征套用一場
 //   stats：白值 { power, hp, defense, speed, luck }（不吃基因鎖乘區；血統也是白值）
-//   effect（耗材）：healInjury（99 = 傷勢歸零）／permHp＋maxUsesPerChar／sanity／geneLockTarget＋costDiscount＋rateBonus／deathWard＋fullRecover／
+//   effect（耗材）：healInjury（99 = 傷勢歸零）／permHp＋maxUsesPerChar／sanity／geneLockTarget＋costDiscount（破鎖沒有失敗判定，所以沒有成功率加成）／deathWard＋fullRecover／
 //     intelGain＋targetCount／teamLove／clearHate／hateDelta／nextRunLoveBonus／transferMadness／inducePregnancy（normal／high／max）／
 //     nextRunPowerMult／partyNextRunPowerMult／postRunInjury／partyPostRunSanity
 //   passive（裝備著才生效）：dailySanity／runSanity／partyRunSanity／demonTendency／captainHateMult／captainLoveMult／coupPowerBonus
@@ -26,14 +26,14 @@ export const EFFECTS = {
   t1_27: { healInjury: 1 },
   t1_28: { sanity: 20 },
   t1_29: { healInjury: 2 },
-  t1_30: { geneLockTarget: 1, costDiscount: 0.15, rateBonus: 0.1 },
+  t1_30: { geneLockTarget: 1, costDiscount: 0.2 },
   t1_31: { intelGain: 20, targetCount: 1 },
   t1_32: { nextRunLoveBonus: 4 },
   t1_37: { nextRunPowerMult: 0.15, postRunInjury: 1 },
   t1_40: { hateDelta: -15 },
   t2_27: { healInjury: 2 },
   t2_28: { sanity: 30 },
-  t2_29: { geneLockTarget: 2, costDiscount: 0.15, rateBonus: 0.1 },
+  t2_29: { geneLockTarget: 2, costDiscount: 0.2 },
   t2_30: { deathWard: 1 },
   t2_31: { intelGain: 25, targetCount: 1 },
   t2_32: { nextRunLoveBonus: 6 },
@@ -41,7 +41,7 @@ export const EFFECTS = {
   t2_40: { hateDelta: -20, sanity: 10 },
   t3_27: { healInjury: 2 },
   t3_28: { sanity: 35 },
-  t3_29: { geneLockTarget: 2, costDiscount: 0.2, rateBonus: 0.15 },
+  t3_29: { geneLockTarget: 2, costDiscount: 0.25 },
   t3_30: { deathWard: 1 },
   t3_31: { intelGain: 35, targetCount: 1 },
   t3_32: { nextRunLoveBonus: 8 },
@@ -49,7 +49,7 @@ export const EFFECTS = {
   t3_40: { nextRunPowerMult: 0.25, postRunInjury: 1 },
   t4_27: { healInjury: 99 },
   t4_28: { sanity: 60 },
-  t4_29: { geneLockTarget: 3, costDiscount: 0.2, rateBonus: 0.15 },
+  t4_29: { geneLockTarget: 3, costDiscount: 0.25 },
   t4_30: { deathWard: 1, fullRecover: true },
   t4_31: { intelGain: 100, targetCount: 1 },
   t4_32: { hateDelta: -30 },
@@ -57,7 +57,7 @@ export const EFFECTS = {
   t4_40: { transferMadness: true, sanity: 35, madnessSanityHit: 25, madnessHate: 25 },
   t5_27: { healInjury: 99, permHp: 10, maxUsesPerChar: 3 },
   t5_28: { sanity: 100 },
-  t5_29: { geneLockTarget: 4, costDiscount: 0.25, rateBonus: 0.2 },
+  t5_29: { geneLockTarget: 4, costDiscount: 0.3 },
   t5_30: { deathWard: 1, fullRecover: true },
   t5_31: { intelGain: 100, targetCount: 3 },
   t5_32: { teamLove: 20, clearHate: true },

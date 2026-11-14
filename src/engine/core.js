@@ -166,10 +166,11 @@ export function createSamsarite(state, rank, rng = state) {
     tempPowerPct: 0, // 單場臨時戰力加成（養殖流：肉豬陣亡的隊長；副本結算清掉）
     captainNo: null, // 他是第幾任隊長（遺物履歷用）
     maxBossChapter: 0, // 他參與討伐過的最高章節尾王（遺物履歷用）
+    cozyUntilDay: 0, // 社交助興狀態持續到第幾天（合道仙露，4-E-8 收尾：孕育檢定加成）
     elixirUses: 0, // 九轉金丹永久強化已用幾次（單人上限 3，4-E-8）
     deathWardFull: false, // 這張護符是否「全狀態恢復」型（高階）
     deathWard: 0, // 替死護符層數（上限 1；致死判定時消耗，4-E-8）
-    geneBuff: null, // 基因鎖助推 Buff { target, costDiscount, rateBonus }（突破該階後消耗，4-E-8）
+    geneBuff: null, // 基因鎖助推 Buff { target, costDiscount }（突破該階後消耗，4-E-8）
     talentPct: 0, // 子嗣天賦白值占基礎戰力的比例（4-E-4，總封頂 +25%；inheritPower = round(stats.power × talentPct)）
   };
 }
@@ -599,6 +600,7 @@ export function deserialize(json) {
     s.maxBossChapter ??= 0;
     s.talentPct ??= 0;
     s.elixirUses ??= 0;
+    s.cozyUntilDay ??= 0;
     s.deathWard ??= 0;
     s.deathWardFull ??= false;
     s.geneBuff ??= null;

@@ -20,7 +20,7 @@ import { effectivePower } from "./tags.js";
 import { affinity } from "./relations.js";
 import { giveBirth, hatch, podBabies } from "./children.js";
 import { popLimit } from "./mandatory.js";
-import { squadRng, squadOf, squadUnlocked, captainOf, squadMembers, bump } from "./squad.js";
+import { squadRng, squadOf, squadUnlocked, captainOf, squadMembers, bump, styleOf } from "./squad.js";
 import { logText } from "./templates.js";
 
 const L = () => CONFIG.lineage;
@@ -249,9 +249,26 @@ export function dailyLineage(state) {
     for (let j = i + 1; j < home.length; j++) {
       const [a, b] = [home[i], home[j]];
       if (lineageBlock(state, a, b)) continue;
-      if (rand(rng) < L().birthChance) inducePregnancy(state, a, b, { force: true });
+      if (rand(rng) < birthChanceOf(state, a, b)) inducePregnancy(state, a, b, { force: true });
     }
   }
+}
+
+/** 這對今天是不是處於「社交助興」：任一方帶著沒用掉的同行好感耗材（同心香囊、結義美酒…）、或剛喝過合道仙露，或雙向淨好感 >= 85 且雙方私房錢充裕（逛街時的春宵小事件） */
+export function isCozy(state, a, b) {
+  const day = currentDay(state);
+  const hasLoveItem = (s) => (s.consumables ?? []).some((id) => (getShopItem(id)?.effect?.nextRunLoveBonus ?? 0) > 0);
+  if (hasLoveItem(a) || hasLoveItem(b)) return true;
+  if ((a.cozyUntilDay ?? 0) >= day && (b.cozyUntilDay ?? 0) >= day) return true;
+  return affinity(state, a, b) >= L().cozyAffinity && affinity(state, b, a) >= L().cozyAffinity && (a.wallet ?? 0) >= L().cozyWallet && (b.wallet ?? 0) >= L().cozyWallet;
+}
+
+/** 每日自然孕育機率：基礎 1.0%；bond 流派 +0.5%；雙方都留守、沒重傷且社交助興 +1.5%（呼叫端已確認雙向淨好感 >= 75、不在冷卻） */
+export function birthChanceOf(state, a, b) {
+  let p = L().birthChance;
+  if (styleOf(state) === "bond") p += L().bondBonus;
+  if (a.location === "space" && b.location === "space" && a.injury < 2 && b.injury < 2 && isCozy(state, a, b)) p += L().cozyBonus;
+  return p;
 }
 
 /** 目前章節的叛逃 Boss 戰力錨點：該章常規關平均 R × rogueRMult，獎勵取該章常規關平均獎勵 */

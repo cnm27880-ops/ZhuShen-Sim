@@ -229,7 +229,7 @@ test("存檔：裝備、強化、收藏讀回來還在；舊存檔的收藏名�
   assert.deepEqual(back.collection, ["ember_staff"]);
 
   const old = JSON.parse(serialize(state));
-  old.collection = ["鬼道術法・引魂符", "不存在的東西"];
+  old.collection = ["破局者手札", "不存在的東西"]; // 4-E-8 收尾：獎勵改名（id 不變）
   delete old.samsarites[0].gear;
   old.samsarites[0].upgrades = { power: 12, dodge: 0.04 }; // 舊商店強化：Phase 4-B 起歸零、不退費
   old.samsarites[0].bought = { enh_power1: 3 };
