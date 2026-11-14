@@ -125,7 +125,7 @@ export function genePowerMult(s) {
  * 基礎戰力 stats.power 不會被這個函式改動。
  */
 export function effectivePower(s) {
-  const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0) + moodPowerPct(s) + injuryPowerPct(s) + sanityPowerPct(s) + (s.steleBonus ?? 0) + (s.relicBonus ?? 0) + shopBonus(s, "powerPct") + (s.captainBonus ?? 0) + (s.tempPowerPct ?? 0); // 血統 powerPct（4-D-2）；隊長 +8%、養殖流臨時戰力（4-E）
+  const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0) + moodPowerPct(s) + injuryPowerPct(s) + sanityPowerPct(s) + (s.steleBonus ?? 0) + (s.relicBonus ?? 0) + shopBonus(s, "powerPct") + (s.captainBonus ?? 0) + (s.tempPowerPct ?? 0) + (s.facilityBonus ?? 0); // 血統 powerPct（4-D-2）；隊長 +8%、養殖流臨時戰力（4-E）
   return Math.max(1, Math.round((bodyPower(s) * genePowerMult(s) + shopBonus(s, "power")) * (1 + pct)));
 }
 

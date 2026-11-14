@@ -70,11 +70,18 @@
 | `src/engine/squad.js` | 小隊引擎（4-E-1／2）：`appointCaptain`／`replaceCaptain`（主神撤換令）／`replacePreview`（不服空降預覽）／`dailySquad`（自動冊封、三軌繼承：順延／雙強奪權／撤換）／`deriveSquadStyle`／`candidateStyle`；`squadRng`（獨立亂數流 `state.squadRngState`）；流派機制查詢函式（`squadDefenseBonus`／`failSanityLoss`／`bondGuard`／`farmingPigDied`／`communalInherit`／`squadMarketMult`…）給 dungeon／wallet／shopping／market／core 掛鉤；`bump` 累計次數（`state.squad.counters`）；`CONFIG.squad.forceStyle` 給 sim 強制流派 |
 | `src/engine/drama.js` | 5:2:1 事件引擎（4-E-3）：`dailyDrama`（每日 25%）／`dramaAfterRun`（副本成功 30%）／`runDrama`／`pickGroup`／`playable`／`applyEvent`；噬主夜襲 `resolveCoupNight` |
 | `src/engine/lineage.js` | 跨代與編年史（4-E-4／5）：`addChronicle`（上限 100 條）、`applyLineage`（世代、天賦 `talentPct` 封頂 +25%）、`inducePregnancy`／`speedUpPod`（孕育、加速出艙；實際生產共用 `children.js` 的 `giveBirth`）、`leaveHeirloom`／`bestowHeirloom`／`heirloomHeirs`（先人遺物）、`dailyLineage`（叛逃判定＋孕育）、`defect`／`isDefectImmune`／`rogueDungeon`／`resolveRogueFight`（叛逃野生 Boss） |
+| `src/data/facilities.js` | 5 座永久基建的名稱／圖示／說明與順序（4-F-3）；數字（等級上限、總造價、結晶門檻、每級效果）在 `CONFIG.facility.defs` |
+| `src/engine/facilities.js` | 永久基建引擎（4-F-3）：`state.facilities`（gravity／pods／stele／nursery／radar 各自等級）、`levelCost`（等比遞增，總和 = 設定總造價）、`checkUpgrade`／`upgradeFacility`（扣積分＋侵蝕結晶；共產流互助金超過軟上限的部分最多折抵 30% 造價 `communalSubsidy`）、`dailyFacilities`（自動建設：公庫高於 30000×空間等級 才動用，便宜的先升）；效果查詢 `gravityPct`（寫進每人 `s.facilityBonus`，`effectivePower` 讀）／`podsHeal`（重傷多一次痊癒，獨立亂數流 `state.facilityRngState`）／`restSanityBonus`／`geneDiscountOf`（growth.js `geneCostOf` 與破鎖耗材加算、總折扣封頂 -45%）／`podDaysCut`／`talentFloor`（children／lineage 掛鉤）／`intelGainBonus`（dungeon 情報條）／`rivalRewardBonus` |
+| `src/engine/erosion.js` | 位面侵蝕 1★～10★（4-F-3）：`erosionBlock`（Lv.4 解鎖、只能打已首通世界）、`applyErosion`（R ×1.45^k，回傳新物件）、`erosionRewardMult`（×1.32^k）；`run.erosion = k`，`dungeonOfRun`／`startRun(opts.erosion)`／`finishRun`（積分倍率、成功掉 k 顆 `state.erosionCrystals`、記 `state.maxErosion`）掛鉤；侵蝕出征不累計尾王守門的 `chapterClears` |
+| `src/data/rivals.js` | 八大洲際宿敵隊（4-F-1）：`RIVAL_SQUADS`（RivalSquadSnapshot：`id／name／factionStyle／rMult／rewardMult／mortalityMod／specialRule／roster`；煉獄惡魔隊 `lockedR` 硬鎖 1.25）、`RIVAL_ROOMS`（5 房文字）、`RIVAL_TAUNTS`（叛逃者互嗆）；`RIVAL_ID = "rival_clash"` |
+| `src/engine/rivals.js` | 洲際宿敵團戰與跨隊修羅場（4-F-1／2）：`state.rivals = { rngState, nextDay, pending, nextId, squads: { 隊伍id: { roster: [叛逃者快照], meets, wins } }, stats }`；`dailyRivals`（空間 Lv.1 零觸發；升 Lv.2 後 35～45 天首次倒數，之後每 35～45 天刷出，限時 5 天，刷出當天與剩 1 天發 `rival` 事件，歸零自動徵召戰力最高 4 人，沒人可派寬限 3 天後取消）、`buildRivalDungeon`（動態副本快照：R = max(baseR[等級], 前 4 強戰力×0.45)×rMult×(1+3%×敵隊叛逃者)；策反骰在刷出時就擲好存 `pending.revoltRoll`，所以預覽不吃亂數）、`rivalOnStart`／`rivalFinish`（勝：各隊特色獎勵＋反拐；敗：公庫 -20%（<=0 不扣）、存活者重傷＋理智 -15、私奔；兩者都擲春風一度）、`isElopeImmune`（隊長／soulbound／customProfile 100% 免疫）、`defectTo`（整份快照進敵隊 roster，反拐／勝利時優先拐回）、`hybridBirth`（單親混血子嗣，`hybridOrigin`、資質 +15% 仍封頂 +25%）；`run.rival`、`report.rival`；致死率打折 `rivalSpare`（dungeon.js `hurt` 掛鉤）；亂數用獨立流 `state.rivals.rngState` |
+| `src/engine/gossip.js` | 《主神八卦日報》資料整理（4-F-4）：`buildGossip(state)` → `{ header, headline, graph, steles }`（頭條取最新的 coup／elope／inferno／guard／單人多胎家族編年史，沒有則尾王首通；關係圖前 6 名最戲劇的角色，邊 love 粉紅／hate 血紅／rift 紫；碑文前 3 名）；純函式、不吃亂數 |
+| `src/ui/gossipCard.js` | 八卦日報 Canvas 2D 繪製（900×1260 邏輯尺寸、依 devicePixelRatio 放大最多 2 倍、不載入外部圖片）：`drawGossipCard`／`downloadGossipPng`／`copyText`／`wrapText`／`fitText` |
 | `src/engine/dungeon.js` | 副本結算（飽和公式 `powerRate`、章節房數／門檻 `roomCount`／`roomsToClear`、各副本獨立情報條 `intelBonus`（開場鎖進 `run.intel`）、解鎖 `isUnlocked`／`unlockedDungeons`、尾王首通讓空間升級）；並行副本：`startRun` 往 `state.runs` 加一場，`stepDueRooms`／`settleRuns` 依開場順序走房間／結算，結算摘要進 `state.runReports` 排隊；首通在結算時判定；掛鉤 `relationBonus` / `tagBonus`（含收藏加成）/ `rewardMultiplier`（含收藏加成）；首通掉特殊獎勵 id 進 `state.collection`；結算尾端掛 `wishesAfterRun`（許願）與 `godAfterRun`（主神突襲任務）；Phase 4-B：尾王守門 `bossGateInfo`（該章前 3 關合計成功結算滿 8 次才開放，已首通不再鎖，`startRun` 會回報進度）、`isUnlocked` 含守門；結算成功時掛 `rollKarmaDrop`（結晶）與 `rollInsights`（存活隊員頓悟），結果進結算摘要 `karma`／`insights` |；**4-D**：`startRun(state, id, party, { slotId, greedy })`（任務榜槽帶突變詞綴；貪婪探索要情報滿格）、`applyMutation`（血月 R ×1.15）、`runRoomTotal`（含隱藏房）、`stepHiddenRoom`（通關後 20%〔濃霧 40%〕追加 R×1.35 隱藏房，用 market 亂數流）、結算 `distributeLoot` 分潤、首通奇物／隱藏奇物（已擁有轉積分）、同行情誼好感（`dungeon.bondLove`，吊橋 ×1.5）
 | `src/engine/dispatch.js` | 自動派遣（候選人依 `effectivePower` 排序、只挑已解鎖副本；`tryAutoDispatch` 一次排多隊，直到人手用完；`planAutoDispatch` 有突襲任務時優先派目標，見 3-E）、主迴圈一步 `step()`（走各副本該走的房間 → 時間 +1 → 結算）；含 `areEnemies()` 掛鉤 |；**4-D-4**：`autoTargets` = 任務榜未出發的槽 + 已解鎖尾王；情報滿格且預估通關率 ≥ 0.75 自動貪婪探索
 | `src/ui/main.js` | 畫面層，DOM 操作、CSS transition 滑動、emoji 顯示；含商店面板、主神搞事彈窗（`godEvent()`、`#btn-god`）、視角鎖定（`viewedRun`／`renderDungeonView`／`toggle-follow`／`peek-run`）；`styles.css` 放所有樣式（`#dungeon-view`、`.route-*`、`.run-card`） |
-| `test/` | 測試檔案（Node.js）：`engine`、`relations`、`templates`、`shop`、`wishes`、`parallel`（並行副本）、`godEvents`（主神搞事）、`children`（生小孩）、`chapters`（空間等級／章節）；Phase 4-B 新增 `growth`（基因鎖／強化／頓悟／effectivePower 公式）、`gacha`（四卡池、保底、漲價、結晶）、`gate`（尾王守門、結晶掉落、頓悟結算）；Phase 4-C 新增 `combat`（副屬性）、`sanity`（理智）、`economy`（維持費／回收／空投）、`mandatory`（強制任務）、`memorial`（英靈碑）；Phase 4-D 新增 `wallet`（雙錢包、稅率、遺產）、`market`（商品表、黑市分槽／鎖格／85 折、耗材、黑貨）、`shopping`（逛街 AI）、`board`（30 世界、任務榜、突變、奇物、貪婪探索）|
-| `scripts/sim.mjs` | 平衡模擬器（4-E-8：`--autoStrategy=safe|balanced|aggressive` 可模擬玩家版自動派遣戰力門檻，預設 off 維持基準曲線；`--forceStyle=` 強制小隊流派；報表有政變／叛逃／子嗣／遺物／流派分佈）（`npm run sim -- --seeds=100 --days=120`）：模擬玩家自動補人、買裝備、自動派遣，統計各章尾王首通天數（對照目標 Day 30/80/165/300/450）、死亡、破產；Phase 4-B 升級：機器人會選最高可用卡池、強化、突破基因鎖、買裝備；Phase 4-C-6：人口超過軟上限時回收最弱的非核心冗員、統計強制任務／被抹殺／英靈碑、`--mpower` 覆寫 `forcedMission.powerMult`；可用 `--rmult`／`--bossr`／`--reward`／`--minClear`／`--roster`／`--reserve`／`--growReserve` 在執行時覆寫數字（不動資料檔）、`--json=1` 機器可讀、`--trace=種子`（加 `--events=1`）逐日除錯、`--perseed=1` 看每組種子；Phase 4-D-6：接通雙錢包（`--tax=0.4`）、任務榜選關（走引擎自動派遣）、輪迴者自主逛街、機器人公庫賞賜黑市特產；報表多了公庫期末均值、輪迴者總消費、公庫總支出、奇物收集數 |
+| `test/` | 測試檔案（Node.js）：Phase 4-F 新增 `facilities`（基建造價／結晶／共產補貼／開鎖折扣封頂／各設施效果／自動建設／侵蝕倍率與結晶／自動挑戰侵蝕）、`rivals`（Lv.1 零觸發、35～45 天節奏、自動徵召、inferno 硬鎖、戰敗保護、私奔免疫鐵律、反拐、肉豬策反、春風一度、勝利特色）、`gossip`（頭條／關係圖／碑文／種子碼）；`engine`、`relations`、`templates`、`shop`、`wishes`、`parallel`（並行副本）、`godEvents`（主神搞事）、`children`（生小孩）、`chapters`（空間等級／章節）；Phase 4-B 新增 `growth`（基因鎖／強化／頓悟／effectivePower 公式）、`gacha`（四卡池、保底、漲價、結晶）、`gate`（尾王守門、結晶掉落、頓悟結算）；Phase 4-C 新增 `combat`（副屬性）、`sanity`（理智）、`economy`（維持費／回收／空投）、`mandatory`（強制任務）、`memorial`（英靈碑）；Phase 4-D 新增 `wallet`（雙錢包、稅率、遺產）、`market`（商品表、黑市分槽／鎖格／85 折、耗材、黑貨）、`shopping`（逛街 AI）、`board`（30 世界、任務榜、突變、奇物、貪婪探索）|
+| `scripts/sim.mjs` | 平衡模擬器（4-E-8：`--autoStrategy=safe|balanced|aggressive` 可模擬玩家版自動派遣戰力門檻，預設 off 維持基準曲線；`--forceStyle=` 強制小隊流派；報表有政變／叛逃／子嗣／遺物／流派分佈）（`npm run sim -- --seeds=100 --days=120`）：模擬玩家自動補人、買裝備、自動派遣，統計各章尾王首通天數（對照目標 Day 30/80/165/300/450）、死亡、破產；Phase 4-B 升級：機器人會選最高可用卡池、強化、突破基因鎖、買裝備；Phase 4-C-6：人口超過軟上限時回收最弱的非核心冗員、統計強制任務／被抹殺／英靈碑、`--mpower` 覆寫 `forcedMission.powerMult`；可用 `--rmult`／`--bossr`／`--reward`／`--minClear`／`--roster`／`--reserve`／`--growReserve` 在執行時覆寫數字（不動資料檔）、`--json=1` 機器可讀、`--trace=種子`（加 `--events=1`）逐日除錯、`--perseed=1` 看每組種子；Phase 4-D-6：接通雙錢包（`--tax=0.4`）、任務榜選關（走引擎自動派遣）、輪迴者自主逛街、機器人公庫賞賜黑市特產；報表多了公庫期末均值、輪迴者總消費、公庫總支出、奇物收集數；Phase 4-F：機器人預設開自動建設與自動挑戰侵蝕（`--facilities=0`／`--erosion=0` 關閉），報表多了基建期末等級、侵蝕出征／結晶、洲際碰撞勝率與私奔／反拐／混血子嗣／策反次數（跑 100 組種子 × 900 天約 12 分鐘）；**注意** `--rmult`／`--bossr` 是疊乘在 `dungeons.js` 現值（已含 `F_R_MULT`）之上 |
 | `README.md` | 專案說明 + 待確認的設計問題 |
 | `docs/GAME_DESIGN_PLAN.md` | 完整遊戲設計計畫 |
 | `server.mjs` | 本機預覽用迷你伺服器（`npm start` → http://localhost:5173） |
@@ -148,18 +155,27 @@
   - **預留（4-E 前不實裝邏輯）**：`state.squad = { captainId, style }`、`s.customProfile`。
   - **4-D-6 校正結果**（`npm run sim -- --seeds=100 --days=900`，預設稅率 0.40）：尾王首通中位數 Day 27／68／180／300／454（偏差 -10%／-15%／+9%／0%／+1%），首通比例 99%／98%／97%／95%／88%，遊戲結束 0%；公庫期末均值約 310 萬（4-C 約 2200 萬；輪迴者總消費約 327 萬、機器人公庫總支出約 263 萬）；奇物平均收集 44／60。為此調整（寫進 `dungeons.js` 的 `CHAPTER_ANCHOR`）：第 2～5 章 R 再乘常規 ×1.3／0.9／1.4／1.8、尾王 ×1.5／0.9／1.5／2.4（雙錢包＋血統＋奇物讓後期變強太快）；獎勵第 3～5 章再乘 ×0.85／0.5／0.45（壓低公庫堆積）。**暫定值需露葵驗證**：同行情誼好感 +2、捏造人偶與休眠艙效果、（露葵已於 4-D-7 拍板：校正係數、同行情誼 +2、奇物與商品價格、捏造人偶與休眠艙效果全部確認採用）。
 
+- **Phase 4-F 永久基建、位面侵蝕、洲際宿敵、八卦日報（露葵 2026-11-14 規格；數字在 `CONFIG.facility`／`erosion`／`rival`／`gossip`）**：
+  - **永久基建（4-F-3）**：`state.facilities` 五座（重力修煉室 Lv.10〔全隊基礎戰力 +3%/級〕、生命溫養艙 Lv.10〔重傷自然痊癒 +5%/級、留守理智 +0.5/級〕、法則共鳴碑 Lv.10〔開鎖費 -2%/級，與破鎖耗材加算總封頂 -45%〕、萬界育嬰堂 Lv.5〔培育期 -5%/級、資質下限 +4%/級〕、星界觀測樞 Lv.5〔情報獲取 +10%/級、洲際勝利積分與掉落 +8%/級〕），造價等比遞增（`costGrowth` 1.45，滿級總和 80／50／90／60／45 萬），高階要侵蝕結晶（重力／共鳴碑 Lv.6～10 = 2/4/6/9/12、溫養艙 1/2/4/6/8、育嬰堂 Lv.4～5 = 5/10、觀測樞 4/8）。共產流隊長且 `communalFund` 超過軟上限時，超額最多折抵 30% 造價。`state.autoUpgradeFacilities`（預設 false；sim 預設開）：日結公庫高於 30000×空間等級才動用超出部分，便宜優先。UI：`🏗️ 基建` 面板。
+  - **位面侵蝕 1★～10★**：空間 Lv.4（首通第 3 章尾王）解鎖，已首通世界可選 k★：R ×1.45^k、積分 ×1.32^k、成功掉 k 顆 `state.erosionCrystals`、記 `state.maxErosion`。派遣畫面有星級下拉。**自動挑戰侵蝕**（`state.autoErosion`，預設 false；sim 預設開）只在「主線卡關」（打得過的任務章節都低於最前線）或「第 5 章尾王通過後」才接手，從已首通世界裡獎勵最高的前 3 個挑可安全吃下的最高星級；**不這樣限制會搶走推進主線的人手**（實測：無限制時第 4 章尾王永遠打不到）。
+  - **洲際碰撞（4-F-1）**：空間 Lv.1 零觸發；升 Lv.2 後 35～45 天首次、之後每 35～45 天刷出（不連續同一隊），限時 5 天，刷出當天與剩 1 天發 `rival` 事件（暫停事件＋預警彈窗，受「自動暫停」總開關控制），歸零自動徵召戰力最高 4 人（無視日常鎖）。碰撞是動態副本（5 房過 3、單房上限 85%；R = max(`baseR`[空間等級], 前 4 強戰力×0.45)×宿敵 rMult）。**落敗**：公庫 -20%（<= 0 不扣）、存活者重傷＋理智 -15、私奔判定，不 Game Over。八隊特色：polaris 奇物／zhonghuang 護體（我方通過率 -4%）+結晶 2／dongying 肉豬策反／inferno R×1.25 硬鎖、獎勵 ×1.8、黑貨（抹殺奇點）或結晶 4／golden 全隊私房錢＋同心香囊／joyous 致死率 -70%、春風 35%／mech 免疫精神加成（關係與心情正向加成失效）、免費強化＋公庫積分／retire 致死率 -50%、全體傷勢 -1＋買路財。
+  - **跨隊修羅場（4-F-2）**：春風一度（合歡 35%、其他 10%；隨機 1 名非孕期／冷卻外且未重傷的我方成員生單親「跨洲混血子嗣」，`hybridOrigin`、資質 +15% 仍封頂 +25%，冷卻 60 天）；私奔（落敗後對隊長淨好感 <= -30 的成員 20%，單場最多 1 人，整份快照進敵隊 `roster`，下次同隊登場當打手、R 每人 +3%、有互嗆日誌；**隊長／soulbound（有任何綁定裝備）／`customProfile` 100% 免疫**）；反拐（勝利、人數未滿、隊長 bond／communal，15% 拐走副手；優先拐回自己的叛逃者）；東櫻肉豬策反（隊長 communal／bond 或隊員對隊長平均淨好感 >= 40，40% 起義：R -15%、戰後收編 1 名 A／B 新人，對隊長好感 +50）。**規格 `soulbound === true` 與程式不符**（`s.soulbound` 是 `{ 欄位: true }`）：兩種都視為神眷綁定。「高魅力／高好感體質」沒有對應欄位，春風一度與反拐沒有額外門檻。
+  - **八卦日報（4-F-4）**：頂欄 `📰 八卦日報`，Canvas 900×1260 直式報紙（報頭＋經營戰報／頭條／愛恨關係圖／英靈碑＋種子碼），可下載 PNG、複製種子碼。`state.seed` 是新增的本局初始種子（舊存檔為 null，顯示「舊存檔無種子碼」）。新增編年史種類 `elope`／`counter`／`inferno`／`guard`（擋刀者戰死）／`hybrid`／`rival`。
+  - **新增存檔欄位**：`state.seed`／`facilities`／`erosionCrystals`／`autoUpgradeFacilities`／`autoErosion`／`maxErosion`／`facilityRngState`／`rivals`，輪迴者 `facilityBonus`／`hybridOrigin`，run 的 `erosion`／`rival`，結算摘要 `erosion`／`erosionCrystals`／`rival`；`deserialize` 缺欄位補預設。暫停事件新增 `rival`（預設開）。
+  - **R 曲線校正（`dungeons.js` 的 `F_R_MULT` = ×1／1／1／1.6／1.7）**：基建與結晶讓後期成長更快，未校正時 900 天自然演化尾王首通中位數約 Day 32／79／165／219／318；第 4、5 章 R 再乘 ×1.6／1.7。實測（`npm run sim -- --seeds=100 --days=900`，自動建設與自動挑戰侵蝕開）：**Day 32／79／165／333／474**（+7%／-1%／0%／+11%／+5%），首通比例 97%／96%／95%／94%／84%，**遊戲結束 0%**，公庫期末均值約 31 萬（4-E-8 約 185 萬）、輪迴者總消費約 501 萬；基建期末平均等級：重力 5.8／溫養艙 6.6／共鳴碑 5.6／育嬰堂 2.3／觀測樞 2.5；侵蝕每局約 191 場（通關 107）、最高星級均值 6.2★、期末剩餘結晶約 253（結晶供過於求，不是瓶頸，積分才是）；洲際碰撞每局約 19.6 場、勝率 58%、戰死 2.8 人、私奔 0.00、反拐 0.73、混血子嗣 2.2、策反 0.76。**已知**：①第 5 章 900 天內通關比例 84%（4-E-8 約 90%），報表中位數只算有通關的局，全局真實中位數略高；②私奔在 sim 幾乎不發生（需要對隊長淨好感 <= -30，自然演化下很少）；③ ×1.9／3.1 的建議起點實測第 5 章只剩 40% 局通關、中位數 Day 717，所以改用 ×1.6／1.7；④洲際落敗扣公庫是 20%，公庫大時損失絕對值不小，但 sim 無死檔。**暫定值需露葵驗證**：洲際 `powerMult` 0.45 與各隊獎勵倍率／特色細節、基建造價成長 1.45、侵蝕自動挑戰的「卡關才接手」規則、洲際任務 `baseR`／`reward` 表。
+
 ## 驗收指令
 
 ```bash
 npm test
 ```
 
-347 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
+383 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
 
 ## 不可違反的規則
 
 1. 這是獨立專案，與舊 AI-TRPG 專案無關；舊專案的規則（六維十技能、Prompt 快取契約等）不適用。
-2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，347 項都要通過。
+2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，383 項都要通過。
 3. 所有可調數字都要放在 `src/data/config.js`，不要寫死在引擎裡。
 4. 引擎不要碰 DOM，畫面邏輯不要寫進引擎。
 5. 機密（Token、金鑰）永遠不能進 git。
@@ -169,7 +185,7 @@ npm test
 - 推上 `main` ＝ 自動部署到 Cloudflare Pages，合併前先確認測試都過。
 - 儲存庫：`ZhuShen-Sim`，子網域待定。
 - Cloudflare Pages 設定：Framework preset 選 None、Build command 留空、Build output directory 填 `/`。
-- 部署前確認 `npm test` 347 項全過。
+- 部署前確認 `npm test` 383 項全過。
 
 ## 開發階段（現在不要做，除非我明確要求）
 
@@ -196,7 +212,8 @@ npm test
 **Phase 4-D（已完成）**：活體雙錢包經濟、分槽黑市、輪迴者自主逛街、30 世界骨架＋3 槽動態任務榜＋6 大突變＋60 奇物＋貪婪探索、UI 綁定、sim 校正（6 個子階段 4-D-1～4-D-6，規格與數字見上面「核心設計」的 Phase 4-D 條）。**注入長文案時**：只改 `data/shopItems.js` 的 `ITEM_TEXT`、`data/relics.js` 的 `RELIC_TEXT`、`data/dungeons.js` 的世界內容，機制與測試不用動。
 **Phase 4-E（已完成）**：隊長冊封與三軌繼承、五大流派、5:2:1 人際事件、跨代子嗣、先人遺物、叛逃野生 Boss、指揮部與空間編年史（6 個子階段 4-E-1～4-E-6，規格與數字見上面「核心設計」的 Phase 4-E 條）。**新增存檔欄位**：`state.squad`（擴充 `communalFund`／`captainSeq`／`contraband`／`counters`）、`squadRngState`、`chronicles`、`armoryHeirlooms`、`rogueBosses`，輪迴者 `generation`／`bondPartnerId`／`heirloomSlots`／`captainBonus`／`tempPowerPct`／`captainNo`／`maxBossChapter`／`talentPct`，`deserialize` 缺欄位補預設。
 **Phase 4-E-8（已完成，4-E 的收尾）**：30 世界正式文本、200 件商店總表與結構化耗材／黑貨效果、舊存檔相容、AI 防呆，並附 5 項實測 UX 修補（規格與校正見上面「核心設計」的 Phase 4-E-8 條）。
-**Phase 4-F～4-J（還沒做；4-E 已完成）**：主神即時干預（原 4-D 順延）、子嗣繼承值接上、事件引擎重構（4-F）、小黑屋／信徒／事件鏈／叛逃 Boss（4-G）、修羅場等（4-H）、吃瓜 UI（4-I）、標籤庫擴充（4-J）。
+**Phase 4-F（已完成）**：永久基建 5 座、位面侵蝕 1★～10★（含自動挑戰）、八大洲際宿敵團戰、跨隊修羅場（春風一度／私奔／反拐／肉豬策反）、《主神八卦日報》Canvas 圖卡、第 4／5 章 R 校正（規格與數字見上面「核心設計」的 Phase 4-F 條）。原本排在 4-F 的主神即時干預、子嗣繼承值接上、事件引擎重構順延到下一階段。
+**Phase 4-G～4-J（還沒做）**：主神即時干預、子嗣繼承值接上、事件引擎重構、小黑屋／信徒／事件鏈／叛逃 Boss、修羅場等、吃瓜 UI、標籤庫擴充（編號待露葵重排）。
 **Phase 3（還沒做）**：員工合同（含副本 NPC 與跟 NPC 生小孩）；商店的血統／瞳術／技藝／技能；事件冷卻記憶、事件鏈；更多許願種類與主神搞事種類（見 docs 計畫書 §9、§12、§13）。
 
 **不做**：複雜動畫、音效、背景音樂（MVP 先不要）。

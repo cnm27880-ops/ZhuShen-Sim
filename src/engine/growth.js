@@ -13,6 +13,7 @@ import { CONFIG, RANKS } from "../data/config.js";
 import { rand, pick } from "./rng.js";
 import { logText } from "./templates.js";
 import { canAfford, emit, getSamsarite, spend, spendWallet } from "./core.js";
+import { geneDiscountOf } from "./facilities.js"; // 法則共鳴碑（4-F-3）
 
 /** 頓悟的獨立亂數流（跟主神搞事、生小孩同樣的做法） */
 export function newGrowthState(seed = 0) {
@@ -103,9 +104,12 @@ export function enhance(state, id, opts = null) {
 // ───────── 突破基因鎖 ─────────
 
 /** 破鎖費用：持有對應階級的基因鎖助推 Buff（破鎖丹等耗材）時打折（4-E-8；破鎖沒有失敗判定，所以只有花費折扣） */
-export function geneCostOf(s, next, base) {
+export function geneCostOf(s, next, base, state = null) {
   const b = s.geneBuff;
-  return b && b.target === next ? Math.round(base * (1 - (b.costDiscount ?? 0))) : base;
+  const buff = b && b.target === next ? (b.costDiscount ?? 0) : 0;
+  const steleLv = state ? geneDiscountOf(state) : 0; // 法則共鳴碑（4-F-3）：與破鎖耗材加算，總折扣封頂 -45%
+  const off = Math.min(CONFIG.facility.geneDiscountCap, buff + steleLv);
+  return off > 0 ? Math.round(base * (1 - off)) : base;
 }
 
 /** 現在能不能突破到下一階。回傳 { ok, reason, cost, next }（next = 突破後的階數） */
@@ -121,9 +125,9 @@ export function checkBreakGene(state, id, opts = null) {
     return { ok: false, reason: `要先點滿目前階段的強化次數（${s.enhanceCount ?? 0}/${enhanceCapOf(s)}）`, next };
   }
   if ((state.spaceLevel ?? 1) < tier.spaceLevel) {
-    return { ok: false, reason: `需要空間等級 Lv.${tier.spaceLevel}`, next, cost: geneCostOf(s, next, tier.cost) };
+    return { ok: false, reason: `需要空間等級 Lv.${tier.spaceLevel}`, next, cost: geneCostOf(s, next, tier.cost, state) };
   }
-  const cost = geneCostOf(s, next, tier.cost);
+  const cost = geneCostOf(s, next, tier.cost, state);
   if (!canPay(state, s, cost, opts)) return { ok: false, reason: payFail(opts), next, cost };
   return { ok: true, cost, next };
 }

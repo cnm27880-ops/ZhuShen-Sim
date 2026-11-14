@@ -389,3 +389,8 @@ table.stats td:first-child { color: var(--muted); width: 34%; }
 .tag-panel { margin-top: 8px; padding: 8px 12px; border-radius: 10px; background: #f8f9fa; border: 1px solid var(--line); font-size: 13px; line-height: 1.7; }
 .style-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
 .style-table td { border-top: 1px solid var(--line); padding: 3px 6px; vertical-align: top; }
+
+/* 4-F-3 基建面板：等級進度條 */
+.fac-bar { height: 8px; margin: 4px 0; border-radius: 4px; background: #dfe3ec; overflow: hidden; }
+.fac-fill { height: 100%; background: linear-gradient(90deg, #5b8def, #9a6bff); }
+#btn-gossip, #btn-rival { white-space: nowrap; }

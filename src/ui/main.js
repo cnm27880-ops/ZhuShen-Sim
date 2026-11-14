@@ -24,6 +24,12 @@ import { relicInfo } from "../engine/relics.js";
 import { setTaxRate, taxRateOf } from "../engine/wallet.js";
 import { steleBonusOf } from "../engine/memorial.js";
 import { MANDATORY_ID, pendingMandatory, buildMandatoryDungeon } from "../engine/mandatory.js";
+import { RIVAL_ID, pendingRival, buildRivalDungeon, rivalInfo } from "../engine/rivals.js";
+import { erosionUnlocked, applyErosion, erosionBlock, erosionRMult, erosionRewardMult } from "../engine/erosion.js";
+import { facilityInfo, upgradeFacility, facilityTotal } from "../engine/facilities.js";
+import { buildGossip } from "../engine/gossip.js";
+import { drawGossipCard, downloadGossipPng, copyText } from "./gossipCard.js";
+import { RIVAL_SQUADS } from "../data/rivals.js";
 import {
   enhance as enhanceSamsarite,
   breakGene as breakSamsariteGene,
@@ -70,7 +76,7 @@ let timer = null;
 let modal = null; // 目前開著的彈出視窗：{ name, ...參數 }
 let bannerText = "";
 const minis = new Map(); // 輪迴者 id → { el, room }
-const dispatchPick = { dungeonId: null, slotId: null, party: new Set(), greedy: false }; // slotId：任務榜的槽（尾王／指定任務／強制任務為 null）
+const dispatchPick = { dungeonId: null, slotId: null, party: new Set(), greedy: false, erosion: 0 }; // slotId：任務榜的槽（尾王／指定任務／強制任務為 null）
 let peekRunId = null; // 玩家點右側卡片、手動想看的那一場副本 id（只給畫面用，不存檔）
 let lastFollowRunId = null; // 上一次鎖定對象所在的副本 id，用來偵測他進／出副本
 
@@ -120,9 +126,11 @@ function afterChange() {
   for (const ev of state.events.splice(0)) {
     if (ev.type === "dayEnd") saveGame();
     if (ev.type === "gameOver") modal = { name: "gameOver" };
-    if (state.settings.pauseOn[ev.type]) {
+    const masterOff = state.settings.autoPause === false && (ev.type === "rival" || ev.type === "mandatory"); // 洲際碰撞預警與強制任務提醒受「自動暫停」總開關控制（4-F-1）
+    if (state.settings.pauseOn[ev.type] && !masterOff) {
       state.settings.paused = true;
       bannerText = `⏸ 自動暫停：${PAUSE_EVENTS[ev.type].label} —— ${ev.text}`;
+      if (ev.type === "rival" && !modal && pendingRival(state)) modal = { name: "rivalAlert" }; // 洲際碰撞預警彈窗：刷出當天與剩餘 1 天（4-F-1）
     }
   }
   // 新局第 1 天首次進入：自動彈出上崗手冊（讀過就記住，不重複打擾）
@@ -171,7 +179,8 @@ function renderTopbar() {
   const upkeep = state.samsarites.filter((s) => s.location !== "dungeon").reduce((sum, s) => sum + upkeepOf(s, state), 0);
   $("upkeep").textContent = `-${upkeep} / 天`;
   $("space-level").textContent = `Lv.${state.spaceLevel}`;
-  $("karma").textContent = `🔮 ${state.karmaCrystals ?? 0}`;
+  $("karma").textContent = `🔮 ${state.karmaCrystals ?? 0}${erosionUnlocked(state) || (state.erosionCrystals ?? 0) > 0 ? `　🌌 ${state.erosionCrystals ?? 0}` : ""}`;
+  $("karma").title = "因果結晶（神級抽卡）／侵蝕結晶（位面侵蝕通關掉落，升級高階基建用）";
 
   $("speed-controls").innerHTML = CONFIG.speeds
     .map((v) => `<button data-action="set-speed" data-value="${v}" class="${v === state.settings.speed ? "active" : ""}">${v}x</button>`)
@@ -203,6 +212,12 @@ function renderTopbar() {
   const mand = pendingMandatory(state);
   $("btn-mandatory").style.display = mand ? "" : "none";
   if (mand) $("btn-mandatory").textContent = `☠️ 強制任務（第 ${mand.deadlineDay} 天前）`;
+  const riv = pendingRival(state);
+  $("btn-rival").style.display = riv ? "" : "none";
+  if (riv) $("btn-rival").textContent = `⚔️ 洲際碰撞（第 ${riv.deadlineDay} 天前）`;
+  $("btn-facility").textContent = `🏗️ 基建 ${facilityTotal(state)}`;
+  $("auto-erosion-wrap").style.display = erosionUnlocked(state) ? "" : "none";
+  $("auto-erosion").checked = !!state.autoErosion;
   $("btn-god").textContent = godWaiting ? "👁 主神搞事 (1)" : "🚨 突襲任務";
 
   $("auto-dispatch").checked = state.settings.autoDispatch;
@@ -529,7 +544,7 @@ function closeModal() {
 }
 
 // 派遣頁、許願／抽卡彈窗、主神事件彈窗、小隊指揮部（任命／撤換隊長）開著時自動暫停計時，關窗後恢復原本的播放狀態與倍速（4-E-7）
-const AUTO_PAUSE_MODALS = new Set(["dispatch", "gacha", "wish", "godEvent", "squad"]);
+const AUTO_PAUSE_MODALS = new Set(["dispatch", "gacha", "wish", "godEvent", "squad", "facility"]);
 let autoPause = null; // { wasPaused, speed }：開窗前的狀態；開窗前就是手動暫停的，關窗後維持暫停
 
 function syncAutoPause() {
@@ -549,14 +564,16 @@ function renderModal() {
   document.body.classList.toggle("modal-open", Boolean(modal)); // 開著放大視窗時，角落的副本迷你小窗（#run-list）自動隱藏，關窗恢復（雙視窗互斥，4-E-7）
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent };
+  const builders = { guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent, facility, gossip, rivalAlert };
   $("modal").innerHTML = builders[modal.name]();
+  if (modal.name === "gossip") drawGossipCard($("gossip-canvas"), buildGossip(state)); // 畫報紙圖卡（Canvas，要等 innerHTML 寫完才拿得到元素）
 }
 
 const closeButton = `<button data-action="close-modal">關閉</button>`;
 
 /** 派遣用的副本定義：強制任務是動態副本（依當下名冊算 R），其他查資料表 */
 function dungeonById(id) {
+  if (id === RIVAL_ID) return pendingRival(state) ? buildRivalDungeon(state, [...dispatchPick.party]) : null; // 洲際碰撞（4-F-1）：預覽時帶目前選的隊員，才看得出肉豬策反
   return id === MANDATORY_ID ? buildMandatoryDungeon(state) : getDungeon(id);
 }
 
@@ -579,6 +596,7 @@ function dispatch() {
   // 選擇狀態：強制任務／任務榜槽（slotId）／尾王與指定副本（slotId = null）。目標消失就重選
   let pickedTarget = dispatchPick.slotId != null ? targets.find((t) => t.slot.id === dispatchPick.slotId && !t.slot.running) : null;
   if (dispatchPick.dungeonId === MANDATORY_ID && !mand) dispatchPick.dungeonId = null;
+  if (dispatchPick.dungeonId === RIVAL_ID && !pendingRival(state)) dispatchPick.dungeonId = null;
   if (dispatchPick.slotId != null && !pickedTarget) dispatchPick.slotId = dispatchPick.dungeonId = null;
   if (!dispatchPick.dungeonId) {
     const first = targets.find((t) => !t.slot.running);
@@ -586,9 +604,14 @@ function dispatch() {
     else Object.assign(dispatchPick, { dungeonId: bosses.find((d) => isUnlocked(state, d))?.id ?? DUNGEONS[0].id, slotId: null });
     pickedTarget = dispatchPick.slotId != null ? targets.find((t) => t.slot.id === dispatchPick.slotId) : null;
   }
-  const isMand = dispatchPick.dungeonId === MANDATORY_ID;
+  const isRivalPick = dispatchPick.dungeonId === RIVAL_ID;
+  const isMand = dispatchPick.dungeonId === MANDATORY_ID || isRivalPick; // 動態副本（強制任務／洲際碰撞）：不吃情報、不能貪婪探索、不能侵蝕
   const mutation = pickedTarget?.mutation ?? null;
-  const dungeon = pickedTarget ? pickedTarget.dungeon : dungeonById(dispatchPick.dungeonId);
+  const baseDungeon = pickedTarget ? pickedTarget.dungeon : dungeonById(dispatchPick.dungeonId);
+  // 位面侵蝕（4-F-3）：已首通的世界可選 1★～10★，有效 R ×1.45^k、積分 ×1.32^k、成功通關掉 k 顆侵蝕結晶
+  const canErode = !isMand && erosionUnlocked(state) && hasIntel(state, baseDungeon);
+  if (!canErode || erosionBlock(state, baseDungeon, dispatchPick.erosion)) dispatchPick.erosion = 0;
+  const dungeon = applyErosion(baseDungeon, dispatchPick.erosion);
   const canGreedy = !isMand && intelFull(state, dungeon.id);
   if (!canGreedy) dispatchPick.greedy = false;
 
@@ -621,6 +644,14 @@ function dispatch() {
     ${statusPanel(home, "☠️ 可出征隊員狀態（強制任務不能化解，但帶重傷出去更容易死）")}`
     : "";
 
+  const rv = rivalInfo(state);
+  const rivalOption = rv
+    ? `<h4 class="chapter-head">⚔️ 洲際碰撞（限時，逾時自動徵召精銳）</h4><div class="option ${isRivalPick ? "selected" : ""}" data-action="pick-dungeon" data-id="${RIVAL_ID}">
+      <span class="option-icon">${rv.squad.icon}</span>
+      <span class="grow"><b>${rv.dungeon.name}</b> <small class="warn">第 ${rv.pending.deadlineDay} 天前要處理，逾時主神自動徵召戰力最高的 ${CONFIG.rival.draftSize} 人</small><br /><small>${rv.squad.intro}　${rv.squad.desc}</small>${rv.defectors.length ? `<br /><small class="bad">💔 對面有 ${rv.defectors.length} 名我方叛逃者當打手（R +${Math.round(CONFIG.rival.defectorRPct * 100 * rv.defectors.length)}%）：${rv.defectors.map((d) => d.name).join("、")}</small>` : ""}${rv.dungeon.rival.revolt ? `<br /><small class="good">🐷 肉豬策反！對方 R -${Math.round(CONFIG.rival.pigRevolt.rReduce * 100)}%，戰後可收編新人</small>` : ""}</span>
+      <small>推薦戰力 ${rv.dungeon.recommendedPower}（×${rv.dungeon.rival.rMult.toFixed(2)}${rv.squad.lockedR ? " 硬鎖" : ""}）<br />獎勵 ${rv.dungeon.reward} 分 ×${rv.squad.rewardMult}<br />${roomCount(rv.dungeon)} 房過 ${roomsToClear(rv.dungeon)}・單房上限 ${Math.round(CONFIG.rival.passCap * 100)}%<br />落敗：公庫 -${Math.round(CONFIG.rival.lossPointsPct * 100)}%、參戰者重傷＋理智 -${CONFIG.rival.lossSanity}，可能有人私奔</small>
+    </div>`
+    : "";
   const daysToRotate = Math.max(0, boardOf(state).nextRotateDay - currentDay(state));
   const boardOptions = targets
     .map(({ slot, dungeon: d, mutation: mut }) => {
@@ -674,6 +705,7 @@ function dispatch() {
     if (enemyPairs.length > 0) {
       summary += `<br /><span class="bad">⚔️ 隊內有仇人：${enemyPairs.join("、")}（每個房間有機率先打起來）</span>`;
     }
+    if (dispatchPick.erosion > 0) summary += `<br /><span class="warn">🌌 ${dispatchPick.erosion}★ 侵蝕：有效推薦戰力 ${dungeon.recommendedPower}，通關積分 ×${erosionRewardMult(dispatchPick.erosion).toFixed(2)}，成功掉 ${dispatchPick.erosion * CONFIG.erosion.crystalPerStar} 顆侵蝕結晶。</span>`;
     if (!isMand && !hasIntel(state, dungeon)) {
       summary += `<br /><span class="warn">❓ 首次開荒：傷勢更重；首通有額外 ${Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct)} 分${dungeon.specialRewards?.length ? "與特殊獎勵" : ""}、一件首通奇物${dungeon.boss ? (dungeon.chapter >= CONFIG.space.maxLevel ? "，並完成主線" : "，並讓主神空間升級、解鎖下一章") : ""}。</span>`;
     }
@@ -687,6 +719,13 @@ function dispatch() {
     if (stocked.length > 0) summary += `<br /><small>🎒 出征耗材會一起生效：${stocked.map((s) => `${s.name} ×${s.consumables.length}`).join("、")}</small>`;
   }
   if (mutation) summary += `<br />${mutChip(mutation)} <small>${mutation.desc}</small>`;
+  const erosionBox = canErode
+    ? `<label class="toggle">🌌 位面侵蝕 <select data-erosion>${Array.from({ length: CONFIG.erosion.maxStar + 1 }, (_, k) => `<option value="${k}" ${k === dispatchPick.erosion ? "selected" : ""}>${k === 0 ? "0（正常）" : `${k}★　R ×${erosionRMult(k).toFixed(2)}・積分 ×${erosionRewardMult(k).toFixed(2)}・結晶 +${k * CONFIG.erosion.crystalPerStar}`}</option>`).join("")}</select></label>`
+    : erosionUnlocked(state) && !isMand
+      ? `<small>🌌 已首通的世界才能挑戰位面侵蝕。</small>`
+      : isMand
+        ? ""
+        : `<small>🌌 首通第 3 章尾王（空間 Lv.${CONFIG.erosion.unlockSpaceLevel}）後解鎖位面侵蝕 1★～10★。</small>`;
   const greedyBox = canGreedy
     ? `<label class="toggle"><input type="checkbox" data-greedy ${dispatchPick.greedy ? "checked" : ""} /> 🔍 貪婪探索：通關最後一房後有 ${Math.round(CONFIG.relic.greedyChance * (mutation?.relicChanceMult ?? 1) * 100)}% 機率追加一間 R×${CONFIG.relic.hiddenRMult} 的高危隱藏房（通過掉隱藏奇物，多耗 ${(CONFIG.roomTicks / CONFIG.ticksPerDay).toFixed(1)} 天）</label>`
     : isMand
@@ -694,14 +733,14 @@ function dispatch() {
       : `<small>🔍 這個副本情報滿格（${Math.round(CONFIG.dungeon.intel.max * 100)}%）後可勾選「貪婪探索」。</small>`;
 
   return `<h3>🚪 派遣</h3>
-    <div class="option-list">${mandatoryOption}
+    <div class="option-list">${mandatoryOption}${rivalOption}
       <h4 class="chapter-head">📋 任務榜（${CONFIG.board.slots} 槽・每 ${CONFIG.board.rotateDays} 天輪換，下次輪換還有 ${daysToRotate} 天）</h4>${boardOptions}
       <h4 class="chapter-head">👑 尾王挑戰區（常駐）</h4>${bossOptions}
       ${extraOptions ? `<h4 class="chapter-head">📌 指定任務（主神突襲／許願，沒有突變詞綴）</h4>${extraOptions}` : ""}
     </div>
     <h3 style="margin-top:14px">選擇隊員（最多 ${CONFIG.partyMax} 人，已選 ${party.length}）</h3>
     <div class="option-list">${memberOptions}</div>
-    <div class="summary">${summary}<div style="margin-top:6px">${greedyBox}</div></div>
+    <div class="summary">${summary}<div style="margin-top:6px">${erosionBox}</div><div style="margin-top:6px">${greedyBox}</div></div>
     <div class="modal-actions">${closeButton}
       <button class="primary" data-action="confirm-dispatch" ${party.length === 0 ? "disabled" : ""}>出發（耗時約 ${(roomCount(dungeon) * CONFIG.roomTicks) / CONFIG.ticksPerDay} 天）</button>
     </div>`;
@@ -987,7 +1026,7 @@ function confirmRecycle() {
 
 // ───────── 小隊指揮部、先人遺物與空間編年史（4-E-5）─────────
 
-const KIND_ICON = { boss: "🏆", captain: "👑", coup: "⚔️", snub: "😤", stele: "🪦", birth: "🍼", defect: "🩸", slain: "🗡️", heirloom: "🏺", drama: "🎭" };
+const KIND_ICON = { elope: "💔", counter: "🎣", inferno: "😈", guard: "🛡️", hybrid: "🕊️", rival: "⚔️", boss: "🏆", captain: "👑", coup: "⚔️", snub: "😤", stele: "🪦", birth: "🍼", defect: "🩸", slain: "🗡️", heirloom: "🏺", drama: "🎭" };
 const HEIR_KIND = { child: "子嗣", friend: "摯友", other: "" };
 
 /** 角色詳情的「世代／小隊」資訊列：隊長、世代與父母、生死搭檔、天賦、遺物 */
@@ -1145,6 +1184,61 @@ function settings() {
     </div>`;
 }
 
+/** 洲際碰撞預警彈窗（4-F-1）：刷出當天與剩餘 1 天；可立即編隊，或稍後處理（逾時主神自動徵召精銳） */
+function rivalAlert() {
+  const rv = rivalInfo(state);
+  if (!rv) return `<h3>⚔️ 洲際碰撞</h3><p>這場碰撞已經處理完了。</p><div class="modal-actions">${closeButton}</div>`;
+  const left = rv.pending.deadlineDay - currentDay(state);
+  return `<h3>⚔️ 洲際碰撞預警：${rv.squad.icon} ${rv.squad.name}</h3>
+    <div class="summary"><b>${rv.squad.intro}</b><br />${rv.squad.desc}<br />
+      推薦戰力 <b>${rv.dungeon.recommendedPower}</b>（×${rv.dungeon.rival.rMult.toFixed(2)}${rv.squad.lockedR ? "・硬鎖" : ""}）・基礎獎勵 ${rv.dungeon.reward} 分 ×${rv.squad.rewardMult}<br />
+      期限：第 ${rv.pending.deadlineDay} 天前（剩 ${left} 天），逾時主神會自動徵召戰力最高的 ${CONFIG.rival.draftSize} 人迎戰。<br />
+      <span class="bad">落敗：公庫 -${Math.round(CONFIG.rival.lossPointsPct * 100)}%（公庫為負不扣）、參戰者重傷＋理智 -${CONFIG.rival.lossSanity}，對隊長怨氣深的人可能跟敵隊私奔。</span>
+      ${rv.defectors.length ? `<br /><span class="bad">💔 敵隊裡有 ${rv.defectors.length} 名我方叛逃者：${rv.defectors.map((d) => d.name).join("、")}</span>` : ""}</div>
+    <div class="modal-actions">${closeButton}<button class="primary" data-action="open-rival">立即編隊</button></div>`;
+}
+
+/** 主神空間基建面板（4-F-3）：5 座永久設施、侵蝕結晶、自動建設與自動挑戰侵蝕開關 */
+function facility() {
+  const cards = facilityInfo(state)
+    .map((f) => {
+      const c = f.check;
+      const maxed = f.lv >= f.max;
+      const bar = `<div class="fac-bar"><div class="fac-fill" style="width:${(f.lv / f.max) * 100}%"></div></div>`;
+      const next = maxed
+        ? `<small class="good">✨ 已達滿級</small>`
+        : `<small>下一級：<b>${c.cost}</b> 分${c.subsidy ? `（互助金折抵 ${c.subsidy}，實付 ${c.pay}）` : ""}${c.crystals ? `＋侵蝕結晶 <b>${c.crystals}</b> 顆` : ""}</small>`;
+      return `<div class="option" style="cursor:default">
+        <span class="option-icon">${f.icon}</span>
+        <span class="grow"><b>${f.name}</b> <small>Lv.${f.lv} / ${f.max}</small>${bar}<small>${f.desc}</small><br />${next}${!maxed && !c.ok ? `<br /><small class="bad">${c.reason}</small>` : ""}</span>
+        <button class="primary" data-action="upgrade-facility" data-id="${f.id}" ${maxed || !c.ok ? "disabled" : ""}>升級</button>
+      </div>`;
+    })
+    .join("");
+  return `<h3>🏗️ 主神空間基建</h3>
+    <div class="summary">主神公庫 <b>${state.points}</b> 分　🌌 侵蝕結晶 <b>${state.erosionCrystals ?? 0}</b> 顆　最高侵蝕 <b>${state.maxErosion ?? 0}★</b><br />
+      <small>基建是全隊永久加成，升一次、永遠有效。Lv.6 起（育嬰堂、觀測樞 Lv.4 起）要消耗侵蝕結晶——打位面侵蝕才掉。${squadStyleHint()}</small></div>
+    <div class="option-list">${cards}</div>
+    <label class="option"><input type="checkbox" data-state-key="autoUpgradeFacilities" ${state.autoUpgradeFacilities ? "checked" : ""} />
+      <span class="grow"><b>🤖 自動建設</b><br /><small>每天結算時，公庫高於 ${CONFIG.facility.safeWaterPerLevel} × 空間等級（目前 ${CONFIG.facility.safeWaterPerLevel * state.spaceLevel} 分）才動用超出的部分，優先升最便宜的設施。</small></span></label>
+    <label class="option"><input type="checkbox" data-state-key="autoErosion" ${state.autoErosion ? "checked" : ""} ${erosionUnlocked(state) ? "" : "disabled"} />
+      <span class="grow"><b>🌌 自動挑戰侵蝕</b><br /><small>${erosionUnlocked(state) ? "自動派遣在主線卡關或全通後，改打已通關世界的侵蝕星級（依「自動派遣策略」只挑可安全吃下的星級）。" : `首通第 3 章尾王（空間 Lv.${CONFIG.erosion.unlockSpaceLevel}）後解鎖。`}</small></span></label>
+    <div class="modal-actions">${closeButton}</div>`;
+}
+const squadStyleHint = () => (state.squad?.style === "communal" ? "<br /><small>🤝 共產互助流：互助金超過軟上限的部分，升級最多可折抵 30% 造價。</small>" : "");
+
+/** 《主神八卦日報》預覽彈窗（4-F-4）：Canvas 圖卡在 renderModal 裡畫 */
+function gossip() {
+  const cfg = CONFIG.gossip;
+  return `<h3>📰 主神八卦日報</h3>
+    <div style="text-align:center"><canvas id="gossip-canvas" width="${cfg.width}" height="${cfg.height}" style="width:min(100%,${Math.round(cfg.width / 2)}px);height:auto;border:1px solid #888;border-radius:4px"></canvas></div>
+    <div class="summary" style="margin-top:8px">本局種子碼：<b id="gossip-seed">${state.seed ?? "（舊存檔無種子碼）"}</b>${modal?.note ? `　<span class="good">${modal.note}</span>` : ""}</div>
+    <div class="modal-actions">${closeButton}
+      <button data-action="gossip-copy">📋 複製種子碼</button>
+      <button class="primary" data-action="gossip-download">💾 下載 PNG 圖卡</button>
+    </div>`;
+}
+
 function runResult() {
   const r = state.runReports[0];
   if (!r) return `<h3>副本結算</h3><p>沒有待看的結算。</p><div class="modal-actions">${closeButton}</div>`;
@@ -1161,6 +1255,8 @@ function runResult() {
       ${r.relics?.length ? `🏺 奇物：<b class="good">${r.relics.map((x) => `${x.name}（${x.kind === "first" ? "首通" : "隱藏"}${x.dup ? "・已擁有，轉為積分" : ""}）`).join("、")}</b><br />` : ""}
       ${r.levelUp ? `🏛️ <b class="good">主神空間升到 Lv.${r.levelUp}，第 ${r.levelUp} 章解鎖！</b><br />` : ""}
       ${r.specialReward ? `🎁 特殊獎勵：<b class="good">${r.specialReward}</b>（已永久生效）<br />` : ""}
+      ${r.erosion ? `🌌 位面侵蝕 <b>${r.erosion}★</b>${r.erosionCrystals ? `：侵蝕結晶 <b class="good">+${r.erosionCrystals}</b> 顆（持有 ${state.erosionCrystals ?? 0} 顆）` : "（失敗，沒有結晶）"}<br />` : ""}
+      ${r.rival ? `⚔️ 洲際碰撞：${r.rival.icon} ${r.rival.name} <b class="${r.rival.win ? "good" : "bad"}">${r.rival.win ? "戰勝" : "落敗"}</b>${r.rival.revolt ? "（肉豬策反）" : ""}${r.rival.notes.length ? `<br />　${r.rival.notes.join("、")}` : ""}<br />` : ""}
       ${r.karma ? `🔮 因果結晶 <b class="good">+${r.karma}</b> 顆（持有 ${state.karmaCrystals ?? 0} 顆）<br />` : ""}
       ${r.insights?.length ? `💡 頓悟：<b class="good">${r.insights.map((i) => `${i.name}（戰力 +${i.power}）`).join("、")}</b><br />` : ""}
       生還：${survivors}<br />
@@ -1290,6 +1386,32 @@ const actions = {
     dispatchPick.dungeonId = MANDATORY_ID; // 直接跳到強制任務的派遣畫面
     dispatchPick.slotId = null;
     modal = { name: "dispatch" };
+  },
+  "open-rival"() {
+    dispatchPick.dungeonId = RIVAL_ID; // 直接跳到洲際碰撞的派遣畫面（4-F-1）
+    dispatchPick.slotId = null;
+    modal = { name: "dispatch" };
+  },
+  "open-facility"() {
+    modal = { name: "facility" };
+  },
+  "upgrade-facility"(el) {
+    const r = upgradeFacility(state, el.dataset.id);
+    if (!r.ok) alert(r.reason);
+    saveGame();
+  },
+  "open-gossip"() {
+    modal = { name: "gossip", note: "" };
+  },
+  async "gossip-download"() {
+    const ok = await downloadGossipPng($("gossip-canvas"), `主神八卦日報_第${currentDay(state)}天_${state.seed ?? "seed"}.png`);
+    if (modal?.name === "gossip") modal.note = ok ? "✅ 已下載 PNG 圖卡" : "❌ 匯出失敗（瀏覽器不支援？）";
+    renderModal();
+  },
+  async "gossip-copy"() {
+    const ok = await copyText(String(state.seed ?? ""));
+    if (modal?.name === "gossip") modal.note = ok ? `✅ 已複製種子碼 ${state.seed}` : "❌ 複製失敗，請手動選取種子碼";
+    renderModal();
   },
   "open-guide"() {
     modal = { name: "guide" };
@@ -1425,7 +1547,7 @@ const actions = {
     modal = null; // afterChange 會自動接著彈下一場
   },
   "pick-dungeon"(el) {
-    if (el.dataset.id !== MANDATORY_ID && !isUnlocked(state, getDungeon(el.dataset.id))) return; // 還沒解鎖的章節只能看不能選
+    if (el.dataset.id !== MANDATORY_ID && el.dataset.id !== RIVAL_ID && !isUnlocked(state, getDungeon(el.dataset.id))) return; // 還沒解鎖的章節只能看不能選
     dispatchPick.dungeonId = el.dataset.id;
     dispatchPick.slotId = null;
   },
@@ -1442,11 +1564,12 @@ const actions = {
     else if (dispatchPick.party.size < CONFIG.partyMax) dispatchPick.party.add(id);
   },
   "confirm-dispatch"() {
-    const result = startRun(state, dispatchPick.dungeonId, [...dispatchPick.party], { slotId: dispatchPick.slotId, greedy: dispatchPick.greedy });
+    const result = startRun(state, dispatchPick.dungeonId, [...dispatchPick.party], { slotId: dispatchPick.slotId, greedy: dispatchPick.greedy, erosion: dispatchPick.erosion });
     if (!result.ok) return alert(result.reason);
     dispatchPick.party.clear();
     dispatchPick.dungeonId = dispatchPick.slotId = null; // 那一槽出發了，下次開派遣畫面重選
     dispatchPick.greedy = false;
+    dispatchPick.erosion = 0;
     modal = null;
     state.settings.paused = false;
     bannerText = "";
@@ -1523,7 +1646,13 @@ document.addEventListener("change", (event) => {
     state.settings[el.dataset.settingKey] = el.checked;
     if (el.dataset.settingKey === "autoPause") syncAutoPause(); // 關掉總開關時，若目前正因彈窗暫停就立刻恢復
   } else if (el.id === "auto-strategy") state.autoStrategy = el.value;
-  else if ("greedy" in el.dataset) {
+  else if (el.id === "auto-erosion") state.autoErosion = el.checked;
+  else if (el.dataset.stateKey) state[el.dataset.stateKey] = el.checked; // 基建面板的「自動建設」等直接掛在 state 上的開關
+  else if ("erosion" in el.dataset) {
+    dispatchPick.erosion = Number(el.value);
+    render();
+    return;
+  } else if ("greedy" in el.dataset) {
     dispatchPick.greedy = el.checked;
     render();
     return;

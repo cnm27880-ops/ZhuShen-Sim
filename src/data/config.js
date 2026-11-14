@@ -482,6 +482,70 @@ export const CONFIG = {
     missionFirst: true, // 有主神突襲任務時，自動派遣優先派任務目標去指定副本（通關率仍要達 minClearChance；Phase 3-E）
   },
 
+  // ── 4-F-3 主神空間永久基建（引擎 engine/facilities.js；名稱說明在 data/facilities.js）──
+  facility: {
+    costGrowth: 1.45, // 各級造價等比遞增：第 n 級 = 第 1 級 × growth^(n-1)，總和 = totalCost
+    safeWaterPerLevel: 30000, // 自動建設：公庫要高於 這個數字 × 空間等級 才動用（只花超過水位的部分）
+    communalSubsidyPct: 0.3, // 共產流互助金超過軟上限的部分，可折抵升級造價最多這個比例
+    geneDiscountCap: 0.45, // 開鎖費用總折扣（破鎖耗材 + 法則共鳴碑）封頂
+    // 設施定義：max 等級上限、totalCost 滿級總造價、crystalAt[Lv-1] = 升到該級要消耗的侵蝕結晶、perLevel = 每級效果
+    defs: {
+      gravity: { max: 10, totalCost: 800000, crystalAt: [0, 0, 0, 0, 0, 2, 4, 6, 9, 12], perLevel: { powerPct: 0.03 } },
+      pods: { max: 10, totalCost: 500000, crystalAt: [0, 0, 0, 0, 0, 1, 2, 4, 6, 8], perLevel: { healChance: 0.05, restSanity: 0.5 } },
+      stele: { max: 10, totalCost: 900000, crystalAt: [0, 0, 0, 0, 0, 2, 4, 6, 9, 12], perLevel: { geneDiscount: 0.02 } },
+      nursery: { max: 5, totalCost: 600000, crystalAt: [0, 0, 0, 5, 10], perLevel: { podDaysCut: 0.05, talentFloor: 0.04 } },
+      radar: { max: 5, totalCost: 450000, crystalAt: [0, 0, 0, 4, 8], perLevel: { intelGain: 0.1, rivalReward: 0.08 } },
+    },
+  },
+
+  // ── 4-F-3 位面侵蝕 1★～10★（已首通的世界可選星級；引擎 engine/erosion.js）──
+  erosion: {
+    unlockSpaceLevel: 4, // 首通第 3 章尾王（空間升到 Lv.4）後解鎖
+    maxStar: 10,
+    rMult: 1.45, // effectiveR = baseR × rMult^k
+    rewardMult: 1.32, // 通關積分／戰利品 = × rewardMult^k
+    crystalPerStar: 1, // 成功通關 k★ 固定掉 k 顆侵蝕結晶
+    autoWorlds: 3, // 自動挑戰侵蝕：從已首通的世界裡挑獎勵最高的前幾個來試
+  },
+
+  // ── 4-F-1／4-F-2 八大洲際宿敵團戰與跨隊修羅場（資料在 data/rivals.js；引擎 engine/rivals.js）──
+  rival: {
+    unlockSpaceLevel: 2, // 空間 Lv.1 絕對不觸發
+    firstMin: 35, // 剛升到 Lv.2 時，第一次碰撞倒數天數（35～45 天隨機）
+    firstMax: 45,
+    intervalMin: 35, // 之後每隔 35～45 天
+    intervalMax: 45,
+    deadlineDays: 5, // 刷出後限時 5 天處理（逾時自動徵召精銳）
+    maxGraceDays: 3, // 倒數歸零時若空間沒人可派，最多再寬限幾天，仍沒人就取消（不罰）
+    draftSize: 4, // 自動徵召人數
+    rooms: 5,
+    toClear: 3,
+    passCap: 0.85,
+    powerMult: 0.45, // baseRivalR = max(baseR[空間等級], 名冊前 4 強有效戰力 × 這個)
+    baseR: [200, 600, 1800, 5000, 12000],
+    reward: [400, 1400, 4500, 14000, 45000],
+    shieldPassPenalty: 0.04, // 中皇天命隊「護體」：我方每房通過率 -4%
+    lossPointsPct: 0.2, // 落敗：扣當前正數公庫的 20%（公庫 <= 0 不扣）
+    lossInjury: 2, // 落敗：參戰存活者傷勢至少重傷
+    lossSanity: 15, // 洲際羞辱：參戰存活者理智 -15
+    defectorRPct: 0.03, // 每名叛逃到敵隊的前我方成員，使該隊 R +3%（以敵方打手身分登場）
+    elope: { affinity: -30, chance: 0.2, maxPerFight: 1 }, // 落敗：對隊長淨好感 <= -30 的成員 20% 私奔（單場最多 1 人）
+    counter: { chance: 0.15, rosterCap: 24 }, // 勝利：我方人數 < 上限、隊長 bond／communal 流派，15% 拐走對面失意副手
+    hybrid: { joyousChance: 0.35, otherChance: 0.1, talentBonus: 0.15, cooldownDays: 60, minAffinity: 30 }, // 戰場停火・春風一度
+    pigRevolt: { chance: 0.4, rReduce: 0.15, minAvgAffinity: 40, recruitLove: 50 }, // 東櫻肉豬策反
+    mortalityJoyous: -0.7, // 合歡粉紅隊：雙方致死率 -70%
+    mortalityRetire: -0.5, // 萬年養老隊：低殺意，致死率 -50%
+    infernoCrystals: 4, // 煉獄惡魔隊：必掉 T4/T5 黑貨或這麼多顆侵蝕結晶（各 50%）
+    zhonghuangCrystals: 2,
+    goldenWalletPct: 0.6, // 黃金財團隊：額外把「結算積分 × 這個比例」平分進存活者私房錢（不抽稅）
+    retireHeal: 1, // 萬年養老隊：戰勝全體存活者傷勢 -1 級
+    mechEnhance: 1, // 機械飛昇隊：戰勝每位存活者免費強化 1 次（未滿強化上限者）
+    relicFullPct: 1.5, // 北極星洲隊：奇物已全收集時轉成「基礎獎勵 × 這個比例」積分
+  },
+
+  // ── 4-F-4 《主神八卦日報》圖卡 ──
+  gossip: { width: 900, height: 1260, nodes: 6, steles: 3 },
+
   runReportMax: 20, // 排隊等玩家看的副本結算摘要最多留幾筆
 
   logMax: 300,
@@ -524,4 +588,5 @@ export const PAUSE_EVENTS = {
   mandatory: { label: "主神強制血腥任務（限時派隊，逾時抹殺）", default: true },
   birth: { label: "有小孩出生（進催熟艙）", default: true },
   hatch: { label: "催熟完成（小孩長成輪迴者）", default: true },
+  rival: { label: "洲際碰撞任務（刷出當天與剩餘 1 天預警）", default: true },
 };

@@ -14,6 +14,7 @@ import { rand, pick } from "./rng.js";
 import { emit, currentDay, createSamsarite, getSamsarite } from "./core.js";
 import { pairStatus, addLove } from "./relations.js";
 import { logText } from "./templates.js";
+import { podDaysCut } from "./facilities.js"; // 同上（4-F-3）
 import { applyLineage, addChronicle } from "./lineage.js"; // 世代、天賦封頂、編年史（4-E-4；循環引用只在執行時呼叫）
 
 const C = () => CONFIG.child;
@@ -78,7 +79,7 @@ export function giveBirth(state, a, b, opts = {}) {
   child.tags = inheritTags(g, child.tags, [a, b]);
   child.inheritedTags = child.tags.filter((t) => a.tags.includes(t) || b.tags.includes(t));
   child.location = "pod";
-  child.podDaysLeft = opts.podDays ?? C().podDays;
+  child.podDaysLeft = Math.max(1, Math.round((opts.podDays ?? C().podDays) * (1 - podDaysCut(state)))); // 萬界育嬰堂縮短培育期（4-F-3）
   child.parents = [a.id, b.id];
   child.joinedDay = currentDay(state);
   applyLineage(state, child, [a, b], g, !!opts.lineage, opts.talent ?? "normal"); // 世代、天賦白值（總封頂 +25%）、保證繼承性格詞條（4-E-4）

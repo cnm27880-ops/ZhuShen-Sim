@@ -75,6 +75,10 @@ const WORLD_ROOMS = {
   },
 };
 const E8_R_MULT = [1.4, 1.5, 1.5, 1.65, 2.2];
+// 4-F-3 校正：5 座永久基建（重力修煉室 +30% 戰力…）與位面侵蝕結晶讓後期成長更快（未校正時 900 天自然演化的第 4／5 章尾王約 Day 219／318），
+// 所以第 4、5 章 R 再乘這組倍率（常規關與尾王；第 1～3 章維持既有節奏）。實測（npm run sim -- --seeds=50 --days=900）：
+//   ×1.6／1.7 → 尾王首通中位數 Day 333／485；×1.9／3.1 → 354／717（第 5 章只剩 40% 局能在 900 天內通關，太慢）。
+const F_R_MULT = [1, 1, 1, 1.6, 1.7];
 const REAL_WORLDS = [
   {
     id: "ghost_village",
@@ -154,7 +158,7 @@ export const DUNGEONS = WORLD_LIST.map((w) => {
   const t = WORLD_NAME_INTRO[w.id]; // 4-E-8：30 世界正式名稱與題材描述（房間文字與首通特殊獎勵沿用原內容）
   const named = t ? { ...base, name: t.name, intro: t.intro } : base;
   const extra = WORLD_ROOMS[w.id] ?? {}; // 前 3 個世界的房間文字對齊新世界觀（4-E-8 收尾）
-  return { ...named, ...extra, recommendedPower: Math.round(base.recommendedPower * E8_R_MULT[w.chapter - 1]) }; // 200 件商店總表上線後的 R 校正
+  return { ...named, ...extra, recommendedPower: Math.round(base.recommendedPower * E8_R_MULT[w.chapter - 1] * F_R_MULT[w.chapter - 1]) }; // 200 件商店總表（4-E-8）與基建（4-F-3）上線後的 R 校正
 });
 function buildWorld(w) {
   if (REAL.has(w.id)) return REAL.get(w.id);
