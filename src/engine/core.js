@@ -84,6 +84,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
       speed: 1,
       paused: false,
       autoDispatch: false,
+      guideSeen: false, // 新任主神上崗手冊讀過了沒（4-D-7，讀過就不再自動彈出）
       followId: null, // 視角鎖定的輪迴者 id（只給畫面用，引擎不讀）；null = 沒鎖定
       protect: { noInjured: true, noEnemies: true },
       pauseOn,
@@ -141,6 +142,7 @@ export function createSamsarite(state, rank, rng = state) {
     wallet: 0, // 私房錢（4-D-1）：副本分潤進來，輪迴者自己逛街、強化用（見 engine/shopping.js）；戰死 50% 充公，回收 100% 歸公庫
     consumables: [], // 出征耗材緩衝區：商品 id 陣列，下次出發時全部套用成單場 runBuff（4-D-2）
     runBuff: null, // 單場 buff { injuryShield, defense, speed }，出征時由 consumables 轉成、回家清空
+    lastDramaDay: null, // 上次偷買黑貨是第幾天（4-D-7：10 天冷卻）
     customProfile: null, // 預留（未來自訂姓名／頭像與分享卡片，目前不實裝邏輯）
     shopLog: [], // 最近的自主購買紀錄 [{ day, text }]（4-D-3，UI 查閱用）
     lockedInPodBy: null, // 被誰鎖進私人休眠艙（0 = 主管）；podLockDays 倒數，期間不能派遣、不能逛街（4-D-2 狗血黑貨）
@@ -565,10 +567,12 @@ export function deserialize(json) {
     s.consumables ??= [];
     s.shopLog ??= [];
     s.customProfile ??= null;
+    s.lastDramaDay ??= null;
     s.runBuff ??= null;
     s.lockedInPodBy ??= null;
     s.podLockDays ??= 0;
   }
+  state.settings.guideSeen ??= false; // 4-D-7 上崗手冊：舊存檔當作還沒看過
   state.settings.followId ??= null; // 舊存檔沒有視角鎖定欄位，當沒鎖定
   // 之後新增的暫停事件種類，舊存檔沒有就補上預設值
   for (const [key, def] of Object.entries(PAUSE_EVENTS)) {

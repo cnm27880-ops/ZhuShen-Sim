@@ -4,7 +4,7 @@
 //   1. 緊急保命：injury >= 2 先買治傷耗材；sanity < 45 先買回理智耗材
 //   2. 基礎換裝：缺武器／防具、或裝備階層低於目前已解鎖階層 → 買買得起的最好制式或黑市武防（絕不覆蓋 soulbound 綁定裝備）
 //   3. 自主強化／開基因鎖：花私房錢，且花完仍留 20% 備用金
-//   4. 性格偏好與敗家搞事：依詞條權重搶購黑市商品；戀愛／偏執／低理智者有 15% 機率偷買 drama 黑貨對隊友用
+//   4. 性格偏好與敗家搞事：依詞條權重搶購黑市商品；戀愛／偏執／低理智者有 5% 機率偷買 drama（買過後 10 天冷卻） 黑貨對隊友用
 // 亂數用獨立流 state.aiShopRngState（數字），不動主亂數。每人最近的自主購買紀錄存在 s.shopLog（最多 CONFIG.shopping.logKeep 筆）。
 
 import { CONFIG } from "../data/config.js";
@@ -140,8 +140,9 @@ function victimFor(state, s, item, rng) {
 function leisure(state, s, ctx) {
   const C = CONFIG.shopping;
   const rng = aiRng(state);
-  // 4a. 搞事：愛搞事的人 15% 機率偷買黑貨
-  const roll = !ctx.dramaRolled && isDramaProne(state, s); // 每人每天只擲一次搞事骰（不論當天有幾次動作）
+  // 4a. 搞事：愛搞事的人 5% 機率偷買黑貨（近 10 天買過就不擲）
+  const cooling = s.lastDramaDay != null && currentDay(state) - s.lastDramaDay < C.dramaCooldownDays; // 近 10 天買過黑貨：不擲骰
+  const roll = !ctx.dramaRolled && !cooling && isDramaProne(state, s); // 每人每天只擲一次搞事骰（不論當天有幾次動作）
   ctx.dramaRolled = true;
   if (roll && rand(rng) < C.dramaChance) {
     const slots = marketOf(state).slots.map((slot, index) => ({ slot, index, item: getShopItem(slot.itemId) })).filter((x) => x.item?.kind === "contraband" && !x.slot.sold);
@@ -152,7 +153,10 @@ function leisure(state, s, ctx) {
       if (price > s.wallet * (1 - C.reservePct)) continue;
       if (checkMarketBuy(state, x.index, s.id, { payer: "wallet", victimId: victim.id }).ok) {
         const ok = execute(state, s, { src: "market", item: x.item, price, index: x.index }, { victimId: victim.id });
-        if (ok) return true;
+        if (ok) {
+          s.lastDramaDay = currentDay(state);
+          return true;
+        }
       }
     }
   }

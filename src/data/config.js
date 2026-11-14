@@ -92,7 +92,8 @@ export const CONFIG = {
     reservePct: 0.2, // 自主強化／敗家後，私房錢至少留這個比例當備用金
     calmBelow: 45, // 理智低於這個數字，優先買回理智耗材
     lowSanity: 45, // 理智低於這個數字算「低理智者」（愛搞事）
-    dramaChance: 0.15, // 愛搞事的人，每天偷買 drama 黑貨對隊友使用的機率
+    dramaChance: 0.05, // 愛搞事的人，每天偷買 drama 黑貨對隊友使用的機率（4-D-7：露葵拍板由 15% 下修為 5%）
+    dramaCooldownDays: 10, // 同一個人買過黑貨後，這麼多天內不會再偷買（保留偶發吃瓜驚喜感）
     tagWeight: { survival: 1, aggro: 1, communal: 0.5, drama: 0.1 }, // 搶購黑市的基礎偏好（詞條會再乘 2）
     logKeep: 6, // 每人最近的自主購買紀錄留幾筆（s.shopLog）
   },

@@ -117,6 +117,12 @@ function afterChange() {
       bannerText = `⏸ 自動暫停：${PAUSE_EVENTS[ev.type].label} —— ${ev.text}`;
     }
   }
+  // 新局第 1 天首次進入：自動彈出上崗手冊（讀過就記住，不重複打擾）
+  if (!state.settings.guideSeen && !modal && !state.gameOver && currentDay(state) <= 1 && state.log.length <= 2) {
+    state.settings.guideSeen = true;
+    modal = { name: "guide" };
+    saveGame();
+  }
   // 副本結算視窗排隊：一次只彈一個，關掉後若還有就接著彈（含重新整理讀檔後還沒看的）。關掉「副本結算」暫停就不彈、清掉佇列
   if (!state.settings.pauseOn.runEnd) state.runReports.length = 0;
   else if (!modal && !state.gameOver && state.runReports.length > 0) {
@@ -150,6 +156,7 @@ function render() {
 function renderTopbar() {
   $("points").textContent = state.points;
   $("points").classList.toggle("debt", state.points < 0);
+  $("btn-guide").classList.toggle("pulse", !state.settings.guideSeen);
   $("tax-rate").textContent = `${Math.round(taxRateOf(state) * 100)}%`;
   $("day-label").textContent = `第 ${currentDay(state)} 天`;
   $("day-bar-fill").style.width = `${((state.tick % CONFIG.ticksPerDay) / CONFIG.ticksPerDay) * 100}%`;
@@ -408,6 +415,26 @@ function locationLabel(s) {
   return injuryLabel(s);
 }
 
+/** 需要警告的人：重傷以上，或理智低於 30（帶出去戰力大減、極易戰死） */
+const isRisky = (s) => s.injury >= 2 || (s.stats.sanity ?? 100) < 30;
+
+/** 風險警告文案（list 裡有人危險才顯示） */
+function riskWarning(list) {
+  const risky = list.filter(isRisky);
+  if (risky.length === 0) return "";
+  return `<div class="risk-warning">⚠️ <b>${risky.map((s) => `${s.name}（${s.injury >= 2 ? INJURIES[s.injury].name : ""}${s.injury >= 2 && s.stats.sanity < 30 ? "＋" : ""}${s.stats.sanity < 30 ? `理智 ${s.stats.sanity}` : ""}）`).join("、")}</b>
+    帶重傷（戰力 -20%／-40%）或低理智（戰力 -25%、隊內更容易內鬥）出征，會大幅折損戰力、極易陣亡（帶傷被打中還有直接死亡機率）。<b>拒絕或讓他輪休養傷、吃藥才是安全做法。</b></div>`;
+}
+
+/** 隊員迷你狀態摘要（折疊區）：姓名、戰力、傷勢、理智；危險的人標紅 */
+function statusPanel(list, title = "👥 目前在空間的隊員狀態") {
+  if (list.length === 0) return "";
+  const rows = list
+    .map((s) => `<div class="status-row ${isRisky(s) ? "risky" : ""}">${rankBadge(s.rank)}<span class="grow">${s.name}${isRisky(s) ? " ⚠️" : ""}</span><span>⚔️ ${effectivePower(s)}</span><span>${injuryLabel(s)}</span><span>🧠 ${s.stats.sanity}</span></div>`)
+    .join("");
+  return `<details class="status-panel" ${list.some(isRisky) ? "open" : ""}><summary>${title}</summary>${rows}</details>${riskWarning(list)}`;
+}
+
 function rankBadge(rank) {
   return `<span class="rank rank-${rank}">${rank}</span>`;
 }
@@ -456,7 +483,7 @@ function closeModal() {
 function renderModal() {
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { dispatch, gacha, shop, detail, stele, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent };
+  const builders = { guide, dispatch, gacha, shop, detail, stele, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent };
   $("modal").innerHTML = builders[modal.name]();
 }
 
@@ -523,7 +550,8 @@ function dispatch() {
       <span class="option-icon">${dungeonById(MANDATORY_ID).icon}</span>
       <span class="grow"><b>${dungeonById(MANDATORY_ID).name}</b> <small class="bad">第 ${mand.deadlineDay} 天前要派隊，逾時主神隨機抹殺 ${CONFIG.forcedMission.purgeMin}～${CONFIG.forcedMission.purgeMax} 人、全員理智 -${CONFIG.forcedMission.purgeSanityLoss}</small><br /><small>${dungeonById(MANDATORY_ID).intro}</small></span>
       <small>推薦戰力 ${dungeonById(MANDATORY_ID).recommendedPower}<br />獎勵 ${dungeonById(MANDATORY_ID).reward} 分（每戰死 1 人 +${Math.round(CONFIG.forcedMission.deathRewardPct * 100)}%）<br />${roomCount(dungeonById(MANDATORY_ID))} 房過 ${roomsToClear(dungeonById(MANDATORY_ID))}・單房上限 ${Math.round(CONFIG.forcedMission.passCap * 100)}%</small>
-    </div>`
+    </div>
+    ${statusPanel(home, "☠️ 可出征隊員狀態（強制任務不能化解，但帶重傷出去更容易死）")}`
     : "";
 
   const daysToRotate = Math.max(0, boardOf(state).nextRotateDay - currentDay(state));
@@ -587,6 +615,7 @@ function dispatch() {
         .map((s) => `${s.name}（被打中時 ${Math.round(INJURIES[s.injury].deathBonus * 100)}% 直接死亡）`)
         .join("、")}</span>`;
     }
+    summary += riskWarning(party);
     const stocked = party.filter((s) => s.consumables?.length);
     if (stocked.length > 0) summary += `<br /><small>🎒 出征耗材會一起生效：${stocked.map((s) => `${s.name} ×${s.consumables.length}`).join("、")}</small>`;
   }
@@ -953,6 +982,7 @@ function wish() {
   const vars = wishVars(state, w);
   const check = checkAccept(state, w);
   const left = w.deadlineDay - currentDay(state);
+  const home = state.samsarites.filter((s) => s.location === "space");
   const mh = CONFIG.wish.moods.happy;
   const mu = CONFIG.wish.moods.upset;
   return `<h3>${def.icon} ${s.name} 的願望：${def.name}</h3>
@@ -966,6 +996,7 @@ function wish() {
       ${check.ok ? "" : `<br /><span class="bad">現在答應不了：${check.reason}</span>`}
       ${list.length > 1 ? `<br /><small>還有 ${list.length - 1} 個許願排隊中</small>` : ""}
     </div>
+    ${statusPanel([s, ...home.filter((x) => x.id !== s.id)].filter((x) => x.location === "space"))}
     <div class="modal-actions">
       <button class="danger" data-action="refuse-wish" data-id="${w.id}">拒絕</button>
       <button class="primary" data-action="accept-wish" data-id="${w.id}" ${check.ok ? "" : "disabled"}>答應</button>
@@ -1001,11 +1032,26 @@ function godEvent() {
       <span class="bad">${left} 天內沒回覆 → ${renderTemplate(def.ignoreDesc, vars)}</span>
       ${check.ok ? "" : `<br /><span class="bad">現在花不起積分化解：${check.reason}</span>`}
     </div>
+    ${statusPanel(state.samsarites.filter((x) => x.location === "space"))}
     <div class="modal-actions">
       <button class="danger" data-action="accept-god">${ev.mode === "raid" ? "接下任務" : "照辦"}</button>
       <button class="primary" data-action="resolve-god" ${check.ok ? "" : "disabled"}>花 ${vars.cost} 分化解</button>
       ${modal.forced ? "" : closeButton}
     </div>`;
+}
+
+/** 新任主神上崗手冊（4-D-7）：5 張規則卡片 */
+function guide() {
+  const cards = [
+    ["🎯 核心目標", `你是被主神壓榨的主神空間主管：每天要從<b>主神公庫</b>扣「維持費」（在空間裡的人才扣，副本中不扣）。積分可以向主神借，最多借到破產線；頂到線全員被電擊、理智大跌；人全死光時主神會空投新人救援。穩住收支，推進並擊敗<b>五章尾王</b>（首通尾王讓空間升級、解鎖下一章）。`],
+    ["⚔️ 派遣與傷亡紅線", `派遣前看<b>推薦戰力</b>與任務的<b>突變詞綴</b>（例如血月狂躁 R ×1.15）。角色受傷（尤其重傷、致命傷）或理智過低（< 30）時，請留在空間休養、吃藥，<b>硬派出去極易戰死、名字刻上英靈碑</b>。彈窗和派遣畫面會用紅字警告。`],
+    ["💰 雙錢包與稅率", `副本獎金依<b>稅率</b>（頂欄可調 20%～80%）分流：一部分進「主神公庫」，其餘由存活隊員平分成「私房錢」。隊員每天日結會自己逛街買藥、換裝、強化、突破；你用公庫賞賜的裝備會🔒綁定，不會被他們自己換掉。稅率太高（≥60%）每天掉理智，太低（≤30%）會加理智但公庫變瘦。`],
+    ["🕶️ 情報、黑市與奇物", `同一個副本刷越多次，<b>情報</b>越高（滿格 +9%）：滿格後解鎖黑市「特產 85 折」與派遣時的<b>貪婪探索</b>（通關後有機率打開隱藏房，掉隱藏奇物）。每章<b>常規副本累計通關 8 次</b>才開放該章尾王。奇物永久收集（最多 +25% 全隊戰力），首通必得首通奇物。`],
+    ["🧬 基因鎖與因果結晶", `強化點滿後才能<b>突破基因鎖</b>（戰力乘區大幅提升，上限看階級 C／B／A／S）。高階副本與尾王會掉<b>因果結晶</b>🔮，是抽「神級池」的必要材料（每抽 1 顆）。想變強：招募高階角色、突破基因鎖、搭配裝備與血統。`],
+  ];
+  return `<h3>❓ 新任主神上崗手冊</h3>
+    ${cards.map(([title, body]) => `<div class="guide-card"><h4>${title}</h4>${body}</div>`).join("")}
+    <div class="modal-actions"><button class="primary" data-action="close-modal">我知道了，開始上班</button></div>`;
 }
 
 function gameOver() {
@@ -1031,6 +1077,11 @@ const actions = {
     dispatchPick.dungeonId = MANDATORY_ID; // 直接跳到強制任務的派遣畫面
     dispatchPick.slotId = null;
     modal = { name: "dispatch" };
+  },
+  "open-guide"() {
+    modal = { name: "guide" };
+    state.settings.guideSeen = true; // 讀過就記住，不再自動彈出
+    saveGame();
   },
   "open-gacha"() {
     modal = { name: "gacha" };

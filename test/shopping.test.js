@@ -125,9 +125,9 @@ test("性格偏好：有閒錢會搶購黑市未售罄商品（不碰公庫）",
   assert.ok(marketOf(state).slots.filter((x) => x.sold).length > before || s.wallet === 1000, "買了就會有格子售罄");
 });
 
-test("搞事：愛搞事的人有 15% 機率偷買黑貨對隊友使用（用獨立亂數流）", () => {
+test("搞事：愛搞事的人有 5% 機率偷買黑貨對隊友使用（用獨立亂數流）", () => {
   let dramas = 0;
-  const trials = 400;
+  const trials = 1500;
   const mainRngs = new Set();
   for (let seed = 1; seed <= trials; seed++) {
     const state = setup(2, seed);
@@ -150,7 +150,7 @@ test("搞事：愛搞事的人有 15% 機率偷買黑貨對隊友使用（用獨
     }
   }
   assert.deepEqual([...mainRngs], [true], "不動主亂數");
-  assert.ok(dramas / trials > 0.08 && dramas / trials < 0.25, `搞事比例約 15%（實際 ${(dramas / trials).toFixed(3)}）`);
+  assert.ok(dramas / trials > 0.03 && dramas / trials < 0.08, `搞事比例約 5%（實際 ${(dramas / trials).toFixed(3)}）`);
 });
 
 test("非愛搞事的人不會偷買黑貨；isDramaProne 判斷", () => {
@@ -176,4 +176,32 @@ test("可重現：同一個種子逛兩次結果一樣", () => {
     return JSON.stringify(state.samsarites.map((s) => [s.wallet, s.gear, s.enhanceCount, s.shopLog.length]));
   };
   assert.equal(run(), run());
+});
+
+test("搞事冷卻：買過黑貨後 10 天內不再偷買，第 10 天後恢復", () => {
+  const saved = CONFIG.shopping.dramaChance;
+  CONFIG.shopping.dramaChance = 1;
+  try {
+    const state = setup(2, 9);
+    const [a] = state.samsarites;
+    a.tags = ["green_tea"];
+    a.gear = { weapon: "weapon_myth", armor: "armor_myth" };
+    a.enhanceCount = CONFIG.gene.tiers[0].enhanceCap;
+    a.wallet = 100000;
+    state.totalSpent = 50;
+    const put = () => Object.assign(marketOf(state).slots[7], { itemId: "contra_love_t1", sold: false });
+    put();
+    dailyShopping(state);
+    assert.equal(marketOf(state).slots[7].sold, true, "第一次必買（機率 1）");
+    assert.equal(a.lastDramaDay, 1);
+    put();
+    state.tick = CONFIG.ticksPerDay * 5; // 第 6 天：冷卻中
+    dailyShopping(state);
+    assert.equal(marketOf(state).slots[7].sold, false, "冷卻中不買");
+    state.tick = CONFIG.ticksPerDay * 10; // 第 11 天：滿 10 天
+    dailyShopping(state);
+    assert.equal(marketOf(state).slots[7].sold, true, "冷卻結束可再買");
+  } finally {
+    CONFIG.shopping.dramaChance = saved;
+  }
 });
