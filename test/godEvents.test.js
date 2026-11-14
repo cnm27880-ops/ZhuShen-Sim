@@ -441,6 +441,7 @@ test("資料表與日誌：每種事件都有對應的日誌句子、版本 ≥ 
 /** 一支夠強的隊伍（4 個 S）＋一個任務目標；回傳 { state, target } */
 function missionSetup() {
   const state = createNewGame(31);
+  state.autoStrategy = "off"; // 驗證任務優先邏輯，不套用策略規則
   state.points = 1000;
   state.samsarites = [];
   for (let i = 0; i < 4; i++) {

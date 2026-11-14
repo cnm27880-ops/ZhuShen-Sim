@@ -478,6 +478,15 @@ export const CONFIG = {
     holdForMandatory: true, // 強制任務待派時，前 4 強留給任務、等他們回家再派（期限前最後一個時段才硬派；4-C-6）
     defaultStrategy: "balanced", // 自動派遣風險策略預設（4-E-8）；sim 預設用 "off" 維持基準曲線
     strategies: { safe: 1.2, balanced: 1.0, aggressive: 0.8, balancedNewbie: 0.85 }, // 隊伍總戰力 >= 關卡有效推薦戰力 × 倍率才出擊（balancedNewbie：空間 Lv.1 新手期的穩健檔）
+    // 三種策略是一整套不同的行為（不只是戰力倍率）：minClear 通關率門檻、maxTeams 每輪（=每天）最多派幾隊、
+    // maxInjury 隊員傷勢上限（0 無傷／1 輕傷／3 致命傷）、maxDeathRisk 預估「隊伍有人戰死」機率上限、reserve 至少留幾人在家休息。
+    // 注意：玩家的 settings.protect.noInjured 開著時，傷員一律不派（策略只會比它更嚴，不會更鬆）。"off"（sim 基準曲線）不套用這些限制。
+    rules: {
+      safe: { minClear: 0.85, maxTeams: 1, maxInjury: 0, maxDeathRisk: 0.05, reserve: 2 },
+      balanced: { minClear: 0.75, maxTeams: 2, maxInjury: 1, maxDeathRisk: 0.2, reserve: 1 },
+      aggressive: { minClear: 0.6, maxTeams: 99, maxInjury: 3, maxDeathRisk: 1, reserve: 0 },
+    },
+    deathRehit: 0.5, // 死亡風險估算：同一人在副本裡被打中第二次時，戰死的平均機率（輕 20%／重 50%／致命 80% 的中間值，暫定，需驗證）
     riskLogEveryDays: 3, // 「任務風險過高，自動派遣暫緩出擊」最多每幾天提示一次
     missionFirst: true, // 有主神突襲任務時，自動派遣優先派任務目標去指定副本（通關率仍要達 minClearChance；Phase 3-E）
   },
@@ -589,4 +598,9 @@ export const PAUSE_EVENTS = {
   birth: { label: "有小孩出生（進催熟艙）", default: true },
   hatch: { label: "催熟完成（小孩長成輪迴者）", default: true },
   rival: { label: "洲際碰撞任務（刷出當天與剩餘 1 天預警）", default: true },
+  injurySevere: { label: "有人重傷／致命傷", default: true },
+  lowSanity: { label: "有人理智低於 20（快崩潰）", default: true },
 };
+
+// 新增暫停事件的門檻（問題 5）：傷勢 >= severeInjury、理智 < lowSanity 時各提醒一次（恢復後才會再提醒）
+export const ALERT_LEVELS = { severeInjury: 2, lowSanity: 20 };

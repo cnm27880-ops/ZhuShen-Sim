@@ -6,10 +6,11 @@ import { DUNGEONS } from "../data/dungeons.js";
 import { emit, advanceTick, checkGameOver, currentDay } from "./core.js";
 import { logText } from "./templates.js";
 import { areEnemies as pairEnemies } from "./relations.js";
+import { checkAlerts } from "./alerts.js";
 import { activeMission } from "./godEvents.js";
 import { MANDATORY_ID, pendingMandatory } from "./mandatory.js";
 import { effectivePower } from "./tags.js";
-import { clearChance, partyPower, startRun, stepDueRooms, settleRuns, unlockedDungeons, isUnlocked, hasIntel } from "./dungeon.js";
+import { clearChance, deathRisk, partyPower, startRun, stepDueRooms, settleRuns, unlockedDungeons, isUnlocked, hasIntel } from "./dungeon.js";
 import { boardTargets } from "./board.js";
 import { intelFull } from "./market.js";
 import { erosionUnlocked, applyErosion, erosionRewardMult } from "./erosion.js";
@@ -26,13 +27,33 @@ function reservedForMandatory(state) {
   return new Set(top.map((s) => s.id));
 }
 
+/**
+ * 目前策略的整套派遣規則（問題 2）：通關率門檻、每輪最多派幾隊、傷勢上限、死亡風險上限、留守人數。
+ * "off"（sim 基準曲線）維持舊行為：門檻用 CONFIG.auto.minClearChance、不限隊數、不留人。
+ */
+export function autoRules(state) {
+  const key = state.autoStrategy ?? CONFIG.auto.defaultStrategy;
+  if (key === "off") return { minClear: CONFIG.auto.minClearChance, maxTeams: Infinity, maxInjury: 3, maxDeathRisk: 1, reserve: 0 };
+  return CONFIG.auto.rules[key] ?? CONFIG.auto.rules.balanced;
+}
+
+/** 這支隊伍符不符合策略（傷勢上限、留守人數、死亡風險）。死亡風險最貴，所以放最後並只在有設限時才算 */
+function partyAllowed(state, party, dungeon, rules, homeCount) {
+  if (party.some((s) => s.injury > rules.maxInjury)) return false;
+  if (homeCount - party.length < rules.reserve) return false;
+  if (rules.maxDeathRisk < 1 && deathRisk(state, party, dungeon) > rules.maxDeathRisk) return false;
+  return true;
+}
+
 /** 可以被自動派遣的人：在家、沒鎖定、（保護開關開著時）沒受傷；強制任務待派時前 4 強留給任務 */
 export function autoCandidates(state) {
   const reserved = reservedForMandatory(state);
+  const rules = autoRules(state);
   return state.samsarites
     .filter((s) => !reserved.has(s.id))
       .filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0) && !(s.podLockDays > 0))
     .filter((s) => !(state.settings.protect.noInjured && s.injury > 0))
+    .filter((s) => s.injury <= rules.maxInjury)
     .sort((a, b) => effectivePower(b) - effectivePower(a))
     .slice(0, CONFIG.auto.maxCandidates);
 }
@@ -91,6 +112,8 @@ let ratioBlocked = false; // 這一輪規劃：有沒有組合「通關率夠、
 function bestPlan(state, candidates, targets, mustInclude = null) {
   let best = null;
   const gate = autoRatioGate(state);
+  const rules = autoRules(state);
+  const homeCount = state.samsarites.filter((s) => s.location === "space").length;
   for (const party of subsets(candidates, CONFIG.partyMax)) {
     if (mustInclude && !party.includes(mustInclude)) continue;
     if (state.settings.protect.noEnemies && hasEnemyPair(state, party)) continue;
@@ -98,11 +121,12 @@ function bestPlan(state, candidates, targets, mustInclude = null) {
     for (const target of targets) {
       const { dungeon } = target;
       const chance = clearChance(state, party, dungeon);
-      if (chance < CONFIG.auto.minClearChance) continue;
+      if (chance < rules.minClear) continue;
       if (gate > 0 && power < dungeon.recommendedPower * gate) { // 戰力不夠就不挑這個槽（不開放鎖定單一關卡，但會看戰力下菜）
         ratioBlocked = true;
         continue;
       }
+      if (!partyAllowed(state, party, dungeon, rules, homeCount)) continue; // 傷勢上限／留守人數／死亡風險（問題 2、4）
       const comfy = chance >= CONFIG.auto.targetClearChance;
       const plan = { dungeon, party, chance, power, comfy, reward: target.reward, slotId: target.slotId, mutation: target.mutation };
       if (!best || isBetterPlan(plan, best)) best = plan;
@@ -151,6 +175,8 @@ function bestErosionPlan(state, candidates) {
     .slice(0, CONFIG.erosion.autoWorlds);
   if (worlds.length === 0) return null;
   const gate = autoRatioGate(state);
+  const rules = autoRules(state);
+  const homeCount = state.samsarites.filter((s) => s.location === "space").length;
   let best = null;
   for (const party of subsets(candidates, CONFIG.partyMax)) {
     if (state.settings.protect.noEnemies && hasEnemyPair(state, party)) continue;
@@ -160,7 +186,8 @@ function bestErosionPlan(state, candidates) {
         const dungeon = applyErosion(world, k);
         if (gate > 0 && power < dungeon.recommendedPower * gate) continue;
         const chance = clearChance(state, party, dungeon);
-        if (chance < CONFIG.auto.minClearChance) continue;
+        if (chance < rules.minClear) continue;
+        if (!partyAllowed(state, party, dungeon, rules, homeCount)) continue;
         const plan = { dungeon: world, party, chance, power, comfy: chance >= CONFIG.auto.targetClearChance, reward: world.reward * erosionRewardMult(k), slotId: null, mutation: null, erosion: k };
         if (!best || isBetterPlan(plan, best)) best = plan;
         break; // 這個隊伍 × 世界已找到最高可行星級
@@ -182,17 +209,29 @@ export function autoMandatory(state) {
   const topAway = [...reservedForMandatory(state)].some((id) => state.samsarites.find((s) => s.id === id)?.location !== "space");
   const lastChance = currentDay(state) >= pending.deadlineDay - 1;
   if (CONFIG.auto.holdForMandatory && topAway && !lastChance) return 0;
-  // 4-E-8：強制任務徵召「無視」日常自動派遣鎖（🔒 只管日常掛機），一律按健康優先、戰力由高到低徵召，杜絕放主力看戲、抓菜鳥送死
-  const pool = state.samsarites.filter((s) => s.location === "space" && !(s.vacationDays > 0) && !(s.podLockDays > 0));
-  const party = [...pool].sort((a, b) => (a.injury > 0) - (b.injury > 0) || effectivePower(b) - effectivePower(a)).slice(0, CONFIG.partyMax);
+  // 問題 3：平常尊重保護設定（🔒 鎖定的人不派、noInjured 開著時傷員不派），先排除他們再取前 4 名；
+  // 池子空了就等，只有真的到了最後期限（再不派就抹殺）才放寬、硬派並跳提示。
+  const home = state.samsarites.filter((s) => s.location === "space" && !(s.vacationDays > 0) && !(s.podLockDays > 0));
+  const order = (a, b) => (a.injury > 0) - (b.injury > 0) || effectivePower(b) - effectivePower(a); // 健康優先、戰力由高到低
+  let pool = home.filter((s) => !s.locked && !(state.settings.protect.noInjured && s.injury > 0));
+  let relaxed = false;
+  if (pool.length === 0 && lastChance) {
+    pool = home;
+    relaxed = true;
+  }
+  const party = [...pool].sort(order).slice(0, CONFIG.partyMax);
   if (party.length === 0) return 0;
-  return startRun(state, MANDATORY_ID, party.map((s) => s.id), { ignoreLock: true }).ok ? 1 : 0;
+  const ok = startRun(state, MANDATORY_ID, party.map((s) => s.id), { ignoreLock: relaxed }).ok;
+  if (ok && relaxed) emit(state, "mandatory", logText(state, "mandatoryForced", { A: party[0], n: party.length }));
+  return ok ? 1 : 0;
 }
 
 /** 一次排出多隊：每輪挑最划算的一隊，剩下的人再組下一隊，直到沒有達標的組合（人手用完）。回傳派出幾隊 */
 export function tryAutoDispatch(state) {
   let sent = autoMandatory(state);
-  for (;;) {
+  const rules = autoRules(state);
+  let normal = 0; // 問題 1：每輪（= 每天）一般派遣最多幾隊，依策略（強制任務那一隊不算）
+  while (normal < rules.maxTeams) {
     const plan = planAutoDispatch(state);
     if (!plan) break;
     // 貪婪探索（4-D-4）：預估通關率夠高而且該副本情報滿格就帶上
@@ -200,6 +239,7 @@ export function tryAutoDispatch(state) {
     const result = startRun(state, plan.dungeon.id, plan.party.map((s) => s.id), { slotId: plan.slotId, greedy, erosion: plan.erosion ?? 0 });
     if (!result.ok) break;
     sent += 1;
+    normal += 1;
   }
   if (sent === 0) {
     if (ratioBlocked) {
@@ -221,5 +261,6 @@ export function step(state) {
   settleRuns(state);
   const isDispatchTick = state.tick % CONFIG.ticksPerDay === CONFIG.auto.dispatchAtTick;
   if (state.settings.autoDispatch && isDispatchTick) tryAutoDispatch(state);
+  checkAlerts(state);
   checkGameOver(state);
 }

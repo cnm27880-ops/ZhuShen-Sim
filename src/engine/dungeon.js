@@ -158,6 +158,36 @@ export function clearChance(state, party, dungeon, env = null) {
   return chanceAtLeast(roomCount(dungeon), roomsToClear(dungeon), p);
 }
 
+/**
+ * 預估「這隊在這個副本裡有人戰死」的機率（問題 4；粗估，不是精算）。
+ * 假設：每個失敗房間隨機打中 1 名隊員；健康的人第一下不會死，所以死亡只來自
+ *  (a) 同一人被打中第 2 次（機率 = 失敗次數的「撞人」機率 × CONFIG.auto.deathRehit）
+ *  (b) 帶傷出征的人被打中（輕 20%／重 50%／致命 80% 直接死）。
+ * 沒算防禦、閃避、鎖血、替死符，所以偏保守（可能高估）。
+ */
+export function deathRisk(state, party, dungeon, env = null) {
+  const m = party.length;
+  if (m === 0) return 0;
+  const n = roomCount(dungeon);
+  const q = 1 - roomPassRate(state, party, dungeon, env);
+  const comb = (a, b) => {
+    let r = 1;
+    for (let i = 1; i <= b; i++) r = (r * (a - b + i)) / i;
+    return r;
+  };
+  let chainRisk = 0;
+  for (let f = 2; f <= n; f++) {
+    let distinct = 1; // f 次打中都是不同人的機率
+    for (let i = 0; i < f; i++) distinct *= Math.max(0, 1 - i / m);
+    chainRisk += comb(n, f) * q ** f * (1 - q) ** (n - f) * (1 - distinct) * CONFIG.auto.deathRehit;
+  }
+  let safe = 1 - chainRisk;
+  for (const s of party) {
+    if (s.injury > 0) safe *= 1 - (1 - (1 - q / m) ** n) * INJURIES[s.injury].deathBonus;
+  }
+  return 1 - safe;
+}
+
 function partyOf(state, run) {
   return run.partyIds.map((id) => state.samsarites.find((s) => s.id === id)).filter(Boolean);
 }
