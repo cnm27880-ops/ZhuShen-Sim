@@ -6,10 +6,10 @@
 export const CONFIG = {
   // ── 時間 ──
   ticksPerDay: 10, // 一天切成 10 個時段（tick）
-  tickMs: 2000, // 1x 速度下，每個時段的真實毫秒數（一天 = 20 秒）
-  roomMs: 2400, // 1x 速度下，副本每走一個房間的真實毫秒數
+  tickMs: 2500, // 1x 速度下，每個時段的真實毫秒數（一天 = 25 秒；4-E-8：由 2000 放慢 25%，後期人多時手操較從容）
+  roomMs: 3000, // （4-E-8：由 2400 放慢 25%） 1x 速度下，副本每走一個房間的真實毫秒數
   roomTicks: 2, // 每個房間 = 0.2 天 = 2 個時段（5 房 = 1 天、7 房 = 1.4 天…12 房 = 2.4 天；Phase 4-A 起副本長度跟房數走）
-  speeds: [1, 2, 5, 10],
+  speeds: [0.5, 1, 2, 5, 10], // 0.5x 是慢速微操檔；鍵盤 1～5 對應這五檔（4-E-8）
 
   // ── 開局（Phase 4-A：送 3 個 C 級 + 600 分，夠補 1~2 抽並留緩衝）──
   startingPoints: 600,
@@ -471,6 +471,9 @@ export const CONFIG = {
     maxCandidates: 14, // 最多拿戰力前幾名來排列組合（避免人太多時算太久）
     dispatchAtTick: 5, // 每天第幾個時段檢查一次自動派遣
     holdForMandatory: true, // 強制任務待派時，前 4 強留給任務、等他們回家再派（期限前最後一個時段才硬派；4-C-6）
+    defaultStrategy: "balanced", // 自動派遣風險策略預設（4-E-8）；sim 預設用 "off" 維持基準曲線
+    strategies: { safe: 1.2, balanced: 1.0, aggressive: 0.8, balancedNewbie: 0.85 }, // 隊伍總戰力 >= 關卡有效推薦戰力 × 倍率才出擊（balancedNewbie：空間 Lv.1 新手期的穩健檔）
+    riskLogEveryDays: 3, // 「任務風險過高，自動派遣暫緩出擊」最多每幾天提示一次
     missionFirst: true, // 有主神突襲任務時，自動派遣優先派任務目標去指定副本（通關率仍要達 minClearChance；Phase 3-E）
   },
 

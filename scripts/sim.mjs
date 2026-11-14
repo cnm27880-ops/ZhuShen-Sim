@@ -58,6 +58,8 @@ if (args.minClear) CONFIG.auto.minClearChance = args.minClear;
 if (args.mpower) CONFIG.forcedMission.powerMult = args.mpower;
 const TAX = args.tax ?? CONFIG.tax.default; // --tax=0.4：公庫稅率
 // Phase 4-E-6：--forceStyle=communal|bond|farming|elite|mercenary 強制所有隊長都開啟同一個小隊流派（測試單一流派的極端表現）；沒傳 = 依隊長性格自然演化
+// --autoStrategy=safe|balanced|aggressive：模擬時改用玩家版的自動派遣戰力門檻（預設 off = 維持既有基準曲線）
+const SIM_STRATEGY = process.argv.find((a) => a.startsWith("--autoStrategy="))?.split("=")[1] ?? "off";
 const FORCE_STYLE = process.argv.find((a) => a.startsWith("--forceStyle="))?.split("=")[1] ?? null;
 if (FORCE_STYLE) CONFIG.squad.forceStyle = FORCE_STYLE;
 const GROW_RESERVE_DAYS = args.growReserve ?? 8;
@@ -153,6 +155,7 @@ function playOne(seed) {
   const state = createNewGame(seed);
   setTaxRate(state, TAX);
   state.settings.autoDispatch = true;
+  state.autoStrategy = SIM_STRATEGY;
   const botTick = CONFIG.auto.dispatchAtTick - 1; // 自動派遣前一個時段做決策
   let bankruptDay = null;
   let lowestPoints = state.points;

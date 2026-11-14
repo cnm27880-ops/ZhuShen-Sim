@@ -23,7 +23,7 @@
       <div class="stat"><span class="stat-label">每日維持費</span><span id="upkeep" class="stat-value small">0</span></div>
       <div class="stat"><span class="stat-label">因果結晶</span><span id="karma" class="stat-value small">🔮 0</span></div>
       <div id="speed-controls"></div>
-      <button id="btn-pause" data-action="toggle-pause">⏸ 暫停</button>
+      <button id="btn-pause" data-action="toggle-pause" title="空白鍵：暫停／繼續">⏸ 暫停 [Space]</button>
       <button id="btn-squad" data-action="open-squad" title="小隊指揮部：隊長、流派、先人遺物、空間編年史">👑 小隊指揮部</button>
       <button id="btn-guide" data-action="open-guide" title="新任主神上崗手冊">❓ 上崗手冊</button>
       <button data-action="open-settings" title="設定">⚙️</button>
@@ -59,6 +59,8 @@
         <button id="btn-god" class="primary" data-action="open-god" style="display: none">👁 主神搞事</button>
         <button class="primary" data-action="open-shop">🛒 商店</button>
         <label class="toggle"><input type="checkbox" id="auto-dispatch" /> 🤖 自動派遣</label>
+        <label class="toggle" title="自動派遣只挑打得過的任務槽：保守 = 隊伍戰力 ≥ 推薦戰力 ×1.2；穩健 ×1.0（新手期 ×0.85）；狂暴 ×0.8。全部打不過就待機休整。">🧭
+          <select id="auto-strategy"><option value="safe">保守</option><option value="balanced">穩健</option><option value="aggressive">狂暴</option></select></label>
         <label class="toggle"><input type="checkbox" id="protect-injured" /> 禁止自動派遣受傷人員</label>
         <label class="toggle"><input type="checkbox" id="protect-enemies" /> 禁止仇恨／死敵同隊</label>
       </div>
