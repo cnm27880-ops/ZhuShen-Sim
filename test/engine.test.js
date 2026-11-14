@@ -239,14 +239,14 @@ test("派遣檢查：人數上限、同一個人不能同時在兩場副本", ()
 });
 
 test("自動派遣：不派鎖定的人、不派受傷的人（開關開著時）、挑獎勵最高的可行副本", () => {
-  // 4 人 × 戰力 30 = 120：霧隱荒村（R 90）通關率約 64% 達標，沉默方舟號（R 130）約 51% 不達標
+  // 4 人 × 戰力 42 = 168：密室殺陣（R 126，4-E-8 起 ×1.4）通關率約 64% 達標，猛鬼宿舍（R 182）約 51% 不達標
   const state = createNewGame(9);
   state.samsarites = [];
   const strong = [make(state, "S"), make(state, "S"), make(state, "S"), make(state, "S")];
-  for (const s of strong) Object.assign(s, { tags: [] }, { stats: { ...s.stats, power: 30 } });
+  for (const s of strong) Object.assign(s, { tags: [] }, { stats: { ...s.stats, power: 42 } });
   const plan = planAutoDispatch(state);
   assert.equal(plan.dungeon.id, "ghost_village");
-  strong.forEach((s) => (s.stats.power = 60)); // 變強之後改打獎勵更高的副本（但還沒解鎖的第 2 章不會去）
+  strong.forEach((s) => (s.stats.power = 84)); // 變強之後改打獎勵更高的副本（但還沒解鎖的第 2 章不會去）
   const richer = planAutoDispatch(state);
   assert.ok(richer.dungeon.reward > easy.reward && richer.dungeon.chapter === 1);
 

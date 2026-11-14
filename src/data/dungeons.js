@@ -59,6 +59,9 @@ const CHAPTER_ANCHOR = {
 };
 const spread = ([lo, hi], i) => Math.round(lo * (hi / lo) ** (i / 4));
 
+// 4-E-8 校正：200 件商店總表（每人 4 個穿戴欄的白值）讓全隊戰力約為 4-D 的 2 倍，所以各章推薦戰力 R（一般關與尾王、含前 3 個真實世界）再乘這組倍率。
+// 實測（npm run sim -- --seeds=100 --days=900）：未校正時尾王首通中位數 Day 21／59／119／198／250（-30%～-44%），乘上 ×1.4／1.5／1.5／1.65／2.0 後回到 ±25% 內。
+const E8_R_MULT = [1.4, 1.5, 1.5, 1.65, 2.0];
 const REAL_WORLDS = [
   {
     id: "ghost_village",
@@ -136,7 +139,8 @@ const REAL = new Map(REAL_WORLDS.map((d) => [d.id, d]));
 export const DUNGEONS = WORLD_LIST.map((w) => {
   const base = buildWorld(w);
   const t = WORLD_NAME_INTRO[w.id]; // 4-E-8：30 世界正式名稱與題材描述（房間文字與首通特殊獎勵沿用原內容）
-  return t ? { ...base, name: t.name, intro: t.intro } : base;
+  const named = t ? { ...base, name: t.name, intro: t.intro } : base;
+  return { ...named, recommendedPower: Math.round(base.recommendedPower * E8_R_MULT[w.chapter - 1]) }; // 200 件商店總表上線後的 R 校正
 });
 function buildWorld(w) {
   if (REAL.has(w.id)) return REAL.get(w.id);

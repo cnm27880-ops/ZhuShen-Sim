@@ -446,6 +446,7 @@ function missionSetup() {
   for (let i = 0; i < 4; i++) {
     const s = createSamsarite(state, "S");
     s.tags = [];
+    s.stats.power = 42; // 4-E-8：R ×1.4，隊員戰力同比放大，維持原本的通關率
     state.samsarites.push(s);
   }
   const target = state.samsarites[3];
