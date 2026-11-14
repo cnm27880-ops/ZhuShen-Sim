@@ -160,3 +160,29 @@ test("存讀檔保留空間等級與章節紀錄；舊存檔沒有這些欄位�
   assert.equal(loaded.spaceLevel, 1);
   assert.deepEqual(loaded.chapterClearDay, {});
 });
+
+test("Phase 4-B 校正後的副本曲線：尾王是章內最高 R／獎勵；各章獎勵、尾王 R 逐章遞增", () => {
+  const byChapter = (ch) => DUNGEONS.filter((d) => d.chapter === ch);
+  for (let ch = 1; ch <= 5; ch++) {
+    const list = byChapter(ch);
+    assert.equal(list.length, 4, `第 ${ch} 章有 4 關`);
+    const boss = list.find((d) => d.boss);
+    for (const d of list.filter((x) => !x.boss)) {
+      assert.ok(boss.recommendedPower > d.recommendedPower, `第 ${ch} 章尾王 R 要比 ${d.id} 高`);
+      assert.ok(boss.reward > d.reward, `第 ${ch} 章尾王獎勵要比 ${d.id} 高`);
+    }
+    // 章內一般關：R 與獎勵都隨關卡編號遞增
+    const normals = list.filter((x) => !x.boss);
+    for (let i = 1; i < normals.length; i++) {
+      assert.ok(normals[i].recommendedPower > normals[i - 1].recommendedPower, `第 ${ch} 章 R 遞增`);
+      assert.ok(normals[i].reward > normals[i - 1].reward, `第 ${ch} 章獎勵遞增`);
+    }
+  }
+  for (let ch = 2; ch <= 5; ch++) {
+    const prev = byChapter(ch - 1);
+    const cur = byChapter(ch);
+    assert.ok(Math.min(...cur.map((d) => d.reward)) > Math.max(...prev.map((d) => d.reward)), `第 ${ch} 章最低獎勵要高於上一章最高獎勵`);
+    assert.ok(cur.find((d) => d.boss).recommendedPower > prev.find((d) => d.boss).recommendedPower, `第 ${ch} 章尾王 R 要高於上一章尾王`);
+    assert.ok(Math.min(...cur.map((d) => d.recommendedPower)) > Math.max(...prev.filter((d) => !d.boss).map((d) => d.recommendedPower)), `第 ${ch} 章一般關 R 要高於上一章一般關`);
+  }
+});

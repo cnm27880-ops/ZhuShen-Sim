@@ -2,7 +2,9 @@
 // chapter：第幾章（1~5，空間等級 ≥ 章節才解鎖）；boss：true = 本章尾王（首通讓空間升 1 級）。
 // rooms：房間陣列，長度必須等於 CONFIG.dungeon.chapters 該章的 rooms（5/7/8/10/12，測試會檢查）；
 //   每個房間有「通過」與「失敗」兩種日誌文字，{name} 會被換成受害者名字。
-// recommendedPower／reward：基準草稿（露葵 2026-11-14 給的表，待 npm run sim 驗證）。
+// recommendedPower／reward：Phase 4-A 是基準草稿（露葵 2026-11-14 給的表）；Phase 4-B 依 npm run sim -- --seeds=100 --days=900 校正：
+//   尾王 R 倍率 ×1.8／2.4／2.5／2.0／0.65、第 5 章一般關 R ×0.6、各章獎勵 ×1／2.5／4.5／9／8（原基準表見 git 歷史）。
+//   校正目標：各章尾王首通中位數約 Day 30／80／165／300／450（見 CLAUDE.md 的 4-B 摘要）。
 // 第 1 章前 3 關沿用舊的 3 個副本；其他 17 關目前是佔位資料（名字、房間文字、特殊獎勵之後再補，只改這個檔案）。
 // 全部是原創世界觀。
 
@@ -107,23 +109,23 @@ export const DUNGEONS = [
       { name: "塔頂核心", pass: "核心水晶碎裂，三百年的戰爭少了一座塔。", fail: "核心暴走，{name}被魔力洪流正面吞沒。" },
     ],
   },
-  placeholder(1, 4, 260, 230),
-  placeholder(2, 1, 380, 340),
-  placeholder(2, 2, 540, 450),
-  placeholder(2, 3, 760, 600),
-  placeholder(2, 4, 1050, 820),
-  placeholder(3, 1, 1550, 1150),
-  placeholder(3, 2, 2200, 1500),
-  placeholder(3, 3, 3100, 2000),
-  placeholder(3, 4, 4400, 2700),
-  placeholder(4, 1, 6400, 3600),
-  placeholder(4, 2, 9100, 4800),
-  placeholder(4, 3, 12800, 6400),
-  placeholder(4, 4, 18000, 8600),
-  placeholder(5, 1, 26000, 11500),
-  placeholder(5, 2, 37000, 15000),
-  placeholder(5, 3, 52000, 20000),
-  placeholder(5, 4, 72000, 28000),
+  placeholder(1, 4, 468, 230),
+  placeholder(2, 1, 380, 850),
+  placeholder(2, 2, 540, 1125),
+  placeholder(2, 3, 760, 1500),
+  placeholder(2, 4, 2520, 2050),
+  placeholder(3, 1, 1550, 5175),
+  placeholder(3, 2, 2200, 6750),
+  placeholder(3, 3, 3100, 9000),
+  placeholder(3, 4, 11000, 12150),
+  placeholder(4, 1, 6400, 32400),
+  placeholder(4, 2, 9100, 43200),
+  placeholder(4, 3, 12800, 57600),
+  placeholder(4, 4, 36000, 77400),
+  placeholder(5, 1, 15600, 92000),
+  placeholder(5, 2, 22200, 120000),
+  placeholder(5, 3, 31200, 160000),
+  placeholder(5, 4, 46800, 224000),
 ];
 
 export function getDungeon(id) {
