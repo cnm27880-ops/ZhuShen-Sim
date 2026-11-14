@@ -7,7 +7,7 @@
 // 不論誰付錢，花費一律累加進 state.totalSpent（商店階層解鎖用）。
 // 來源（opts.source）："shop" 常駐制式商店只賣 standard 與 permanent 耗材；"market" 黑市由 engine/market.js 傳入（可買任何商品、可帶折扣價 opts.price）。
 
-import { noteContraband, squadRng } from "./squad.js"; // 黑貨使用紀錄（4-E-3；循環引用只在執行時呼叫）
+import { noteContraband, squadRng, bump } from "./squad.js"; // 黑貨使用紀錄（4-E-3；循環引用只在執行時呼叫）
 import { CONFIG, INJURIES } from "../data/config.js";
 import { SHOP_ITEMS, SHOP_SLOT_LABELS, getShopItem, isNewItem } from "../data/shopItems.js";
 import { getSpecialReward } from "../data/dungeons.js";
@@ -198,6 +198,7 @@ function applyUse(state, item, s) {
     const partner = pregnancyPartner(state, s);
     const kid = partner ? inducePregnancy(state, s, partner, { force: true, talent: e.inducePregnancy }) : null;
     if (kid) {
+      bump(state, "birthItem"); // 催生黑貨造成的孕育（sim 統計用）
       noteContraband(state, s, partner, item);
       notes.push(`與 ${partner.name} 孕育了第 ${kid.generation} 代（天賦 +${Math.round((kid.talentPct ?? 0) * 100)}%）`);
     }
