@@ -53,12 +53,14 @@ test("隊內內鬥機率隨兩人中較低的理智放大（死敵 50% → ×2.5
   assert.ok(rate(50) > normal, "理智 30～69 ×1.5 比正常高");
 });
 
-test("走火入魔：別人對他的好感獲取減半，一般人不受影響", () => {
+test("走火入魔：自己對別人的好感獲取減半，別人對他照常，一般人不受影響", () => {
   const { state, people: [a, b, c] } = setup(3);
   b.tags = ["demon_path"];
-  addLove(state, a, b, 10);
+  addLove(state, b, a, 10); // b（入魔者）喜歡 a：減半
+  addLove(state, a, b, 10); // a 喜歡 b：照常
   addLove(state, a, c, 10);
-  assert.equal(getRel(state, a, b).love, 5);
+  assert.equal(getRel(state, b, a).love, 5);
+  assert.equal(getRel(state, a, b).love, 10);
   assert.equal(getRel(state, a, c).love, 10);
   assert.equal(effectivePower(b), Math.round(b.stats.power * 1.08));
 });

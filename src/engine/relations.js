@@ -43,7 +43,7 @@ function ensureRel(state, a, b) {
 
 export function addLove(state, a, b, delta) {
   const r = ensureRel(state, a, b);
-  if (delta > 0) delta = Math.round(delta * loveGainMultOf(b)); // 走火入魔：別人對他的好感獲取減半
+  if (delta > 0) delta = Math.round(delta * loveGainMultOf(a)); // 走火入魔者「自己對別人」的好感獲取減半（別人對他照常；露葵 2026-11-14 拍板）
   r.love = clamp(r.love + delta);
 }
 
