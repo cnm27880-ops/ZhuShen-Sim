@@ -10,6 +10,7 @@ import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
 import { dailyGod, cancelGodOf, newGodState } from "./godEvents.js"; // 同上（Phase 3-E 主神搞事）
 import { dailyNursery, newNurseryState, podCost } from "./children.js"; // 同上（Phase 3-F 生小孩）
+import { enshrine, refreshSteleBonus, steleBonusOf } from "./memorial.js"; // 同上（Phase 4-C-5 英靈碑）
 import { dailyMandatory, newMandatoryState } from "./mandatory.js"; // 同上（Phase 4-C-4 主神強制任務）
 import { dailySanity, newSanityState } from "./sanity.js"; // 同上（Phase 4-C-2 理智暴走）
 import { newGrowthState } from "./growth.js"; // 同上（Phase 4-B 基因鎖／強化／頓悟；growth.js 也會 import 這個檔案）
@@ -50,6 +51,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     nextId: 1,
     samsarites: [],
     graveyard: [],
+    memorialStele: [], // 英靈碑名單（見 engine/memorial.js）
     relations: {}, // 關係矩陣（見 engine/relations.js）
     wishes: [], // 進行中的許願（見 engine/wishes.js）
     nextWishId: 1,
@@ -113,6 +115,7 @@ export function createSamsarite(state, rank, rng = state) {
     geneLock: 0, // 基因鎖階數 0~4（上限依階級，見 RANKS.maxGene；engine/growth.js）
     enhanceCount: 0, // 個人強化累計次數（上限跟基因鎖階數走）
     insightCount: 0, // 通關頓悟累計次數（上限 = (基因鎖階數 + 1) × 4）
+    steleBonus: steleBonusOf(state), // 英靈碑的全隊戰力加成（4-C-5；碑變動時由 refreshSteleBonus 更新）
     inheritPower: 0, // 子嗣繼承值（4-E 才會用，先預留；算進本體值、會吃基因鎖乘區）
     gear: {}, // 商店裝備：{ weapon: 商品id, armor: 商品id }
     joinedDay: currentDay(state),
@@ -148,11 +151,12 @@ export function setInjury(s, level) {
 }
 
 /** killer：被同伴害死時的兇手（怪物殺的就不傳）。連鎖反應在 relations.js 的 afterDeath，由呼叫端接著呼叫 */
-export function killSamsarite(state, s, cause, killer = null) {
+export function killSamsarite(state, s, cause, killer = null, stele = null) {
   state.samsarites = state.samsarites.filter((x) => x.id !== s.id);
   cancelWishesOf(state, s.id);
   cancelGodOf(state, s.id);
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null });
+  if (stele) enshrine(state, s, stele); // 副本戰死／主神抹殺才入碑（4-C-5）
   emit(state, "death", logText(state, "death", { A: s, rank: s.rank, cause }), { samsariteId: s.id, killerId: killer?.id ?? null });
 }
 
@@ -443,6 +447,8 @@ export function deserialize(json) {
   delete state.run;
   for (const r of state.runs) r.id ??= state.nextRunId++;
   state.nextRunId = Math.max(state.nextRunId, 1 + Math.max(0, ...state.runs.map((r) => r.id)));
+  state.memorialStele ??= []; // 舊存檔沒有英靈碑（Phase 4-C-5）
+  refreshSteleBonus(state);
   state.mandatory ??= newMandatoryState(state.rngState); // 舊存檔沒有強制任務欄位（Phase 4-C-4）
   state.airdrop ??= newAirdropState(state.rngState); // 舊存檔沒有絕境空投欄位（Phase 4-C-3）
   state.sanity ??= newSanityState(state.rngState); // 舊存檔沒有理智暴走欄位（Phase 4-C-2）

@@ -107,7 +107,7 @@ function purge(state) {
   for (let i = 0; i < kills; i++) victims.push(pool.splice(Math.floor(rand(m) * pool.length), 1)[0]);
   emit(state, "mandatory", logText(state, "mandatoryMiss", {}));
   for (const v of victims) {
-    killSamsarite(state, v, "被主神抹殺（強制任務逾期未派隊）");
+    killSamsarite(state, v, "被主神抹殺（強制任務逾期未派隊）", null, "purge");
     afterDeath(state, v, null);
   }
   if (spared && pool.length > 0) {

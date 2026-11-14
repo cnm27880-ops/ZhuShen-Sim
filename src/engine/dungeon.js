@@ -293,7 +293,7 @@ export function hurt(state, run, victim, dungeon, attacker = null) {
   }
   if (dies) {
     run.deaths.push(victim.name);
-    killSamsarite(state, victim, attacker ? `死在了隊友 ${attacker.name} 手上（【${dungeon.name}】）` : `死在了【${dungeon.name}】`, attacker);
+    killSamsarite(state, victim, attacker ? `死在了隊友 ${attacker.name} 手上（【${dungeon.name}】）` : `死在了【${dungeon.name}】`, attacker, "dungeon"); // 副本戰死：夠格的人入英靈碑
     afterDeath(state, victim, attacker, partyOf(state, run)); // 同隊其他隊員理智 -10（4-C-2）
     return;
   }

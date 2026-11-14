@@ -110,7 +110,7 @@ export function genePowerMult(s) {
  * 基礎戰力 stats.power 不會被這個函式改動。
  */
 export function effectivePower(s) {
-  const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0) + moodPowerPct(s) + injuryPowerPct(s) + sanityPowerPct(s);
+  const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0) + moodPowerPct(s) + injuryPowerPct(s) + sanityPowerPct(s) + (s.steleBonus ?? 0);
   return Math.max(1, Math.round((bodyPower(s) * genePowerMult(s) + shopBonus(s, "power")) * (1 + pct)));
 }
 

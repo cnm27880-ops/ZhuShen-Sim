@@ -311,7 +311,7 @@ export function punish(state, a, type = weighted(state, R().punish.weights).type
     emit(state, "relation", logText(state, "punishTag", { A: a, tag: getTag(id)?.name ?? id }));
   } else {
     emit(state, "relation", logText(state, "punishErase", { A: a }));
-    killSamsarite(state, a, "因為在主神空間動手殺人，被主神抹殺");
+    killSamsarite(state, a, "因為在主神空間動手殺人，被主神抹殺", null, "purge");
     afterDeath(state, a, null);
   }
   return type;

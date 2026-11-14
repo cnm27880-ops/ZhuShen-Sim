@@ -18,6 +18,7 @@ import {
   deserialize,
 } from "../engine/core.js";
 import { roomPassRate, clearChance, chanceAtLeast, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, bossGateInfo, roomCount, roomsToClear, dungeonOfRun } from "../engine/dungeon.js";
+import { steleBonusOf } from "../engine/memorial.js";
 import { MANDATORY_ID, pendingMandatory, buildMandatoryDungeon } from "../engine/mandatory.js";
 import {
   enhance as enhanceSamsarite,
@@ -168,6 +169,8 @@ function renderTopbar() {
 
   const godWaiting = Boolean(pendingGodEvent(state));
   $("btn-god").style.display = godWaiting || activeMission(state) ? "" : "none";
+  const steleTotal = Math.round(steleBonusOf(state) * 100);
+  $("btn-stele").textContent = `🪦 英靈碑${steleTotal > 0 ? ` +${steleTotal}%` : ""}`;
   const mand = pendingMandatory(state);
   $("btn-mandatory").style.display = mand ? "" : "none";
   if (mand) $("btn-mandatory").textContent = `☠️ 強制任務（第 ${mand.deadlineDay} 天前）`;
@@ -448,7 +451,7 @@ function closeModal() {
 function renderModal() {
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { dispatch, gacha, shop, detail, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent };
+  const builders = { dispatch, gacha, shop, detail, stele, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent };
   $("modal").innerHTML = builders[modal.name]();
 }
 
@@ -747,6 +750,25 @@ function confirmRecycle() {
     </div>`;
 }
 
+/** 英靈碑：名單與目前的全隊戰力加成（只有前 N 名生效） */
+function stele() {
+  const list = state.memorialStele ?? [];
+  const top = CONFIG.stele.topN;
+  const rows = list.length
+    ? list
+        .map(
+          (e, i) => `<div class="option ${i < top ? "selected" : ""}">${rankBadge(e.rank)}<span class="grow">${e.name}
+            <small>基因鎖 ${e.geneLock} 階・出征 ${e.runs} 場・第 ${e.day} 天・${e.cause}</small></span>
+            <b>${i < top ? "✅ " : "💤 "}+${Math.round(e.bonus * 100)}%</b></div>`
+        )
+        .join("")
+    : `<div class="empty">還沒有人入碑。基因鎖 ${CONFIG.stele.minGene} 階以上、或出征滿 ${CONFIG.stele.minRuns} 場的輪迴者，戰死在副本或被主神抹殺時才會刻上去。</div>`;
+  return `<h3>🪦 英靈碑</h3>
+    <p>目前全隊有效戰力 <b class="good">+${Math.round(steleBonusOf(state) * 100)}%</b>（碑上加成最高的前 ${top} 名生效，依生前基因鎖 0～4 階各 ${CONFIG.stele.bonusByGene.map((b) => Math.round(b * 100)).join("／")}%，最多 +${Math.round(CONFIG.stele.bonusByGene[4] * top * 100)}%）。</p>
+    <div class="option-list">${rows}</div>
+    <div class="modal-actions">${closeButton}</div>`;
+}
+
 function settings() {
   const toggles = Object.entries(PAUSE_EVENTS)
     .map(
@@ -905,6 +927,9 @@ const actions = {
     refuseWish(state, Number(el.dataset.id));
     if (pendingWishes(state).length === 0) modal = null;
     saveGame();
+  },
+  "open-stele"() {
+    modal = { name: "stele" };
   },
   "open-god"() {
     modal = { name: "godEvent", forced: false };

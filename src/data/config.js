@@ -108,6 +108,15 @@ export const CONFIG = {
     luckReward: { perPoint: 0.005, max: 0.5 }, // 存活隊員平均 luck 每 1 點 +0.5% 結算積分，上限 +50%
   },
 
+  // ── 英靈碑（Phase 4-C-5）：基因鎖 ≥ minGene 或出戰 ≥ minRuns 場的人，副本戰死／主神抹殺時入碑；碑上加成最高的前 topN 名生效 ──
+  stele: {
+    minGene: 1,
+    minRuns: 15,
+    topN: 4,
+    bonusByGene: [0.02, 0.04, 0.08, 0.13, 0.2], // 依生前基因鎖 0～4 階，全隊有效戰力 +%（前 4 名合計最高 +80%）
+    keep: 20, // 碑上最多留幾筆名單（其餘依加成低者淘汰）
+  },
+
   // ── 理智閉環（Phase 4-C-2）：sanity 0～100 ──
   sanity: {
     // 由高到低；找第一個 sanity >= min 的檔位。powerPct 加進有效戰力的百分比區；clashMult 乘在隊內負面關係內鬥／背刺機率上
@@ -358,6 +367,7 @@ export const PAUSE_EVENTS = {
   autoIdle: { label: "自動派遣找不到合適隊伍", default: false },
   wish: { label: "輪迴者許願（彈窗讓你答應或拒絕）", default: true },
   godEvent: { label: "主神搞事（彈窗讓你照辦或花積分化解）", default: true },
+  stele: { label: "有人名字刻上英靈碑", default: false },
   mandatory: { label: "主神強制血腥任務（限時派隊，逾時抹殺）", default: true },
   birth: { label: "有小孩出生（進催熟艙）", default: true },
   hatch: { label: "催熟完成（小孩長成輪迴者）", default: true },
