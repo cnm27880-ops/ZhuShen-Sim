@@ -109,9 +109,7 @@ export function createSamsarite(state, rank, rng = state) {
     enhanceCount: 0, // 個人強化累計次數（上限跟基因鎖階數走）
     insightCount: 0, // 通關頓悟累計次數（上限 = (基因鎖階數 + 1) × 4）
     inheritPower: 0, // 子嗣繼承值（4-E 才會用，先預留；算進本體值、會吃基因鎖乘區）
-    upgrades: {}, // 商店強化累積的數值：{ power, dodge… }（見 data/shop.js）
     gear: {}, // 商店裝備：{ weapon: 商品id, armor: 商品id }
-    bought: {}, // 每種強化買過幾次：{ 商品id: 次數 }
     joinedDay: currentDay(state),
     runs: 0,
     mood: null, // 心情狀態 { kind: "happy"|"upset", daysLeft }（見 engine/wishes.js）
@@ -381,9 +379,9 @@ export function deserialize(json) {
     .map((x) => (getSpecialReward(x) ? x : findSpecialRewardByName(x)?.id))
     .filter(Boolean);
   for (const s of state.samsarites) {
-    s.upgrades ??= {};
+    delete s.upgrades; // Phase 4-B：舊商店強化已移除，舊存檔的強化加成歸零、不退費
+    delete s.bought;
     s.gear ??= {};
-    s.bought ??= {};
     s.mood ??= null;
     s.vacationDays ??= 0;
   }

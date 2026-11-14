@@ -565,7 +565,7 @@ function shop() {
   const itemRow = (item) => {
     const locked = item.tier > tier;
     const check = locked ? { ok: false, reason: "" } : checkBuy(state, item, target);
-    const owned = item.kind === "enhance" && target ? ` ${target.bought?.[item.id] ?? 0}/${item.max}` : "";
+    const owned = "";
     const slot = item.kind === "gear" ? `・${SHOP_SLOT_LABELS[item.slot]}` : "";
     const why = !locked && !check.ok ? `<br /><small class="bad">${check.reason}</small>` : "";
     return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
@@ -621,7 +621,7 @@ function detail() {
       <tr><td>運氣</td><td>${s.stats.luck}</td></tr>
       <tr><td>維持費</td><td>${upkeepOf(s, state)} 分 / 天${s.location === "pod" ? "（催熟艙固定費用）" : `（基礎 ${upkeepBaseOf(state)} ×（1 + 階級 ${Math.round(RANKS[s.rank].upkeepPct * 100)}% + 傷勢 ${Math.round(INJURIES[s.injury].upkeepPct * 100)}%））`}</td></tr>
       <tr><td>資歷</td><td>第 ${s.joinedDay} 天加入・出征 ${s.runs} 次</td></tr>
-      <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}`).join("・")}${s.upgrades?.power || s.upgrades?.dodge ? `<br /><small>強化：戰力 +${s.upgrades.power ?? 0}${s.upgrades.dodge ? `、閃避 +${Math.round(s.upgrades.dodge * 100)}%` : ""}</small>` : ""}</td></tr>
+      <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}`).join("・")}</td></tr>
       <tr><td>標籤</td><td>${(s.tags ?? [])
         .map(getTag)
         .filter(Boolean)

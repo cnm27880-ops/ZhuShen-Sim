@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 import { CONFIG, RANKS } from "../src/data/config.js";
 import { createNewGame, createSamsarite, serialize, deserialize } from "../src/engine/core.js";
+import { effectivePower, bodyPower, genePowerMult } from "../src/engine/tags.js";
 import {
   enhance,
   checkEnhance,
@@ -246,4 +247,48 @@ test("存檔：新欄位會存、舊存檔缺欄位會補預設值", () => {
   assert.deepEqual(migrated.chapterClears, {});
   assert.equal(typeof migrated.growth.rngState, "number");
   assert.ok(migrated.gacha.pools.basic && migrated.gacha.pools.divine);
+});
+
+// ───────── effectivePower 公式（步驟 4）─────────
+test("effectivePower：max(1, round((本體值 × 基因鎖乘區 + 裝備白值) × (1 + 詞條% + 心情%)))", () => {
+  const { state, s } = setup("C");
+  s.tags = [];
+  s.stats.power = 30;
+  assert.equal(effectivePower(s), 30, "0 階 ×1.0");
+
+  s.geneLock = 1;
+  assert.equal(genePowerMult(s), 2.2);
+  assert.equal(effectivePower(s), 66, "30 × 2.2");
+
+  s.gear = { weapon: "weapon_club" }; // +10 白值：不吃基因鎖乘區
+  assert.equal(effectivePower(s), 76, "30 × 2.2 + 10");
+
+  s.inheritPower = 10; // 子嗣繼承值算進本體值、會吃乘區
+  assert.equal(bodyPower(s), 40);
+  assert.equal(effectivePower(s), 98, "(30 + 10) × 2.2 + 10");
+
+  s.mood = { kind: "upset", daysLeft: 3 }; // 不爽 -10%
+  assert.equal(effectivePower(s), Math.round(98 * 0.9));
+
+  s.mood = null;
+  s.geneLock = 4;
+  s.inheritPower = 0;
+  assert.equal(effectivePower(s), 30 * 23 + 10, "半神 ×23，裝備白值不乘");
+  s.stats.power = 0;
+  s.gear = {};
+  assert.equal(effectivePower(s), 1, "最低 1");
+  assert.ok(state);
+});
+
+test("effectivePower：強化與頓悟直接進本體值，所以會吃基因鎖乘區", () => {
+  const { state, s } = setup("S", 100000);
+  s.tags = [];
+  s.stats.power = 30;
+  enhance(state, s.id); // S 級 +16
+  assert.equal(effectivePower(s), 46);
+  state.spaceLevel = 2;
+  for (let i = 0; i < 2; i++) enhance(state, s.id);
+  assert.equal(s.stats.power, 30 + 16 * 3);
+  breakGene(state, s.id);
+  assert.equal(effectivePower(s), Math.round(78 * 2.2));
 });

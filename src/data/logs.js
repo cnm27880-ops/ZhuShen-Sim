@@ -105,10 +105,6 @@ export const LOGS = {
     "🛒 累積花費達 {spent} 分，商店解鎖 Tier {tier}。主神：「很好，你終於開始認真消費了。」",
     "🛒 商店升級了：Tier {tier} 開放（累積花費 {spent} 分）。主神笑得合不攏嘴：「這都是我賺的。」",
   ],
-  shopEnhance: [
-    "💪 {A} 接受了【{item}】（-{cost} 分，第 {n}/{max} 次）。身體發出不祥的喀啦聲，但數字確實變大了。",
-    "💪 {A} 被按在機器上做了【{item}】（-{cost} 分，第 {n}/{max} 次）。主神：「不用謝。」",
-  ],
   shopGear: [
     "🎒 {A} 領到了【{item}】（{slot}，-{cost} 分）。",
     "🎒 {A} 花 {cost} 分換上了【{item}】（{slot}）。主神：「報帳請填單。」",

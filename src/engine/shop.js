@@ -1,4 +1,4 @@
-// 商店引擎（Phase 3-A）：階層解鎖、買東西、副本特殊獎勵（收藏）的效果。純規則，不碰畫面。
+// 商店引擎（Phase 3-A）：階層解鎖、買東西（裝備、藥水；Phase 4-B 起強化改成個人強化，見 growth.js）、副本特殊獎勵（收藏）的效果。純規則，不碰畫面。
 // 商品資料在 src/data/shop.js，特殊獎勵資料在 src/data/dungeons.js；要加東西只改資料表。
 
 import { CONFIG, INJURIES } from "../data/config.js";
@@ -30,9 +30,6 @@ export function checkBuy(state, item, s) {
   if (!s) return { ok: false, reason: "請先選一個人" };
   if (s.location !== "space") return { ok: false, reason: `${s.name} 在副本裡` };
   if (!canAfford(state, item.price)) return { ok: false, reason: "積分不夠（連主神高利貸都借不到）" };
-  if (item.kind === "enhance" && (s.bought?.[item.id] ?? 0) >= item.max) {
-    return { ok: false, reason: `${s.name} 的「${item.name}」已經買滿 ${item.max} 次` };
-  }
   if (item.kind === "gear" && s.gear?.[item.slot] === item.id) return { ok: false, reason: `${s.name} 已經裝備了${item.name}` };
   if (item.kind === "potion") {
     if (item.effect.heal && s.injury === 0) return { ok: false, reason: `${s.name} 沒有受傷` };
@@ -50,13 +47,7 @@ export function buyItem(state, itemId, targetId) {
   spend(state, item.price); // 階層解鎖的日誌由 core.spend 負責
   const vars = { A: s, item: item.name, cost: item.price };
 
-  if (item.kind === "enhance") {
-    s.upgrades ??= {};
-    s.bought ??= {};
-    for (const [k, v] of Object.entries(item.effect)) s.upgrades[k] = (s.upgrades[k] ?? 0) + v;
-    s.bought[item.id] = (s.bought[item.id] ?? 0) + 1;
-    emit(state, "shop", logText(state, "shopEnhance", { ...vars, n: s.bought[item.id], max: item.max }), { samsariteId: s.id });
-  } else if (item.kind === "gear") {
+  if (item.kind === "gear") {
     s.gear ??= {};
     const old = getShopItem(s.gear[item.slot]);
     s.gear[item.slot] = item.id;
