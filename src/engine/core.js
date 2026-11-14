@@ -23,7 +23,7 @@ import { newBoardState, fillBoard, dailyBoard } from "./board.js"; // 同上（P
 import { relicBonusOf, refreshRelicBonus } from "./relics.js"; // 同上（Phase 4-D-4 奇物圖鑑）
 import { leaveHeirloom, dailyLineage } from "./lineage.js"; // 同上（Phase 4-E-4 遺物、子嗣、叛逃）
 import { dailyDrama } from "./drama.js"; // 同上（Phase 4-E-3 5:2:1 狗血事件）
-import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, communalInherit } from "./squad.js"; // 同上（Phase 4-E 小隊隊長與流派）
+import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, communalInherit, styleOf, squadSteleMult } from "./squad.js"; // 同上（Phase 4-E 小隊隊長與流派）
 import { newFacilities, dailyFacilities, refreshFacilityBonus, gravityPct, podsHeal, restSanityBonus } from "./facilities.js"; // 同上（Phase 4-F-3 永久基建）
 import { newRivalState, dailyRivals } from "./rivals.js"; // 同上（Phase 4-F-1／2 洲際宿敵團戰）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
@@ -214,17 +214,27 @@ export function setInjury(s, level) {
 /** killer：被同伴害死時的兇手（怪物殺的就不傳）。連鎖反應在 relations.js 的 afterDeath，由呼叫端接著呼叫 */
 export function killSamsarite(state, s, cause, killer = null, stele = null) {
   if (stele === "dungeon") leaveHeirloom(state, s); // 副本戰死：老鳥／隊長的最高階裝備不消失，存進遺物庫（要在移出名冊前，4-E-4）
+  // #12、#22：流派與英靈碑倍率都看隊長，隊長自己戰死時移出名冊後就查不到了，所以要在移出前先算好
+  const style = styleOf(state);
+  const steleMult = squadSteleMult(state);
   state.samsarites = state.samsarites.filter((x) => x.id !== s.id);
+  clearBondPartner(state, s.id);
   cancelWishesOf(state, s.id);
   cancelGodOf(state, s.id);
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null });
-  if (!communalInherit(state, s)) forfeitWallet(state, s, CONFIG.wallet.deathForfeitPct); // 私房錢 50% 充公、50% 消散（4-D-1）；共產流全進互助金（4-E-2）
-  if (stele) enshrine(state, s, stele); // 副本戰死／主神抹殺才入碑（4-C-5）
+  if (!communalInherit(state, s, style)) forfeitWallet(state, s, CONFIG.wallet.deathForfeitPct); // 私房錢 50% 充公、50% 消散（4-D-1）；共產流全進互助金（4-E-2）
+  if (stele) enshrine(state, s, stele, steleMult); // 副本戰死／主神抹殺才入碑（4-C-5）
   emit(state, "death", logText(state, "death", { A: s, rank: s.rank, cause }), { samsariteId: s.id, killerId: killer?.id ?? null });
 }
 
 /** 把某人從關係矩陣裡清掉（死亡或被回收之後） */
+/** #24：某人離開名冊（死亡、回收、叛逃）後，清掉所有人身上指向他的生死搭檔欄位 */
+export function clearBondPartner(state, id) {
+  for (const o of state.samsarites) if (o.bondPartnerId === id) o.bondPartnerId = null;
+}
+
 export function forgetRelations(state, id) {
+  clearBondPartner(state, id);
   for (const key of Object.keys(state.relations ?? {})) {
     const [a, b] = key.split(">").map(Number);
     if (a === id || b === id) delete state.relations[key];
@@ -468,8 +478,12 @@ export function pullGacha(state, poolId) {
 
 // ───────── 時間 ─────────
 
-/** 時間前進一個時段；跨日就做每日結算 */
-export function advanceTick(state) {
+/**
+ * 時間前進一個時段；跨日就做每日結算。
+ * beforeMandatory：每日結算裡、強制任務抹殺判定「之前」要做的事（#10：先讓剛好在日界線回家的隊員結算回家，並補派一次）。
+ * 維持費、理智、休養仍在這之前結算，所以「副本中的人不扣維持費」的設計不變（#9 先不動，見回報說明）。
+ */
+export function advanceTick(state, beforeMandatory = null) {
   state.tick += 1;
   if (state.tick % CONFIG.ticksPerDay === 0) {
     dailySanity(state); // 理智歸零的人暴走（要在 endOfDay 補理智之前，Phase 4-C-2）
@@ -478,6 +492,7 @@ export function advanceTick(state) {
     dailyMarket(state); // 黑市到期換貨（4-D-2，獨立亂數流）
     dailyBoard(state); // 任務榜輪換／補槽（4-D-4，獨立亂數流）
     dailyRivals(state); // 洲際碰撞：倒數、刷出、逾時徵召（4-F-1，獨立亂數流）
+    beforeMandatory?.();
     dailyMandatory(state); // 主神強制血腥任務：發布／逾時抹殺（Phase 4-C-4，獨立亂數流）
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）

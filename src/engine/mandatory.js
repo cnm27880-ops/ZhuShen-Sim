@@ -43,8 +43,9 @@ export function nextMandatoryDay(state) {
 }
 
 /** 名冊（不含催熟艙）前 N 強的有效戰力總和，不論人在哪 */
-export function topPowerSum(state, n = M().topN) {
+export function topPowerSum(state, n = M().topN, onlyHome = false) {
   return roster(state)
+    .filter((s) => !onlyHome || s.location === "space") // onlyHome：只算此刻在家可派的人（#11）
     .map(effectivePower)
     .sort((a, b) => b - a)
     .slice(0, n)
@@ -53,8 +54,12 @@ export function topPowerSum(state, n = M().topN) {
 
 /** 推薦戰力 R = max(空間等級基準, 名冊前 4 強有效戰力總和 × 0.55) */
 export function mandatoryR(state) {
+  const snap = state.mandatory?.pending?.R; // #11：任務發布時就把 R 快照進 pending，發布、預覽、出發用同一個數字
+  if (snap != null) return snap;
   const base = M().baseR[(state.spaceLevel ?? 1) - 1];
-  return Math.max(base, Math.round(topPowerSum(state) * M().powerMult));
+  // 取「全員前 4 強」與「此刻可派的前 4 強」兩者較低者，主力都在副本裡時不會用他們的戰力把 R 墊高
+  const top = Math.min(topPowerSum(state), topPowerSum(state, M().topN, true));
+  return Math.max(base, Math.round(top * M().powerMult));
 }
 
 /** 動態副本快照（依當下名冊與空間等級）；格式和 dungeons.js 的副本一樣，多了 mandatory／toClear／passCap／failInjuryExtra */
@@ -93,6 +98,7 @@ export function dailyMandatory(state) {
   if (day < nextMandatoryDay(state)) return;
   if (!state.samsarites.some((s) => s.location === "space")) return; // 沒人能派，等有人回家再說
   m.pending = { id: m.nextId++, createdDay: day, deadlineDay: day + M().deadlineDays };
+  m.pending.R = mandatoryR(state); // 快照（pending 剛建好時還沒有 R，所以這裡算的是即時值）
   m.lastDay = day;
   emit(state, "mandatory", logText(state, "mandatoryAsk", { days: M().deadlineDays, R: mandatoryR(state), reward: M().reward[(state.spaceLevel ?? 1) - 1] }));
 }

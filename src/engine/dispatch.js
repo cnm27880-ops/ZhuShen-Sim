@@ -257,7 +257,13 @@ export function tryAutoDispatch(state) {
 export function step(state) {
   if (state.gameOver) return;
   stepDueRooms(state);
-  advanceTick(state);
+  advanceTick(state, () => {
+    // #10：強制任務若在這個日界線逾時抹殺，先讓剛好此刻結束的副本結算回家，再給一次補派機會（自動派遣開著才補派）
+    const pending = pendingMandatory(state);
+    if (!pending || currentDay(state) < pending.deadlineDay) return;
+    settleRuns(state);
+    if (state.settings.autoDispatch) autoMandatory(state);
+  });
   settleRuns(state);
   const isDispatchTick = state.tick % CONFIG.ticksPerDay === CONFIG.auto.dispatchAtTick;
   if (state.settings.autoDispatch && isDispatchTick) tryAutoDispatch(state);

@@ -162,3 +162,43 @@ test("#39：付款失敗就不給貨（防禦性）", () => {
   assert.equal(r.ok, false);
   assert.ok(!a.gear?.[item.slot]);
 });
+
+import { step } from "../src/engine/dispatch.js";
+import { startRun, runRoomTotal } from "../src/engine/dungeon.js";
+import { mandatoryR } from "../src/engine/mandatory.js";
+import { killSamsarite } from "../src/engine/core.js";
+
+test("#10：強制任務在日界線逾時，剛好此刻回家的隊員先被補派，不會直接被抹殺", () => {
+  const { state, people } = setup(3, 41);
+  state.autoStrategy = "off";
+  state.settings.autoDispatch = true;
+  state.spaceLevel = 2;
+  state.mandatory.lastDay = 0;
+  assert.equal(startRun(state, "ghost_village", people.map((s) => s.id)).ok, true);
+  const total = runRoomTotal(state.runs[0]) * CONFIG.roomTicks;
+  assert.equal(total, CONFIG.ticksPerDay, "這場副本剛好 1 天（結束在日界線）");
+  state.mandatory.pending = { id: 1, createdDay: 1, deadlineDay: 2 }; // 第 2 天一開始就逾時
+  for (let i = 0; i < total; i++) step(state);
+  assert.equal(state.graveyard.length, 0, "沒有人被抹殺");
+  assert.ok(state.runs.some((r) => r.mandatory), "剛回家的人被補派去強制任務");
+});
+
+test("#11：強制任務 R 在發布時快照，之後戰力變動、主力出征都不會改變它", () => {
+  const { state, people } = setup(4, 42);
+  state.mandatory.pending = { id: 1, createdDay: 1, deadlineDay: 9 };
+  state.mandatory.pending.R = mandatoryR(state);
+  const r0 = state.mandatory.pending.R;
+  people[0].stats.power += 5000;
+  assert.equal(mandatoryR(state), r0, "戰力變動不影響已發布任務的 R");
+  delete state.mandatory.pending.R;
+  assert.ok(mandatoryR(state) !== r0, "沒快照時才即時計算");
+});
+
+test("#24：人死掉後，別人身上指向他的生死搭檔欄位被清掉", () => {
+  const { state, people: [a, b, c] } = setup(3, 43);
+  a.bondPartnerId = b.id;
+  b.bondPartnerId = a.id;
+  killSamsarite(state, a, "測試", null);
+  assert.equal(b.bondPartnerId, null);
+  assert.ok(c.bondPartnerId == null);
+});

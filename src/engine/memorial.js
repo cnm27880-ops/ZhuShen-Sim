@@ -28,12 +28,12 @@ export function refreshSteleBonus(state) {
 }
 
 /** 入碑。s 已從名單移除也沒關係（只讀它的欄位）。不夠格就不處理，回傳 null */
-export function enshrine(state, s, kind) {
+export function enshrine(state, s, kind, steleMult = squadSteleMult(state)) {
   if (!qualifiesForStele(s)) return null;
   const list = (state.memorialStele ??= []);
   const before = steleBonusOf(state);
   const gene = Math.min(s.geneLock ?? 0, CONFIG.stele.bonusByGene.length - 1);
-  const entry = { name: s.name, rank: s.rank, geneLock: s.geneLock ?? 0, runs: s.runs ?? 0, day: currentDay(state), cause: kind === "purge" ? "被主神抹殺" : "副本戰死", kind, bonus: Math.round(CONFIG.stele.bonusByGene[gene] * squadSteleMult(state) * 10000) / 10000 }; // 羈絆流 ×1.5（4-E-2）
+  const entry = { name: s.name, rank: s.rank, geneLock: s.geneLock ?? 0, runs: s.runs ?? 0, day: currentDay(state), cause: kind === "purge" ? "被主神抹殺" : "副本戰死", kind, bonus: Math.round(CONFIG.stele.bonusByGene[gene] * steleMult * 10000) / 10000 }; // 羈絆流 ×1.5（4-E-2）
   list.push(entry);
   list.sort((a, b) => b.bonus - a.bonus || a.day - b.day); // 穩定排序：同加成先入碑者在前
   if (list.length > CONFIG.stele.keep) list.length = CONFIG.stele.keep;
