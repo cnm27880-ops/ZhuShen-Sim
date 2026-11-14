@@ -87,8 +87,8 @@ export function enhance(state, id, opts = null) {
   const check = checkEnhance(state, id, opts);
   if (!check.ok) return check;
   const s = getSamsarite(state, id);
-  if (walletPay(opts)) spendWallet(state, s, check.cost);
-  else spend(state, check.cost);
+  const paid = walletPay(opts) ? spendWallet(state, s, check.cost) : spend(state, check.cost);
+  if (!paid) return { ok: false, reason: payFail(opts), cost: check.cost }; // #39
   const gain = enhanceGain(s);
   for (const [key, v] of Object.entries(gain)) s.stats[key] += v;
   s.enhanceCount = (s.enhanceCount ?? 0) + 1;
@@ -136,8 +136,8 @@ export function breakGene(state, id, opts = null) {
   const check = checkBreakGene(state, id, opts);
   if (!check.ok) return check;
   const s = getSamsarite(state, id);
-  if (walletPay(opts)) spendWallet(state, s, check.cost);
-  else spend(state, check.cost);
+  const paid = walletPay(opts) ? spendWallet(state, s, check.cost) : spend(state, check.cost);
+  if (!paid) return { ok: false, reason: payFail(opts), next: check.next, cost: check.cost }; // #39
   s.geneLock = check.next;
   if (s.geneBuff?.target === check.next) s.geneBuff = null; // 助推 Buff 突破後消耗（4-E-8）
   const tier = CONFIG.gene.tiers[s.geneLock];

@@ -14,6 +14,7 @@ import { effectivePower, sanityClashMult, loveGainMultOf } from "./tags.js";
 import { logText } from "./templates.js";
 import { captainOf } from "./squad.js";
 import { gearMult } from "./gearFx.js";
+import { addLife } from "./life.js"; // 一生大事記（功能 5）
 import { maybeWish } from "./wishes.js";
 import {
   emit,
@@ -82,9 +83,13 @@ export function softenHate(state, a, b, { reduce = 0, clear = false } = {}) {
   const r = state.relations?.[`${a.id}>${b.id}`];
   if (!r) return;
   r.hate = clear ? 0 : Math.max(0, r.hate - reduce);
-  if (clear || r.hate < R().nemesisAt) {
-    if (clear && r.status === "nemesis") r.status = undefined;
-    if (clear) r.revenge = false;
+  const back = state.relations?.[`${b.id}>${a.id}`];
+  // #13：雙方仇恨都降到死敵門檻以下（或直接清零）時，死敵狀態與復仇標記一併解除（死敵狀態是成對設的，所以兩個方向一起清）
+  if (clear || (r.hate < R().nemesisAt && (back?.hate ?? 0) < R().nemesisAt)) {
+    if (r.status === "nemesis") r.status = undefined;
+    if (back?.status === "nemesis") back.status = undefined;
+    r.revenge = false;
+    if (back) back.revenge = false;
   }
 }
 
@@ -96,6 +101,9 @@ export function pairStatus(state, a, b) {
 function setPairStatus(state, a, b, status) {
   ensureRel(state, a, b).status = status;
   ensureRel(state, b, a).status = status;
+  // 一生大事記（功能 5）：結為戀人／靈魂伴侶／死敵
+  const text = { lover: "成為戀人", soulmate: "結為靈魂伴侶", nemesis: "結為死敵" }[status];
+  if (text) for (const [x, y] of [[a, b], [b, a]]) addLife(state, x, status === "nemesis" ? "nemesis" : "love", `與 ${y.name} ${text}。`);
 }
 
 /** 忘情水（4-D-2）：兩人雙向的好感、仇恨歸零，戀人／靈魂伴侶／死敵狀態與復仇標記一併解除 */
@@ -206,6 +214,7 @@ export function socialWeight(state, ev, a, b) {
   if ((state.cooldowns?.[`${ev.id}:${pairKey(a, b)}`] ?? 0) > currentDay(state)) return 0;
   if (ev.needStatus === "lover" && status !== "lover" && status !== "soulmate") return 0;
   if (ev.noStatus && (status || partnerOf(state, a))) return 0;
+  if (ev.special === "confess" && partnerOf(state, b)) return 0; // #26：對方已有戀人，告白註定被拒，不要抽到
   if (ev.minLove !== undefined && rel.love < ev.minLove) return 0;
   if (ev.minHate !== undefined && rel.hate < ev.minHate) return 0;
   if (ev.maxHate !== undefined && rel.hate > ev.maxHate) return 0;
@@ -479,6 +488,6 @@ export function afterClash(state, clash) {
 export function findProtector(state, party, victim) {
   const guards = party.filter((o) => o.id !== victim.id && ["adore", "soulmate"].includes(pairLevel(state, o, victim)));
   if (guards.length === 0) return null;
-  const guard = guards[0];
-  return rand(state) < R().protectChance ? guard : null;
+  for (const guard of guards) if (rand(state) < R().protectChance) return guard; // #25：每位守護者各擲一次，第一位成功的出手
+  return null;
 }

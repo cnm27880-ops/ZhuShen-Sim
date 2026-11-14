@@ -15,6 +15,8 @@ import { emit, currentDay, createSamsarite, getSamsarite } from "./core.js";
 import { pairStatus, addLove } from "./relations.js";
 import { logText } from "./templates.js";
 import { podDaysCut } from "./facilities.js"; // 同上（4-F-3）
+import { addLife } from "./life.js"; // 一生大事記（功能 5）
+import { popLimit } from "./mandatory.js"; // 人口上限（#14、#23）
 import { applyLineage, addChronicle } from "./lineage.js"; // 世代、天賦封頂、編年史（4-E-4；循環引用只在執行時呼叫）
 
 const C = () => CONFIG.child;
@@ -42,8 +44,8 @@ const tagName = (id) => getTag(id)?.name ?? id;
 export function dailyNursery(state) {
   if (state.gameOver) return;
   for (const baby of podBabies(state)) {
-    baby.podDaysLeft -= 1;
-    if (baby.podDaysLeft <= 0) hatch(state, baby);
+    baby.podDaysLeft = Math.max(0, baby.podDaysLeft - 1);
+    if (baby.podDaysLeft <= 0) hatch(state, baby); // 人數已滿時 hatch 不會出艙，嬰兒留在艙裡隔天再試（#23）
   }
 
   const g = nursery(state);
@@ -55,6 +57,7 @@ export function dailyNursery(state) {
       const chance = C().chance[pairStatus(state, a, b)];
       if (!chance || a.location !== "space" || b.location !== "space") continue;
       if (podBabies(state).length >= C().maxInPod) return; // 催熟艙滿了：今天不再生
+      if (headcount(state) >= popLimit(state)) return; // 空間人數已達上限：不再生（#14，與 lineageBlock 一致）
       if ((state.cooldowns?.[`birth:${pairKey(a, b)}`] ?? 0) > day) continue;
       if (rand(g) < chance) giveBirth(state, a, b);
     }
@@ -84,6 +87,8 @@ export function giveBirth(state, a, b, opts = {}) {
   child.joinedDay = currentDay(state);
   applyLineage(state, child, [a, b], g, !!opts.lineage, opts.talent ?? "normal"); // 世代、天賦白值（總封頂 +25%）、保證繼承性格詞條（4-E-4）
   state.samsarites.push(child);
+  child.life = [{ day: currentDay(state), kind: "birth", text: `在催熟艙誕生，父母是 ${a.name} 與 ${b.name}。` }]; // 子嗣的一生從出生開始（功能 5）
+  for (const p of [a, b]) addLife(state, p, "child", `迎來了孩子：${child.name}（第 ${child.generation} 代）。`);
 
   // 家人之間有一點好感（不到「喜歡」，不會直接變成出征加成）
   for (const p of [a, b]) {
@@ -111,6 +116,7 @@ function inheritTags(g, rolled, parents) {
 
 /** 催熟完成：嬰兒長成 18 歲青壯年，成為可用的輪迴者 */
 export function hatch(state, baby) {
+  if (headcount(state) >= popLimit(state)) return false; // #23：人口已滿，嬰兒暫留艙內（podDaysLeft 保持 0），之後再試
   baby.location = "space";
   baby.podDaysLeft = 0;
   const names = (baby.inheritedTags ?? []).map(tagName).map((n) => `【${n}】`);
@@ -120,7 +126,11 @@ export function hatch(state, baby) {
     logText(state, names.length > 0 ? "hatch" : "hatchPlain", { C: baby, rank: baby.rank, tags: names.join("與"), days: C().podDays }),
     { samsariteId: baby.id }
   );
+  return true;
 }
+
+/** 在主神空間系統裡的人數（不含催熟艙嬰兒） */
+const headcount = (state) => state.samsarites.filter((s) => s.location !== "pod").length;
 
 /** 給畫面用：家長的名字（家長已經不在世就省略） */
 export function parentNames(state, s) {

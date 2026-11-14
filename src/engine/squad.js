@@ -166,7 +166,7 @@ export function replaceCaptain(state, id) {
   const s = getSamsarite(state, id);
   if (check.free) return appointCaptain(state, id);
   const preview = replacePreview(state, id);
-  spend(state, check.cost);
+  spend(state, check.cost, false);
   state.karmaCrystals -= check.crystal;
   setCaptain(state, s, "force");
   for (const o of preview.snub) {
@@ -268,8 +268,8 @@ export const squadMarketMult = (state) => (styleOf(state) === "mercenary" ? S().
  * 共產流遺產：成員戰死時私房錢 100% 匯入小隊互助金（0% 消散）。回傳 true = 已由共產流處理（呼叫端不用再走充公）。
  * 注意：這裡看的是「當下流派」，隊長若剛好和他同時死亡，流派視為不存在（captainOf 為 null）。
  */
-export function communalInherit(state, s) {
-  if (styleOf(state) !== "communal") return false;
+export function communalInherit(state, s, style = styleOf(state)) {
+  if (style !== "communal") return false; // style 可由呼叫端預先算好（隊長自己戰死時，移出名冊後 styleOf 會變 null，#12）
   const w = s.wallet ?? 0;
   s.wallet = 0;
   if (w > 0) {

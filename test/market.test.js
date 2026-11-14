@@ -78,7 +78,7 @@ test("黑市：每 3 天自動刷新；用獨立亂數流，不動主亂數", ()
   assert.equal(state.rngState, mainRng, "黑市刷新只用 market.rngState，沒動到主亂數");
 });
 
-test("手動刷新：花公庫、同日遞增（基礎價 × n）、換日重置、累加 totalSpent", () => {
+test("手動刷新：花公庫、同日遞增（基礎價 × n）、換日重置、不計入商店階級", () => {
   const state = setup();
   const base = CONFIG.market.manualBase[0];
   assert.equal(manualRefreshCost(state), base);
@@ -88,7 +88,7 @@ test("手動刷新：花公庫、同日遞增（基礎價 × n）、換日重置
   assert.equal(manualRefresh(state).cost, base * 2);
   assert.equal(manualRefreshCost(state), base * 3, "第 3 次的價錢");
   assert.equal(state.points, pts - base * 3, "已付第 1、2 次（base + 2×base）");
-  assert.equal(state.totalSpent, spent + base * 3, "黑市刷新費也累加進累積花費");
+  assert.equal(state.totalSpent, spent, "黑市手動刷新費不計入商店階級（#16）");
   state.tick += CONFIG.ticksPerDay;
   assert.equal(manualRefreshCost(state), base, "換日重置");
   state.spaceLevel = 3;
@@ -195,8 +195,12 @@ test("出征耗材：進緩衝區（上限 3）、出發時合成單場 buff、�
   const state = setup(1);
   const [s] = state.samsarites;
   s.stats.power = 3000;
-  for (let i = 0; i < CONFIG.shop.consumableCap; i++) assert.equal(buyItem(state, "t1_32", s.id, { source: "market" }).ok, true);
-  assert.equal(buyItem(state, "t1_32", s.id, { source: "market" }).ok, false, "囤滿了");
+  assert.equal(buyItem(state, "t1_32", s.id, { source: "market" }).ok, true);
+  assert.equal(buyItem(state, "t1_32", s.id, { source: "market" }).ok, false, "同效果不疊加：再買一份等於白買（#19）");
+  assert.equal(buyItem(state, "t1_37", s.id, { source: "market" }).ok, true);
+  s.consumables.push("t1_32"); // 直接塞到上限，測試囤滿
+  assert.equal(s.consumables.length, CONFIG.shop.consumableCap);
+  assert.equal(buyItem(state, "t1_37", s.id, { source: "market" }).ok, false, "囤滿了");
   assert.equal(s.consumables.length, 3);
   s.consumables = ["t1_37"];
   const base = effectivePower(s);

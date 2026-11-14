@@ -23,7 +23,8 @@ import { newBoardState, fillBoard, dailyBoard } from "./board.js"; // 同上（P
 import { relicBonusOf, refreshRelicBonus } from "./relics.js"; // 同上（Phase 4-D-4 奇物圖鑑）
 import { leaveHeirloom, dailyLineage } from "./lineage.js"; // 同上（Phase 4-E-4 遺物、子嗣、叛逃）
 import { dailyDrama } from "./drama.js"; // 同上（Phase 4-E-3 5:2:1 狗血事件）
-import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, communalInherit } from "./squad.js"; // 同上（Phase 4-E 小隊隊長與流派）
+import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, communalInherit, styleOf, squadSteleMult } from "./squad.js"; // 同上（Phase 4-E 小隊隊長與流派）
+import { addLife, addLifeOnce, bioOf } from "./life.js"; // 人物傳記（功能 5；循環引用只在執行時呼叫）
 import { newFacilities, dailyFacilities, refreshFacilityBonus, gravityPct, podsHeal, restSanityBonus } from "./facilities.js"; // 同上（Phase 4-F-3 永久基建）
 import { newRivalState, dailyRivals } from "./rivals.js"; // 同上（Phase 4-F-1／2 洲際宿敵團戰）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
@@ -44,7 +45,13 @@ export function currentDay(state) {
 
 // ───────── 建立新遊戲 ─────────
 
-export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
+let seedCounter = 0; // #30：同一毫秒連開兩局，靠行程內遞增計數器與高解析度計時錯開種子
+function freshSeed() {
+  const hi = typeof performance !== "undefined" ? Math.floor(performance.now() * 1000) : 0;
+  return (Date.now() ^ 0x5eed ^ Math.imul(hi, 2654435761) ^ Math.imul(++seedCounter, 0x9e3779b1)) | 0;
+}
+
+export function createNewGame(seed = freshSeed()) {
   const pauseOn = {};
   for (const [key, def] of Object.entries(PAUSE_EVENTS)) pauseOn[key] = def.default;
 
@@ -63,6 +70,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     gacha: newGachaState(), // 四卡池：本週抽數（漲價計數）與保底計數
     growth: newGrowthState(seed), // 頓悟：獨立亂數流（見 engine/growth.js）
     nextId: 1,
+    inventory: {}, // 物資倉庫（功能 2）：{ 商品 id: 數量 }，公庫買的常備藥先進倉庫，再選人使用（engine/inventory.js）
     samsarites: [],
     graveyard: [],
     memorialStele: [], // 英靈碑名單（見 engine/memorial.js）
@@ -158,6 +166,9 @@ export function createSamsarite(state, rank, rng = state) {
     inheritPower: 0, // 子嗣繼承值（4-E 才會用，先預留；算進本體值、會吃基因鎖乘區）
     gear: {}, // 商店裝備：{ weapon: 商品id, armor: 商品id }
     joinedDay: currentDay(state),
+    life: [{ day: currentDay(state), kind: "join", text: "被主神召喚進主神空間，成為輪迴者。" }], // 一生大事記（功能 5，engine/life.js）
+    lifeFlags: {}, // 「第一次…」事件的防重複旗標
+    kills: 0, // 親手殺死過幾個同伴
     runs: 0,
     mood: null, // 心情狀態 { kind: "happy"|"upset", daysLeft }（見 engine/wishes.js）
     vacationDays: 0, // 許願放假：剩幾天不能派遣
@@ -214,17 +225,33 @@ export function setInjury(s, level) {
 /** killer：被同伴害死時的兇手（怪物殺的就不傳）。連鎖反應在 relations.js 的 afterDeath，由呼叫端接著呼叫 */
 export function killSamsarite(state, s, cause, killer = null, stele = null) {
   if (stele === "dungeon") leaveHeirloom(state, s); // 副本戰死：老鳥／隊長的最高階裝備不消失，存進遺物庫（要在移出名冊前，4-E-4）
+  // #12、#22：流派與英靈碑倍率都看隊長，隊長自己戰死時移出名冊後就查不到了，所以要在移出前先算好
+  const style = styleOf(state);
+  const steleMult = squadSteleMult(state);
+  if (killer && killer.id !== s.id) { // 功能 5：親手殺人記進兇手的大事記
+    killer.kills = (killer.kills ?? 0) + 1;
+    addLifeOnce(state, killer, "firstKill", "kill", `第一次親手殺死同伴：${s.name}。`);
+  }
+  addLife(state, s, "death", `${cause}。`);
+  const bio = bioOf(state, s, { alive: false, deathDay: currentDay(state), cause }); // 傳記快照要在移出名冊、清關係之前存
   state.samsarites = state.samsarites.filter((x) => x.id !== s.id);
+  clearBondPartner(state, s.id);
   cancelWishesOf(state, s.id);
   cancelGodOf(state, s.id);
-  state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null });
-  if (!communalInherit(state, s)) forfeitWallet(state, s, CONFIG.wallet.deathForfeitPct); // 私房錢 50% 充公、50% 消散（4-D-1）；共產流全進互助金（4-E-2）
-  if (stele) enshrine(state, s, stele); // 副本戰死／主神抹殺才入碑（4-C-5）
+  state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null, bio });
+  if (!communalInherit(state, s, style)) forfeitWallet(state, s, CONFIG.wallet.deathForfeitPct); // 私房錢 50% 充公、50% 消散（4-D-1）；共產流全進互助金（4-E-2）
+  if (stele) enshrine(state, s, stele, steleMult); // 副本戰死／主神抹殺才入碑（4-C-5）
   emit(state, "death", logText(state, "death", { A: s, rank: s.rank, cause }), { samsariteId: s.id, killerId: killer?.id ?? null });
 }
 
 /** 把某人從關係矩陣裡清掉（死亡或被回收之後） */
+/** #24：某人離開名冊（死亡、回收、叛逃）後，清掉所有人身上指向他的生死搭檔欄位 */
+export function clearBondPartner(state, id) {
+  for (const o of state.samsarites) if (o.bondPartnerId === id) o.bondPartnerId = null;
+}
+
 export function forgetRelations(state, id) {
+  clearBondPartner(state, id);
   for (const key of Object.keys(state.relations ?? {})) {
     const [a, b] = key.split(">").map(Number);
     if (a === id || b === id) delete state.relations[key];
@@ -266,12 +293,13 @@ export function addSpent(state, cost) {
   }
 }
 
-export function spend(state, cost) {
+/** countTier 預設 true：商店／黑市／強化／抽卡的消費計入商店階級解鎖；基建、刷新、事件類消費傳 false（#16） */
+export function spend(state, cost, countTier = true) {
   if (!canAfford(state, cost)) return false;
   const wasInDebt = state.points < 0;
   state.points -= cost;
   announceDebtIfNew(state, wasInDebt);
-  addSpent(state, cost);
+  if (countTier) addSpent(state, cost);
   return true;
 }
 
@@ -373,8 +401,10 @@ export function dailyAirdrop(state) {
 export function recycle(state, id) {
   const s = getSamsarite(state, id);
   if (!s || s.location !== "space") return false;
+  addLife(state, s, "death", "被主管推進了回收爐。");
+  const bio = bioOf(state, s, { alive: false, deathDay: currentDay(state), cause: "被主管推進回收爐" });
   state.samsarites = state.samsarites.filter((x) => x.id !== id);
-  state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause: "被主管推進回收爐" });
+  state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause: "被主管推進回收爐", bio });
   forgetRelations(state, id);
   cancelWishesOf(state, id);
   cancelGodOf(state, id);
@@ -467,8 +497,12 @@ export function pullGacha(state, poolId) {
 
 // ───────── 時間 ─────────
 
-/** 時間前進一個時段；跨日就做每日結算 */
-export function advanceTick(state) {
+/**
+ * 時間前進一個時段；跨日就做每日結算。
+ * beforeMandatory：每日結算裡、強制任務抹殺判定「之前」要做的事（#10：先讓剛好在日界線回家的隊員結算回家，並補派一次）。
+ * 維持費、理智、休養仍在這之前結算，所以「副本中的人不扣維持費」的設計不變（#9 先不動，見回報說明）。
+ */
+export function advanceTick(state, beforeMandatory = null) {
   state.tick += 1;
   if (state.tick % CONFIG.ticksPerDay === 0) {
     dailySanity(state); // 理智歸零的人暴走（要在 endOfDay 補理智之前，Phase 4-C-2）
@@ -477,6 +511,7 @@ export function advanceTick(state) {
     dailyMarket(state); // 黑市到期換貨（4-D-2，獨立亂數流）
     dailyBoard(state); // 任務榜輪換／補槽（4-D-4，獨立亂數流）
     dailyRivals(state); // 洲際碰撞：倒數、刷出、逾時徵召（4-F-1，獨立亂數流）
+    beforeMandatory?.();
     dailyMandatory(state); // 主神強制血腥任務：發布／逾時抹殺（Phase 4-C-4，獨立亂數流）
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
@@ -534,6 +569,7 @@ export function deserialize(json) {
   if (state.version !== 1) throw new Error("存檔版本不符");
   state.events = [];
   state.collection ??= []; // 舊存檔沒有這個欄位
+  state.inventory ??= {}; // 物資倉庫（功能 2）
   // Phase 3-A 之前收藏存的是名字，現在存 id；對不上的丟掉
   state.collection = state.collection
     .map((x) => (getSpecialReward(x) ? x : findSpecialRewardByName(x)?.id))
@@ -608,6 +644,9 @@ export function deserialize(json) {
   for (const s of state.samsarites) {
     s.generation ??= 1;
     s.bondPartnerId ??= null;
+    s.life ??= [{ day: s.joinedDay ?? 1, kind: "join", text: "被主神召喚進主神空間，成為輪迴者。" }]; // 舊存檔補一生大事記（功能 5）
+    s.lifeFlags ??= {};
+    s.kills ??= 0;
     s.heirloomSlots ??= {};
     s.captainBonus ??= 0;
     s.tempPowerPct ??= 0;

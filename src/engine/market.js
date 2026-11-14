@@ -70,7 +70,7 @@ export function manualRefreshCost(state) {
 
 export function manualRefresh(state) {
   const cost = manualRefreshCost(state);
-  if (!spend(state, cost)) return { ok: false, reason: "積分不夠（已達高利貸上限）", cost };
+  if (!spend(state, cost, false)) return { ok: false, reason: "積分不夠（已達高利貸上限）", cost };
   const m = marketOf(state);
   m.manualToday = (m.manualDay === currentDay(state) ? m.manualToday : 0) + 1;
   m.manualDay = currentDay(state);
@@ -124,6 +124,7 @@ export function refreshStaleSlots(state) {
   m.slots = m.slots.map((slot) => {
     if (slot.itemId && isNewItem(slot.itemId)) return slot;
     n += 1;
+    if (slot.sold) return { index: slot.index, itemId: null, sold: true, locked: false }; // #35：已售罄的舊貨不能復活成新商品，留成空的已售格等下次刷新
     const kind = CONFIG.market.slotPlan[slot.index];
     const cands = poolOf(kind)
       .filter((i) => (i.tier === tier || i.tier === tier - 1) && !taken.has(i.id))
@@ -131,7 +132,7 @@ export function refreshStaleSlots(state) {
     if (cands.length === 0) return { index: slot.index, itemId: null, sold: true, locked: false };
     const hit = weighted(m, cands).item;
     taken.add(hit.id);
-    return { index: slot.index, itemId: hit.id, sold: false, locked: false };
+    return { index: slot.index, itemId: hit.id, sold: false, locked: !!slot.locked }; // #35：鎖定要保留
   });
   return n;
 }

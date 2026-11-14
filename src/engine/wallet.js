@@ -15,6 +15,7 @@ export const taxRateOf = (state) => state.taxRate ?? CONFIG.tax.default;
 /** 設定稅率：夾在 min～max、對齊 step；回傳實際生效的稅率 */
 export function setTaxRate(state, value) {
   const { min, max, step } = CONFIG.tax;
+  if (!Number.isFinite(Number(value))) return taxRateOf(state); // #38：NaN／Infinity／非數字不寫入，維持現行稅率
   const v = Math.min(max, Math.max(min, Math.round(Number(value) / step) * step));
   state.taxRate = Math.round(v * 100) / 100;
   return state.taxRate;

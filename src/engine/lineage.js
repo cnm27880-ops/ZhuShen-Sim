@@ -112,8 +112,9 @@ export function speedUpPod(state, babyId) {
   if (!baby || baby.location !== "pod") return { ok: false, reason: "他不在催熟艙" };
   const cost = speedUpCost(state, baby);
   if (!canAfford(state, cost)) return { ok: false, reason: "積分不夠（已達高利貸上限）", cost };
-  spend(state, cost);
+  spend(state, cost, false);
   emit(state, "social", logText(state, "lineageSpeed", { A: baby, cost }));
+  baby.podDaysLeft = 0; // 人口已滿時 hatch 會失敗，嬰兒留艙內、之後每天再試（#23）
   hatch(state, baby);
   return { ok: true, cost };
 }

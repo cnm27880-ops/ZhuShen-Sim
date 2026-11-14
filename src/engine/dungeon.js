@@ -4,6 +4,7 @@
 //   P = 小隊總戰力、R = 推薦戰力；情報條每個副本獨立（-3% 起，每結算一場 +1.5%，上限 +9%）
 //   房數與過關門檻依章節（CONFIG.dungeon.chapters）；賭徒型標籤每房間再隨機浮動
 
+import { addLifeOnce } from "./life.js"; // 一生大事記（功能 5）
 import { CONFIG, INJURIES } from "../data/config.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
 import { getMutation } from "../data/mutations.js";
@@ -158,6 +159,45 @@ export function clearChance(state, party, dungeon, env = null) {
   return chanceAtLeast(roomCount(dungeon), roomsToClear(dungeon), p);
 }
 
+/**
+ * 通關率給玩家看的整數百分比（問題 6）：向下取整、最高只顯示 99%（99.9% 四捨五入成 100% 會讓人以為保證通關），
+ * failPct = 100 - pct，至少 1。
+ */
+export function chanceDisplay(chance) {
+  const pct = Math.max(0, Math.min(99, Math.floor(chance * 100 + 1e-9)));
+  return { pct, failPct: 100 - pct };
+}
+
+/**
+ * 預估「這隊在這個副本裡有人戰死」的機率（問題 4；粗估，不是精算）。
+ * 假設：每個失敗房間隨機打中 1 名隊員；健康的人第一下不會死，所以死亡只來自
+ *  (a) 同一人被打中第 2 次（機率 = 失敗次數的「撞人」機率 × CONFIG.auto.deathRehit）
+ *  (b) 帶傷出征的人被打中（輕 20%／重 50%／致命 80% 直接死）。
+ * 沒算防禦、閃避、鎖血、替死符，所以偏保守（可能高估）。
+ */
+export function deathRisk(state, party, dungeon, env = null) {
+  const m = party.length;
+  if (m === 0) return 0;
+  const n = roomCount(dungeon);
+  const q = 1 - roomPassRate(state, party, dungeon, env);
+  const comb = (a, b) => {
+    let r = 1;
+    for (let i = 1; i <= b; i++) r = (r * (a - b + i)) / i;
+    return r;
+  };
+  let chainRisk = 0;
+  for (let f = 2; f <= n; f++) {
+    let distinct = 1; // f 次打中都是不同人的機率
+    for (let i = 0; i < f; i++) distinct *= Math.max(0, 1 - i / m);
+    chainRisk += comb(n, f) * q ** f * (1 - q) ** (n - f) * (1 - distinct) * CONFIG.auto.deathRehit;
+  }
+  let safe = 1 - chainRisk;
+  for (const s of party) {
+    if (s.injury > 0) safe *= 1 - (1 - (1 - q / m) ** n) * INJURIES[s.injury].deathBonus;
+  }
+  return 1 - safe;
+}
+
 function partyOf(state, run) {
   return run.partyIds.map((id) => state.samsarites.find((s) => s.id === id)).filter(Boolean);
 }
@@ -192,8 +232,11 @@ export function startRun(state, dungeonId, partyIds, opts = {}) {
   if (partyIds.length < 1 || partyIds.length > CONFIG.partyMax) {
     return { ok: false, reason: `一隊要 1~${CONFIG.partyMax} 人` };
   }
+  if (new Set(partyIds).size !== partyIds.length) return { ok: false, reason: "同一個人不能在隊伍裡出現兩次" }; // 嚴重 Bug 1：重複成員
   const party = partyIds.map((id) => state.samsarites.find((s) => s.id === id));
   if (party.some((s) => !s || s.location !== "space")) return { ok: false, reason: "有隊員不在主神空間" };
+  const locked = opts.ignoreLock ? null : party.find((s) => s.locked); // 嚴重 Bug 2：🔒 鎖定的人不能派（只有引擎的強制徵召可帶 ignoreLock，之後第二部分問題 3 會再收緊）
+  if (locked) return { ok: false, reason: `${locked.name} 已鎖定（🔒），不能派遣` };
   const resting = party.find((s) => (s.vacationDays ?? 0) > 0);
   if (resting) return { ok: false, reason: `${resting.name} 正在放假（還要 ${resting.vacationDays} 天）` };
   const lockedIn = party.find((s) => (s.podLockDays ?? 0) > 0);
@@ -203,6 +246,7 @@ export function startRun(state, dungeonId, partyIds, opts = {}) {
   for (const s of party) {
     consumeRunBuffs(s); // 出征耗材套用成單場 buff（4-D-2）
     s.location = "dungeon";
+    if (s.runs === 0) addLifeOnce(state, s, "firstRun", "run", `第一次踏進副本「${dungeon.name}」。`); // 一生大事記（功能 5）
     s.runs += 1;
     enteredInjury[s.id] = s.injury; // 記住「帶傷出征」的等級，用來算死亡率加成
   }
@@ -499,6 +543,7 @@ function finishRun(state, run) {
     squadAfterClear(state, survivors); // 羈絆流：存活通關全隊理智 +4（4-E-2）
     if (dungeon.boss && !run.mandatory) for (const s of survivors) s.maxBossChapter = Math.max(s.maxBossChapter ?? 0, dungeon.chapter); // 遺物履歷（4-E-4）
     // 尾王守門：只算該章前 3 關（常規副本）的成功結算次數，含首通與重打
+    // 侵蝕通關（run.erosion > 0）刻意不計入守門次數：侵蝕只能打已首通的世界，不該拿來灌守門進度（#28：這是明訂規則，介面也有說明）
     if (!dungeon.boss && !run.mandatory && !run.erosion) {
       state.chapterClears ??= {};
       state.chapterClears[dungeon.chapter] = (state.chapterClears[dungeon.chapter] ?? 0) + 1;
@@ -506,6 +551,11 @@ function finishRun(state, run) {
   } else {
     // 失敗但活著回來：一定帶傷
     for (const s of survivors) if (s.injury === 0) setInjury(s, 1);
+    if (run.hidden?.passed) { // #29：隱藏房過了、卻被叛逃 Boss 翻盤整場失敗，隱藏奇物照發（只看隱藏房有沒有過）；失敗沒有積分，已擁有的重複奇物也不補積分
+      const hid = hiddenRelicOf(run.dungeonId);
+      const got = hid ? grantRelic(state, hid) : null;
+      if (got) relics.push({ name: hid.name, kind: "hidden", dup: got.dup });
+    }
   }
   let erosionCrystals = 0;
   if (success && run.erosion > 0) { // 位面侵蝕：成功通關 k★ 固定掉 k 顆侵蝕結晶（4-F-3）

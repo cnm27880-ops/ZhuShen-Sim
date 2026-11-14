@@ -147,7 +147,7 @@ export function resolveGodEvent(state) {
   if (!check.ok) return check;
   const ev = state.god.pending;
   const k = G().kinds[ev.kind];
-  spend(state, k.resolveCost);
+  spend(state, k.resolveCost, false); // 事件化解費不計入商店階級（#16）
   if (k.resolveSanityAll) for (const s of atHome(state)) s.stats.sanity = Math.max(0, s.stats.sanity - k.resolveSanityAll); // 異質代價：全體留守者理智下降（4-E-7）
   state.god.pending = null;
   emit(state, "god", logText(state, `godResolve_${ev.kind}`, godVars(state, ev)));

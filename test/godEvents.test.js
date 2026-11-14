@@ -217,7 +217,7 @@ test("強制健檢：三種結果（受傷／積分／理智）", () => {
   });
 });
 
-test("花積分化解：每種事件都不產生損失、只扣化解費、算進累積花費", () => {
+test("花積分化解：每種事件都不產生損失、只扣化解費、不計入商店階級", () => {
   for (const def of GOD_EVENTS) {
     const { state } = setup();
     const ev = forceEvent(state, def.id);
@@ -229,7 +229,7 @@ test("花積分化解：每種事件都不產生損失、只扣化解費、算�
     assert.equal(checkResolve(state).ok, true);
     assert.equal(resolveGodEvent(state).ok, true);
     assert.equal(state.points, points - K()[def.id].resolveCost, `${def.id} 只扣化解費`);
-    assert.equal(state.totalSpent, spentBefore + K()[def.id].resolveCost);
+    assert.equal(state.totalSpent, spentBefore, "化解費不計入商店階級（#16）");
     if (target) assert.equal(target.stats.sanity, sanity);
     assert.equal(pendingGodEvent(state), null);
     assert.equal(activeMission(state), null, "化解突襲任務不會留下任務");
@@ -441,6 +441,7 @@ test("資料表與日誌：每種事件都有對應的日誌句子、版本 ≥ 
 /** 一支夠強的隊伍（4 個 S）＋一個任務目標；回傳 { state, target } */
 function missionSetup() {
   const state = createNewGame(31);
+  state.autoStrategy = "off"; // 驗證任務優先邏輯，不套用策略規則
   state.points = 1000;
   state.samsarites = [];
   for (let i = 0; i < 4; i++) {

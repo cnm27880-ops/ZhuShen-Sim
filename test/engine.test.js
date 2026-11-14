@@ -241,6 +241,7 @@ test("派遣檢查：人數上限、同一個人不能同時在兩場副本", ()
 test("自動派遣：不派鎖定的人、不派受傷的人（開關開著時）、挑獎勵最高的可行副本", () => {
   // 4 人 × 戰力 42 = 168：密室殺陣（R 126，4-E-8 起 ×1.4）通關率約 64% 達標，猛鬼宿舍（R 182）約 51% 不達標
   const state = createNewGame(9);
+  state.autoStrategy = "off"; // 這個測試驗證舊的派遣邏輯，不套用策略規則
   state.samsarites = [];
   const strong = [make(state, "S"), make(state, "S"), make(state, "S"), make(state, "S")];
   for (const s of strong) Object.assign(s, { tags: [] }, { stats: { ...s.stats, power: 42 } });
@@ -267,6 +268,7 @@ test("自動派遣：不派鎖定的人、不派受傷的人（開關開著時�
 test("自動派遣：不浪費戰力（簡單副本不會把最強的人全派出去）", () => {
   const state = createNewGame(11);
   state.samsarites = [];
+  state.autoStrategy = "off";
   make(state, "S");
   make(state, "C");
   make(state, "C");

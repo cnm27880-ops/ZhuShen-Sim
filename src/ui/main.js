@@ -1,7 +1,7 @@
 // 畫面層：只負責「把 state 畫出來」跟「把玩家的點擊轉成引擎呼叫」。
 // 所有遊戲規則都在 src/engine/，這裡不做任何數值計算以外的決定。
 
-import { CONFIG, RANKS, INJURIES, PAUSE_EVENTS } from "../data/config.js";
+import { CONFIG, RANKS, INJURIES, PAUSE_EVENTS, AUTO_MODES } from "../data/config.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
 import {
   createNewGame,
@@ -17,7 +17,7 @@ import {
   serialize,
   deserialize,
 } from "../engine/core.js";
-import { roomPassRate, clearChance, chanceAtLeast, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, bossGateInfo, roomCount, roomsToClear, dungeonOfRun } from "../engine/dungeon.js";
+import { roomPassRate, clearChance, chanceDisplay, deathRisk, chanceAtLeast, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, bossGateInfo, roomCount, roomsToClear, dungeonOfRun } from "../engine/dungeon.js";
 import { boardTargets, boardOf } from "../engine/board.js";
 import { marketInfo, manualRefresh, lockSlot, buyMarketSlot, checkMarketBuy, intelFull } from "../engine/market.js";
 import { relicInfo } from "../engine/relics.js";
@@ -28,6 +28,10 @@ import { RIVAL_ID, pendingRival, buildRivalDungeon, rivalInfo } from "../engine/
 import { erosionUnlocked, applyErosion, erosionBlock, erosionRMult, erosionRewardMult } from "../engine/erosion.js";
 import { facilityInfo, upgradeFacility, facilityTotal } from "../engine/facilities.js";
 import { buildGossip } from "../engine/gossip.js";
+import { applyAutoMode, currentAutoMode } from "../engine/autoMode.js";
+import { bioOf, graveBio } from "../engine/life.js";
+import { transferGear } from "../engine/gearTransfer.js";
+import { stockableItems, stockList, stockCount, stockTargets, buyStock, useStock, checkBuyStock } from "../engine/inventory.js";
 import { drawGossipCard, downloadGossipPng, copyText } from "./gossipCard.js";
 import { RIVAL_SQUADS } from "../data/rivals.js";
 import {
@@ -76,6 +80,9 @@ let timer = null;
 let modal = null; // 目前開著的彈出視窗：{ name, ...參數 }
 let bannerText = "";
 const minis = new Map(); // 輪迴者 id → { el, room }
+let dismissed = { wish: false, god: false }; // #3：玩家手動關掉許願／主神搞事彈窗後，不再自動以強制版重開（直到那批事件處理完）
+let resumeAfterReports = null; // #4：副本結算彈窗之前的暫停狀態，關掉最後一場結算時還原
+let dispatchHint = ""; // 派遣畫面的無效點擊提示（放假／休眠艙／鎖定／滿員／未解鎖），下一次有效操作或重新開窗時清掉
 const dispatchPick = { dungeonId: null, slotId: null, party: new Set(), greedy: false, erosion: 0 }; // slotId：任務榜的槽（尾王／指定任務／強制任務為 null）
 let peekRunId = null; // 玩家點右側卡片、手動想看的那一場副本 id（只給畫面用，不存檔）
 let lastFollowRunId = null; // 上一次鎖定對象所在的副本 id，用來偵測他進／出副本
@@ -128,6 +135,7 @@ function afterChange() {
     if (ev.type === "gameOver") modal = { name: "gameOver" };
     const masterOff = state.settings.autoPause === false && (ev.type === "rival" || ev.type === "mandatory"); // 洲際碰撞預警與強制任務提醒受「自動暫停」總開關控制（4-F-1）
     if (state.settings.pauseOn[ev.type] && !masterOff) {
+      if (ev.type === "runEnd" && resumeAfterReports === null) resumeAfterReports = state.settings.paused;
       state.settings.paused = true;
       bannerText = `⏸ 自動暫停：${PAUSE_EVENTS[ev.type].label} —— ${ev.text}`;
       if (ev.type === "rival" && !modal && pendingRival(state)) modal = { name: "rivalAlert" }; // 洲際碰撞預警彈窗：刷出當天與剩餘 1 天（4-F-1）
@@ -142,16 +150,19 @@ function afterChange() {
   // 副本結算視窗排隊：一次只彈一個，關掉後若還有就接著彈（含重新整理讀檔後還沒看的）。關掉「副本結算」暫停就不彈、清掉佇列
   if (!state.settings.pauseOn.runEnd) state.runReports.length = 0;
   else if (!modal && !state.gameOver && state.runReports.length > 0) {
+    if (resumeAfterReports === null) resumeAfterReports = state.settings.paused;
     state.settings.paused = true;
     modal = { name: "runResult" };
   }
   // 有人許願等回覆：自動暫停並彈窗（包含重新整理讀檔後還沒回覆的）。關掉「許願」暫停就改用 🙏 按鈕手動處理
-  if (state.settings.pauseOn.wish && !modal && !state.gameOver && pendingWishes(state).length > 0) {
+  if (pendingWishes(state).length === 0) dismissed.wish = false;
+  if (!pendingGodEvent(state)) dismissed.god = false;
+  if (state.settings.pauseOn.wish && !dismissed.wish && !modal && !state.gameOver && pendingWishes(state).length > 0) {
     state.settings.paused = true;
     modal = { name: "wish", forced: true };
   }
   // 主神搞事等回覆：自動暫停並彈窗。關掉「主神搞事」暫停就改用 👁 按鈕手動處理（不處理的話過期會視同照辦）
-  if (state.settings.pauseOn.godEvent && !modal && !state.gameOver && pendingGodEvent(state)) {
+  if (state.settings.pauseOn.godEvent && !dismissed.god && !modal && !state.gameOver && pendingGodEvent(state)) {
     state.settings.paused = true;
     modal = { name: "godEvent", forced: true };
   }
@@ -187,8 +198,9 @@ function renderTopbar() {
     .join("");
   document.body.style.setProperty("--speed", state.settings.speed); // 讓小人滑動速度跟著遊戲速度變快
   $("btn-pause").textContent = state.settings.paused ? "▶ 繼續 [Space]" : "⏸ 暫停 [Space]";
-  $("auto-strategy").value = state.autoStrategy ?? "balanced";
   const taxPct = Math.round(taxRateOf(state) * 100);
+  document.querySelector('[data-action="tax-down"]').disabled = taxRateOf(state) <= CONFIG.tax.min + 1e-9; // #34：到上下限就 disabled，不要點了沒反應
+  document.querySelector('[data-action="tax-up"]').disabled = taxRateOf(state) >= CONFIG.tax.max - 1e-9;
   $("tax-rate").classList.toggle("tax-low", taxPct <= 30); // 安撫減稅／高壓徵稅的顯眼提醒，免得調完忘記改回（4-E-8）
   $("tax-rate").classList.toggle("tax-high", taxPct >= 60);
   $("tax-rate").title = taxPct <= 30 ? "低稅安撫：在空間的人每日理智 +1，但公庫變瘦" : taxPct >= 60 ? "高壓徵稅：在空間的人每日理智下降（≥60% -2、≥80% -4）" : "";
@@ -216,13 +228,13 @@ function renderTopbar() {
   $("btn-rival").style.display = riv ? "" : "none";
   if (riv) $("btn-rival").textContent = `⚔️ 洲際碰撞（第 ${riv.deadlineDay} 天前）`;
   $("btn-facility").textContent = `🏗️ 基建 ${facilityTotal(state)}`;
-  $("auto-erosion-wrap").style.display = erosionUnlocked(state) ? "" : "none";
-  $("auto-erosion").checked = !!state.autoErosion;
   $("btn-god").textContent = godWaiting ? "👁 主神搞事 (1)" : "🚨 突襲任務";
 
-  $("auto-dispatch").checked = state.settings.autoDispatch;
-  $("protect-injured").checked = state.settings.protect.noInjured;
-  $("protect-enemies").checked = state.settings.protect.noEnemies;
+  const am = currentAutoMode(state);
+  $("btn-auto").textContent = `🤖 自動小幫手：${AUTO_MODES[am]?.label ?? "自訂"}`;
+  $("btn-auto").classList.toggle("active", state.settings.autoDispatch);
+  const stockTotal = Object.values(state.inventory ?? {}).reduce((n, v) => n + v, 0);
+  $("btn-inventory").textContent = `🎒 物資${stockTotal ? ` (${stockTotal})` : ""}`;
 }
 
 function miniHtml(s, emoji) {
@@ -537,8 +549,13 @@ function openModal(next) {
   schedule(); // 視窗開著時 schedule 會直接 return，等於暫停
 }
 
-function closeModal() {
+function dismissModal() {
+  if (modal?.name === "wish") dismissed.wish = true; // 手動關閉就記住，改由頂欄 🙏／👁 按鈕再開
+  if (modal?.name === "godEvent") dismissed.god = true;
   modal = null;
+}
+function closeModal() {
+  dismissModal();
   render();
   schedule();
 }
@@ -564,7 +581,7 @@ function renderModal() {
   document.body.classList.toggle("modal-open", Boolean(modal)); // 開著放大視窗時，角落的副本迷你小窗（#run-list）自動隱藏，關窗恢復（雙視窗互斥，4-E-7）
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent, facility, gossip, rivalAlert };
+  const builders = { guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel, inventory };
   $("modal").innerHTML = builders[modal.name]();
   if (modal.name === "gossip") drawGossipCard($("gossip-canvas"), buildGossip(state)); // 畫報紙圖卡（Canvas，要等 innerHTML 寫完才拿得到元素）
 }
@@ -616,7 +633,11 @@ function dispatch() {
   if (!canGreedy) dispatchPick.greedy = false;
 
   const home = state.samsarites.filter((s) => s.location === "space");
-  for (const id of [...dispatchPick.party]) if (!home.some((s) => s.id === id)) dispatchPick.party.delete(id);
+  // 清掉無效選取（問題 7、#5）：不在主神空間、放假中、休眠艙中的人（與自動派遣的過濾條件一致）；🔒 鎖定的留著，讓玩家自己看到並取消
+  for (const id of [...dispatchPick.party]) {
+    const m = home.find((s) => s.id === id);
+    if (!m || m.vacationDays > 0 || m.podLockDays > 0) dispatchPick.party.delete(id);
+  }
   const party = home.filter((s) => dispatchPick.party.has(s.id));
   const injured = party.filter((s) => s.injury > 0);
 
@@ -689,11 +710,14 @@ function dispatch() {
   let summary = "請至少選一個人。";
   if (party.length > 0) {
     const rate = Math.round(roomPassRate(state, party, dungeon, null, 0, isMand ? 0 : null) * 100);
-    const chance = Math.round((isMand ? chanceAtLeast(roomCount(dungeon), roomsToClear(dungeon), roomPassRate(state, party, dungeon, null, 0, 0)) : clearChance(state, party, dungeon)) * 100);
+    const rawChance = isMand ? chanceAtLeast(roomCount(dungeon), roomsToClear(dungeon), roomPassRate(state, party, dungeon, null, 0, 0)) : clearChance(state, party, dungeon);
+    const { pct: chance, failPct } = chanceDisplay(rawChance);
+    const deathPct = Math.round(deathRisk(state, party, dungeon) * 100);
     const cls = chance >= 75 ? "good" : chance >= 50 ? "warn" : "bad";
     summary = `小隊總戰力 <b>${partyPower(party)}</b> / 推薦 ${dungeon.recommendedPower}<br />
       每個房間通過率 <b>${rate}%</b>（${isMand ? "不吃情報加成" : "含情報 " + pct(intelBonus(state, dungeon))}），${roomCount(dungeon)} 個房間通過 ${roomsToClear(dungeon)} 個以上才算通關（約 ${(roomCount(dungeon) * CONFIG.roomTicks) / CONFIG.ticksPerDay} 天）<br />
-      預估通關率 <b class="${cls}">${chance}%</b>（進副本時才會抽環境標籤，實際會再浮動）`;
+      預估通關率 <b class="${cls}">${chance}%</b>（約 ${failPct}% 機率失敗）<small>・樂觀估計：沒算中途有人受傷戰死導致戰力下降，進副本才抽環境標籤，實際可能更低</small><br />
+      預估有人戰死的風險約 <b class="${deathPct >= 20 ? "bad" : deathPct >= 8 ? "warn" : "good"}">${deathPct}%</b><small>（粗估）</small>`;
     const relBonus = Math.round(partyRelationBonus(state, party) * 100);
     if (relBonus !== 0) {
       summary += `<br />隊員關係加成 <b class="${relBonus > 0 ? "good" : "bad"}">${relBonus > 0 ? "+" : ""}${relBonus}%</b>（已含在每房間通過率）`;
@@ -705,7 +729,7 @@ function dispatch() {
     if (enemyPairs.length > 0) {
       summary += `<br /><span class="bad">⚔️ 隊內有仇人：${enemyPairs.join("、")}（每個房間有機率先打起來）</span>`;
     }
-    if (dispatchPick.erosion > 0) summary += `<br /><span class="warn">🌌 ${dispatchPick.erosion}★ 侵蝕：有效推薦戰力 ${dungeon.recommendedPower}，通關積分 ×${erosionRewardMult(dispatchPick.erosion).toFixed(2)}，成功掉 ${dispatchPick.erosion * CONFIG.erosion.crystalPerStar} 顆侵蝕結晶。</span>`;
+    if (dispatchPick.erosion > 0) summary += `<br /><span class="warn">🌌 ${dispatchPick.erosion}★ 侵蝕：有效推薦戰力 ${dungeon.recommendedPower}，通關積分 ×${erosionRewardMult(dispatchPick.erosion).toFixed(2)}，成功掉 ${dispatchPick.erosion * CONFIG.erosion.crystalPerStar} 顆侵蝕結晶（侵蝕通關不計入尾王守門次數）。</span>`;
     if (!isMand && !hasIntel(state, dungeon)) {
       summary += `<br /><span class="warn">❓ 首次開荒：傷勢更重；首通有額外 ${Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct)} 分${dungeon.specialRewards?.length ? "與特殊獎勵" : ""}、一件首通奇物${dungeon.boss ? (dungeon.chapter >= CONFIG.space.maxLevel ? "，並完成主線" : "，並讓主神空間升級、解鎖下一章") : ""}。</span>`;
     }
@@ -740,7 +764,7 @@ function dispatch() {
     </div>
     <h3 style="margin-top:14px">選擇隊員（最多 ${CONFIG.partyMax} 人，已選 ${party.length}）</h3>
     <div class="option-list">${memberOptions}</div>
-    <div class="summary">${summary}<div style="margin-top:6px">${erosionBox}</div><div style="margin-top:6px">${greedyBox}</div></div>
+    <div class="summary">${dispatchHint ? `<div class="bad" style="margin-bottom:6px">⚠ ${dispatchHint}</div>` : ""}${summary}<div style="margin-top:6px">${erosionBox}</div><div style="margin-top:6px">${greedyBox}</div></div>
     <div class="modal-actions">${closeButton}
       <button class="primary" data-action="confirm-dispatch" ${party.length === 0 ? "disabled" : ""}>出發（耗時約 ${(roomCount(dungeon) * CONFIG.roomTicks) / CONFIG.ticksPerDay} 天）</button>
     </div>`;
@@ -818,7 +842,7 @@ function shop() {
   return `<h3>🛒 商店 <small>（目前 Tier ${tier}）</small></h3>
     <p>主神公庫：<b>${state.points}</b>。${progress}。抽卡的花費也算累積花費。</p>
     <div class="tabs">${tabs}</div>
-    ${tab === "relics" ? "" : picker}
+    ${tab === "relics" || (tab === "shop" && ["medicine", "skill", "special"].includes(modal.cat ?? "medicine")) ? "" : picker}
     ${body}
     <div class="modal-actions">${closeButton}</div>`;
 }
@@ -832,7 +856,17 @@ function itemFx(item) {
   return `${stats ? `<br /><small class="good">${stats}</small>` : ""}${passive ? `<br /><small class="warn">⚠️ ${passive}</small>` : ""}`;
 }
 
+const SHOP_CATS = [["medicine", "💊 藥品／消耗品"], ["bloodline", "🧬 血統"], ["gear", "⚔️ 裝備"], ["skill", "📖 技能"], ["special", "✨ 特殊道具"]];
+
 function shopStandardTab(tier, target) {
+  const cat = modal.cat ?? "medicine"; // 預設先看常用的藥品
+  const chips = SHOP_CATS.map(([id, label]) => `<button data-action="shop-cat" data-id="${id}" class="${cat === id ? "active" : ""}">${label}</button>`).join("");
+  const head = `<div class="tabs" style="margin-top:6px">${chips}</div>`;
+  if (cat === "medicine") return head + shopMedicineTab(tier);
+  if (cat === "skill") return head + `<div class="summary">📖 技能系統還沒開放（規劃中：瞳術、技藝、技能）。目前請先強化與突破基因鎖。</div>`;
+  if (cat === "special") return head + `<div class="summary">✨ 特殊道具（世界特產、出征耗材、黑貨）每 3 天換貨一次，只在 <b>8 格黑市</b> 販售。<br /><button data-action="shop-tab" data-id="market">🕶️ 前往黑市</button></div>`;
+
+  const inCat = (item) => (cat === "bloodline" ? item.slot === "bloodline" : item.kind === "gear" && item.slot !== "bloodline");
   const itemRow = (item) => {
     const locked = item.tier > tier;
     const check = locked ? { ok: false, reason: "" } : checkBuy(state, item, target);
@@ -848,8 +882,8 @@ function shopStandardTab(tier, target) {
     .map((_, i) => i + 1)
     .map((t) => {
       const need = CONFIG.shopTierUnlock[t - 1];
-      const head = t <= tier ? `Tier ${t}` : `🔒 Tier ${t}（累積花費 ${need} 分解鎖）`;
-      return `<h3 style="margin-top:14px">${head}</h3><div class="option-list">${shopItemsOfTier(t).map(itemRow).join("")}</div>`;
+      const label = t <= tier ? `Tier ${t}` : `🔒 Tier ${t}（累積花費 ${need} 分解鎖）`;
+      return `<h3 style="margin-top:14px">${label}</h3><div class="option-list">${shopItemsOfTier(t).filter(inCat).map(itemRow).join("")}</div>`;
     })
     .join("");
   const fx = collectionEffects(state);
@@ -861,14 +895,64 @@ function shopStandardTab(tier, target) {
         .join("")
     : "（還沒有。首次通關副本會掉特殊獎勵，永久生效。）";
   const shield = Math.round(fx.injuryShield * 100);
-  return `<p><small>常駐商店只賣制式武防與常備藥；世界特產、血統、耗材、黑貨請到「黑市」。</small></p>${sections}
+  return `${head}<p><small>常駐商店賣制式武防與常備藥；世界特產、出征耗材、黑貨請到「黑市」。</small></p>${sections}
     <h3 style="margin-top:14px">🎁 副本特殊獎勵（永久生效）</h3>
     <div class="summary">${collection}${shield ? `<div><small>全員傷勢減免合計 +${shield}%</small></div>` : ""}</div>`;
+}
+
+/** 藥品／消耗品：買進物資倉庫（可一次買 1／5／10 份），之後到物資面板選人使用 */
+function shopMedicineTab(tier) {
+  const all = stockableItems();
+  // 常用：目前已解鎖的最高階傷藥與最高階理智藥，放最上面
+  const best = (key) => all.filter((i) => i.tier <= tier && i.effect?.[key] !== undefined).sort((x, y) => y.tier - x.tier)[0];
+  const common = [best("healInjury"), best("sanity")].filter(Boolean);
+  const row = (item) => {
+    const locked = item.tier > tier;
+    const buttons = [1, 5, 10]
+      .map((n) => {
+        const c = checkBuyStock(state, item.id, n);
+        return `<button class="${n === 1 ? "primary" : ""}" data-action="buy-stock" data-id="${item.id}" data-qty="${n}" ${c.ok ? "" : `disabled title="${c.reason ?? ""}"`}>${locked ? "🔒" : `買 ${n}（${item.price * n}）`}</button>`;
+      })
+      .join("");
+    return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
+      <span class="option-icon">${item.icon}</span>
+      <span class="grow"><b>${item.name}</b> <small>Tier ${item.tier}・倉庫現有 <b>${stockCount(state, item.id)}</b></small><br /><small>${item.desc}</small></span>
+      <span class="slot-actions">${buttons}</span>
+    </div>`;
+  };
+  const rest = all.filter((i) => !common.includes(i));
+  return `<p><small>買進來的藥放在「物資倉庫」，之後在 🎒 物資面板挑人使用（最缺的人會排最前面）。公庫積分 <b>${state.points}</b>。</small>
+    <button data-action="open-inventory">🎒 前往物資面板</button></p>
+    ${common.length ? `<h3 style="margin-top:10px">⭐ 常用</h3><div class="option-list">${common.map(row).join("")}</div>` : ""}
+    <h3 style="margin-top:14px">全部藥品</h3><div class="option-list">${rest.map(row).join("")}</div>`;
+}
+
+/** 物資面板（功能 2）：倉庫裡有什麼；點一件物資，再點人（最需要的排最前面）直接使用 */
+function inventory() {
+  const list = stockList(state);
+  if (!list.some((r) => r.item.id === modal.itemId)) modal.itemId = list[0]?.item.id ?? null;
+  const stock = list.length
+    ? list.map(({ item, count }) => `<div class="option ${item.id === modal.itemId ? "selected" : ""}" data-action="pick-stock" data-id="${item.id}"><span class="option-icon">${item.icon}</span><span class="grow"><b>${item.name}</b><br /><small>${item.desc}</small></span><b>×${count}</b></div>`).join("")
+    : `<div class="empty">倉庫是空的。到 🛒 商店 → 藥品／消耗品買一些吧。</div>`;
+  const item = getShopItem(modal.itemId);
+  const people = item
+    ? stockTargets(state, item.id)
+        .map(({ s, need, block }) => `<div class="option ${block ? "locked" : ""}" ${block ? `style="opacity:.55" title="${block}"` : `data-action="use-stock" data-id="${s.id}"`}>
+          ${rankBadge(s.rank)}<span class="grow">${s.name}<br /><small>理智 ${s.stats.sanity}・${injuryLabel(s)}${block ? `・<span class="bad">${block}</span>` : need > 0 ? "・<span class=\"good\">需要</span>" : ""}</small></span>
+          <small>${block ? "" : "點我使用"}</small></div>`)
+        .join("")
+    : "";
+  return `<h3>🎒 物資面板</h3>
+    <div class="option-list">${stock}</div>
+    ${item ? `<h3 style="margin-top:12px">要給誰用【${item.name}】？<small>（最需要的排最前面）</small></h3><div class="option-list">${people || `<div class="empty">主神空間裡沒有人。</div>`}</div>` : ""}
+    ${modal.note ? `<div class="summary" style="margin-top:8px">${modal.note}</div>` : ""}
+    <div class="modal-actions"><button data-action="open-shop">🛒 去商店補貨</button>${closeButton}</div>`;
 }
 
 function shopMarketTab(home, target) {
   const info = marketInfo(state);
   const hasContra = info.slots.some((s) => s.item?.kind === "contraband" && !s.sold);
+  const lockedCount = info.slots.filter((s) => s.locked && !s.sold).length;
   const victims = home.filter((s) => s.id !== modal.targetId);
   const victimPicker = hasContra
     ? `<h4 class="chapter-head">狗血黑貨的對象（使用者 = 上面選的人）</h4><div class="option-list">${
@@ -889,14 +973,14 @@ function shopMarketTab(home, target) {
         <small>${item.desc}</small>${itemFx(item)}${world}
         ${!slot.sold && !check.ok ? `<small class="bad">${check.reason}</small>` : ""}
         <div class="slot-actions">
-          <button data-action="market-lock" data-id="${slot.index}" ${slot.sold ? "disabled" : ""}>${slot.locked ? "🔓 解除鎖定" : "🔒 鎖定"}</button>
+          <button data-action="market-lock" data-id="${slot.index}" ${slot.sold || (!slot.locked && lockedCount >= info.lockLimit) ? "disabled" : ""} ${!slot.locked && lockedCount >= info.lockLimit && !slot.sold ? `title="已鎖滿 ${info.lockLimit} 格，先解除別格才能鎖這格"` : ""}>${slot.locked ? "🔓 解除鎖定" : "🔒 鎖定"}</button>
           <button class="primary" data-action="market-buy" data-id="${slot.index}" ${check.ok ? "" : "disabled"}>${slot.sold ? "售罄" : priceHtml}</button>
         </div>
       </div>`;
     })
     .join("");
   return `<div class="summary">⏳ 下次自動換貨：<b>${info.daysLeft}</b> 天後（每 ${CONFIG.market.refreshDays} 天；3 特產武防＋2 特產血統＋2 耗材＋1 黑貨，每格限購 1 次）。
-    可鎖定 ${info.lockLimit} 格不被洗掉。
+    可鎖定 ${info.lockLimit} 格不被洗掉（已鎖 <b>${lockedCount}/${info.lockLimit}</b> 格）。
     <button data-action="market-refresh" ${canAfford(state, info.manualCost) ? "" : "disabled"}>🔄 手動刷新（公庫 ${info.manualCost} 分，同日遞增）</button></div>
     ${victimPicker}
     <div class="slot-grid" style="margin-top:10px">${cards}</div>
@@ -915,7 +999,96 @@ function shopRelicTab() {
     首通每張副本必得「首通奇物」；情報滿格後勾選貪婪探索，通關後有機率打開隱藏房，通過掉「隱藏奇物」（重複則轉為額外積分）。</div>${byChapter.join("")}`;
 }
 
+/** 點小人／角色卡：預設打開「人物傳記」；傳記裡可切到管理（強化、突破、鎖定、回收）。墓園的人（modal.dead）只看傳記 */
 function detail() {
+  if (modal.dead != null) {
+    const gb = graveBio(state, modal.dead);
+    return gb ? bioCard(gb, null) : `<h3>查無此人</h3><div class="modal-actions">${closeButton}</div>`;
+  }
+  const who = getSamsarite(state, modal.id);
+  if (who && (modal.view ?? "bio") === "bio") return bioCard(bioOf(state, who), who);
+  return manageDetail();
+}
+
+const SLOT_ICON = { weapon: "🗡️", armor: "🛡️", accessory: "💍", bloodline: "🧬" };
+const RANK_TITLE = { C: "新人", B: "好手", A: "精英", S: "傳奇" };
+const STATUS_TONE = { bad: "bio-chip-bad", good: "bio-chip-good", "": "" };
+
+/** 一段「這個人的故事」：用已有資料拼成幾句，讓他看起來有自己的人生，而不是一串數字 */
+function bioStory(b) {
+  const parts = [`${b.name}，一位${RANK_TITLE[b.rank] ?? ""}輪迴者，第 ${b.joinedDay} 天被主神召喚進主神空間${b.generation > 1 ? `（第 ${b.generation} 代，生在催熟艙${b.parentNames.length ? `，父母是${b.parentNames.join("與")}` : ""}）` : ""}。`];
+  if (b.runs > 0) parts.push(`${b.alive ? "至今" : "一生"}出征 ${b.runs} 場${b.kills > 0 ? `，手上沾過 ${b.kills} 條同伴的命` : ""}。`);
+  else parts.push(b.alive ? "還沒有踏進過任何一個副本。" : "沒來得及踏進任何副本。");
+  const r = b.relations;
+  if (r.partner) parts.push(`${r.partner.status === "soulmate" ? "與" : "心裡裝著"}${r.partner.name}${r.partner.status === "soulmate" ? "是靈魂伴侶" : "，是他的戀人"}。`);
+  else if (r.likes[0]) parts.push(`最放在心上的人是${r.likes[0].name}。`);
+  if (r.nemeses.length) parts.push(`和${r.nemeses.join("、")}不共戴天。`);
+  if (b.children.length) parts.push(`留下了 ${b.children.length} 個孩子。`);
+  if (!b.alive) parts.push(`第 ${b.deathDay} 天：${b.cause}。`);
+  return parts.join("");
+}
+
+/** 人物傳記卡（功能 5）。s 有值 = 還活著、可轉移裝備；null = 墓園裡的人（只看，附復活入口） */
+function bioCard(b, s) {
+  const chips = b.tags.length ? b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}" title="${(t.desc ?? "").replace(/"/g, "&quot;")}">${t.rarity}｜${t.name}</span>`).join("") : `<small>（沒有標籤）</small>`;
+  const rel = b.relations;
+  const relRows = [
+    rel.partner ? `<div>💞 ${rel.partner.status === "soulmate" ? "靈魂伴侶" : "戀人"}：<b>${rel.partner.name}</b></div>` : "",
+    rel.likes.length ? `<div>🙂 喜歡：${rel.likes.map((x) => `${x.name}（${Math.round(x.love)}）`).join("、")}</div>` : "",
+    rel.dislikes.length ? `<div>😒 討厭：${rel.dislikes.map((x) => `${x.name}（${Math.round(x.hate)}）`).join("、")}</div>` : "",
+    rel.nemeses.length ? `<div>⚔️ 死敵：<span class="bad">${rel.nemeses.join("、")}</span></div>` : "",
+    `<div class="muted">🎓 師徒：${rel.mentor ?? "（師徒關係還沒開放）"}</div>`,
+  ].filter(Boolean);
+  const canMove = s && s.location === "space";
+  const gearRows = Object.entries(SHOP_SLOT_LABELS)
+    .map(([slot, label]) => {
+      const name = b.gear[slot];
+      const move = canMove && name ? `<button data-action="gear-pick" data-slot="${slot}" ${modal.transfer?.slot === slot ? 'class="active"' : ""}>🔄 卸下並轉給…</button>` : "";
+      return `<div class="bio-gear"><span>${SLOT_ICON[slot]} ${label}</span><b class="${name ? "" : "muted"}">${name ?? "（空）"}</b>${move}</div>`;
+    })
+    .join("");
+  let transfer = "";
+  if (canMove && modal.transfer) {
+    const slot = modal.transfer.slot;
+    const others = state.samsarites.filter((o) => o.id !== s.id && o.location === "space");
+    transfer = `<div class="summary bio-transfer"><b>把${SHOP_SLOT_LABELS[slot]}【${b.gear[slot]}】轉給誰？</b><small>（卸下的人會不開心：心情「不爽」、理智下降；對方已有同欄裝備會互換）</small>
+      <div class="option-list">${others.length ? others.map((o) => { const cur = getShopItem(o.gear?.[slot])?.name; return `<div class="option" data-action="gear-give" data-to="${o.id}" data-slot="${slot}">${rankBadge(o.rank)}<span class="grow">${o.name}<br /><small>${cur ? `目前：${cur}（會互換）` : "這欄是空的"}</small></span></div>`; }).join("") : `<div class="empty">空間裡沒有其他人。</div>`}</div>
+      <button data-action="gear-cancel">取消</button></div>`;
+  }
+  const timeline = b.life.length
+    ? b.life.map((e) => `<div class="bio-event bio-event-${e.kind}"><span class="bio-day">第 ${e.day} 天</span><span>${e.text}</span></div>`).join("")
+    : `<div class="muted">（還沒有故事）</div>`;
+  const kids = b.children.length ? b.children.map((c) => `${c.name}${c.alive ? "" : "（已逝）"}`).join("、") : "（沒有）";
+  const ach = b.achievements.length ? b.achievements.map((a) => `<span class="bio-ach" title="${a.desc}">${a.icon} ${a.name}</span>`).join("") : `<small class="muted">（還沒有成就）</small>`;
+  const statuses = b.statuses.map((x) => `<span class="bio-chip ${STATUS_TONE[x.tone] ?? ""}">${x.text}</span>`).join("");
+  const revive = b.alive
+    ? ""
+    : `<div class="summary bio-revive"><b>🕯️ 復活</b><br /><small>使用氪金道具可以讓他回來。道具名稱：—　價格：—（尚未決定）</small><br /><button disabled title="道具與價格還沒決定，尚未開放">使用氪金道具復活（尚未開放）</button></div>`;
+  return `<div class="bio ${b.alive ? "" : "bio-dead"}">
+    <div class="bio-head bio-rank-${b.rank}">
+      <div class="bio-avatar">${b.alive ? "🧑" : "🪦"}</div>
+      <div class="bio-title"><div class="bio-name">${rankBadge(b.rank)} ${b.name}${b.alive ? "" : "　<small>（已逝）</small>"}</div>
+        <div class="bio-sub">第 ${b.generation} 代・基因鎖 ${b.geneLock} 階・出征 ${b.runs} 場</div></div>
+    </div>
+    ${statuses ? `<div class="bio-status">${statuses}</div>` : ""}
+    <p class="bio-story">${bioStory(b)}</p>
+    <div class="bio-grid">
+      <div><small>戰力</small><b>${b.power}</b></div><div><small>理智</small><b>${Math.round(b.sanity)}</b></div>
+      <div><small>私房錢</small><b>💰 ${b.wallet}</b></div><div><small>階級</small><b>${b.rank}</b></div>
+    </div>
+    <h4>🏷️ 標籤</h4><div class="bio-tags">${chips}</div>
+    <h4>💞 關係</h4><div class="bio-rel">${relRows.join("")}</div>
+    <h4>🎒 裝備</h4><div>${gearRows}</div>${transfer}
+    ${modal.note ? `<div class="summary">${modal.note}</div>` : ""}
+    <h4>📜 一生大事記</h4><div class="bio-timeline">${timeline}</div>
+    <h4>👶 子女與血脈</h4><div>${b.parentNames.length ? `父母：${b.parentNames.join("、")}<br />` : ""}子女：${kids}</div>
+    <h4>🏅 成就</h4><div class="bio-achs">${ach}</div>
+    ${revive}
+    <div class="modal-actions">${s ? `<button data-action="view-manage" data-id="${s.id}">⚙️ 管理（強化／突破／鎖定／回收）</button>` : `<button data-action="open-settings">↩ 回設定</button>`}${closeButton}</div>
+  </div>`;
+}
+
+function manageDetail() {
   const s = getSamsarite(state, modal.id);
   if (!s) return `<h3>查無此人</h3><p>這個人已經不在了。</p><div class="modal-actions">${closeButton}</div>`;
   const home = s.location === "space";
@@ -923,7 +1096,7 @@ function detail() {
   const gain = enhanceGain(s);
   const enh = checkEnhance(state, s.id);
   const brk = checkBreakGene(state, s.id);
-  return `<h3>${rankBadge(s.rank)} ${s.name}</h3>
+  return `<h3>${rankBadge(s.rank)} ${s.name} <button data-action="view-bio" data-id="${s.id}">📖 人物傳記</button></h3>
     <table class="stats">
       <tr><td>狀態</td><td>${s.location === "pod" ? `🍼 催熟艙（還要 ${s.podDaysLeft} 天）` : `${home ? "主神空間" : "副本中"}・${injuryLabel(s)}`}</td></tr>
       ${s.parents ? `<tr><td>家長</td><td>${parentNames(state, s).join("、") || "（已不在世）"}${s.inheritedTags?.length ? `<br /><small>繼承標籤：${s.inheritedTags.map((id) => getTag(id)?.name ?? id).join("、")}</small>` : ""}</td></tr>` : ""}
@@ -1099,7 +1272,7 @@ function squadCommand() {
       babies
         .map((b) => {
           const cost = speedUpCost(state, b);
-          return `<div class="option">${rankBadge(b.rank)}<span class="grow">${b.name}（第 ${b.generation ?? 1} 代）<small>還要 ${b.podDaysLeft} 天</small></span><button data-action="speed-pod" data-id="${b.id}">加速出艙（${cost} 分）</button></div>`;
+          return `<div class="option">${rankBadge(b.rank)}<span class="grow">${b.name}（第 ${b.generation ?? 1} 代）<small>還要 ${b.podDaysLeft} 天</small></span><button data-action="speed-pod" data-id="${b.id}" ${canAfford(state, cost) ? "" : `disabled title="積分不夠"`}>加速出艙（${cost} 分${canAfford(state, cost) ? "" : "，積分不夠"}）</button></div>`;
         })
         .join("")
     : "";
@@ -1169,7 +1342,7 @@ function settings() {
     )
     .join("");
   const graves = state.graveyard.length
-    ? state.graveyard.map((g) => `<div>第 ${g.day} 天・${rankBadge(g.rank)} ${g.name}・${g.cause}${g.killer ? `（兇手：${g.killer}）` : ""}</div>`).join("")
+    ? state.graveyard.map((g, i) => `<div class="grave-row" data-action="open-grave" data-id="${i}" title="查看他的一生">第 ${g.day} 天・${rankBadge(g.rank)} ${g.name}・${g.cause}${g.killer ? `（兇手：${g.killer}）` : ""} 📖</div>`).join("")
     : "（還沒有人死）";
   return `<h3>⚙️ 設定</h3>
     <label class="option"><input type="checkbox" data-setting-key="autoPause" ${state.settings.autoPause !== false ? "checked" : ""} />
@@ -1182,6 +1355,34 @@ function settings() {
       <button class="danger" data-action="reset-game">刪除存檔並重新開始</button>
       ${closeButton}
     </div>`;
+}
+
+/** 自動小幫手面板（功能 4）：三種模式一鍵切換；想自己調的人展開「進階自訂」才看到全部開關 */
+function autoPanel() {
+  const cur = currentAutoMode(state);
+  const cards = Object.entries(AUTO_MODES)
+    .map(([id, m]) => `<div class="option ${cur === id ? "selected" : ""}" data-action="set-auto-mode" data-id="${id}"><span class="option-icon">${m.icon}</span><span class="grow"><b>${m.label}</b>${cur === id ? " ✅" : ""}<br /><small>${m.desc}</small></span></div>`)
+    .join("");
+  const note = cur === "custom" ? `<p class="warn">目前是你自訂的組合（不符合任何一種模式），點上面任一模式會整組覆蓋。</p>` : "";
+  const toggles = Object.entries(PAUSE_EVENTS)
+    .map(([key, def]) => `<label class="option"><input type="checkbox" data-pause-key="${key}" ${state.settings.pauseOn[key] ? "checked" : ""} /><span class="grow">${def.label}</span></label>`)
+    .join("");
+  const advanced = modal.advanced
+    ? `<div class="summary" style="margin-top:8px">
+        <label class="option"><input type="checkbox" id="auto-dispatch" ${state.settings.autoDispatch ? "checked" : ""} /><span class="grow"><b>🤖 自動派遣</b></span></label>
+        <label class="option"><span class="grow"><b>🧭 派遣策略</b><br /><small>穩健＝通關率 85%、每天 1 隊、留 2 人在家、不派傷員與有死亡風險的隊伍；均衡＝75%／2 隊／留 1 人／可接受輕傷；激進＝60%／不限隊數／不留人／受傷也派。</small></span>
+          <select id="auto-strategy"><option value="safe" ${state.autoStrategy === "safe" ? "selected" : ""}>穩健</option><option value="balanced" ${(state.autoStrategy ?? "balanced") === "balanced" ? "selected" : ""}>均衡</option><option value="aggressive" ${state.autoStrategy === "aggressive" ? "selected" : ""}>激進</option></select></label>
+        <label class="option"><input type="checkbox" id="auto-erosion" ${state.autoErosion ? "checked" : ""} ${erosionUnlocked(state) ? "" : "disabled"} /><span class="grow">🌌 自動挑戰侵蝕<br /><small>主線卡關或全通後，改打已通關世界的位面侵蝕星級賺結晶（空間 Lv.4 後解鎖）</small></span></label>
+        <label class="option"><input type="checkbox" id="protect-injured" ${state.settings.protect.noInjured ? "checked" : ""} /><span class="grow">禁止自動派遣受傷人員</span></label>
+        <label class="option"><input type="checkbox" id="protect-enemies" ${state.settings.protect.noEnemies ? "checked" : ""} /><span class="grow">禁止仇恨／死敵同隊</span></label>
+        <p>遇到下列事件時自動暫停：</p><div class="option-list">${toggles}</div></div>`
+    : "";
+  return `<h3>🤖 自動小幫手</h3>
+    <p><small>選一種就好，不用一個一個開關。</small></p>
+    <div class="option-list">${cards}</div>${note}
+    <div style="margin-top:8px"><button data-action="toggle-auto-advanced">${modal.advanced ? "▲ 收起進階自訂" : "▼ 進階自訂（展開全部開關）"}</button></div>
+    ${advanced}
+    <div class="modal-actions">${closeButton}</div>`;
 }
 
 /** 洲際碰撞預警彈窗（4-F-1）：刷出當天與剩餘 1 天；可立即編隊，或稍後處理（逾時主神自動徵召精銳） */
@@ -1234,7 +1435,7 @@ function gossip() {
     <div style="text-align:center"><canvas id="gossip-canvas" width="${cfg.width}" height="${cfg.height}" style="width:min(100%,${Math.round(cfg.width / 2)}px);height:auto;border:1px solid #888;border-radius:4px"></canvas></div>
     <div class="summary" style="margin-top:8px">本局種子碼：<b id="gossip-seed">${state.seed ?? "（舊存檔無種子碼）"}</b>${modal?.note ? `　<span class="good">${modal.note}</span>` : ""}</div>
     <div class="modal-actions">${closeButton}
-      <button data-action="gossip-copy">📋 複製種子碼</button>
+      <button data-action="gossip-copy" ${state.seed == null ? `disabled title="舊存檔無種子碼，無法複製"` : ""}>📋 複製種子碼</button>
       <button class="primary" data-action="gossip-download">💾 下載 PNG 圖卡</button>
     </div>`;
 }
@@ -1380,14 +1581,17 @@ const actions = {
     state.settings.speed = Number(el.dataset.value);
   },
   "open-dispatch"() {
+    dispatchHint = "";
     modal = { name: "dispatch" };
   },
   "open-mandatory"() {
+    dispatchHint = "";
     dispatchPick.dungeonId = MANDATORY_ID; // 直接跳到強制任務的派遣畫面
     dispatchPick.slotId = null;
     modal = { name: "dispatch" };
   },
   "open-rival"() {
+    dispatchHint = "";
     dispatchPick.dungeonId = RIVAL_ID; // 直接跳到洲際碰撞的派遣畫面（4-F-1）
     dispatchPick.slotId = null;
     modal = { name: "dispatch" };
@@ -1409,7 +1613,11 @@ const actions = {
     renderModal();
   },
   async "gossip-copy"() {
-    const ok = await copyText(String(state.seed ?? ""));
+    if (state.seed == null) { // #33：舊存檔沒有種子碼，不要複製空字串還說成功
+      if (modal?.name === "gossip") modal.note = "舊存檔無種子碼，無法複製";
+      return renderModal();
+    }
+    const ok = await copyText(String(state.seed));
     if (modal?.name === "gossip") modal.note = ok ? `✅ 已複製種子碼 ${state.seed}` : "❌ 複製失敗，請手動選取種子碼";
     renderModal();
   },
@@ -1422,10 +1630,31 @@ const actions = {
     modal = { name: "gacha" };
   },
   "open-shop"() {
-    modal = { name: "shop", tab: modal?.tab ?? "shop", targetId: modal?.targetId ?? null, victimId: modal?.victimId ?? null };
+    modal = { name: "shop", tab: "shop", cat: modal?.cat ?? "medicine", targetId: modal?.targetId ?? null, victimId: modal?.victimId ?? null };
   },
   "shop-tab"(el) {
     modal.tab = el.dataset.id;
+  },
+  "shop-cat"(el) {
+    modal.cat = el.dataset.id;
+  },
+  "buy-stock"(el) {
+    const r = buyStock(state, el.dataset.id, Number(el.dataset.qty));
+    if (!r.ok) alert(r.reason);
+    saveGame();
+  },
+  "open-inventory"() {
+    modal = { name: "inventory", itemId: modal?.itemId ?? null, note: "" };
+  },
+  "pick-stock"(el) {
+    modal.itemId = el.dataset.id;
+    modal.note = "";
+  },
+  "use-stock"(el) {
+    const r = useStock(state, modal.itemId, Number(el.dataset.id));
+    const who = getSamsarite(state, Number(el.dataset.id));
+    modal.note = r.ok ? `✅ ${who?.name ?? ""}：${r.note}` : `<span class="bad">${r.reason}</span>`;
+    saveGame();
   },
   "market-victim"(el) {
     modal.victimId = Number(el.dataset.id);
@@ -1530,6 +1759,16 @@ const actions = {
     else modal = null;
     saveGame();
   },
+  "open-auto"() {
+    modal = { name: "auto", advanced: false };
+  },
+  "set-auto-mode"(el) {
+    applyAutoMode(state, el.dataset.id);
+    saveGame();
+  },
+  "toggle-auto-advanced"() {
+    modal.advanced = !modal.advanced;
+  },
   "open-settings"() {
     modal = { name: "settings" };
   },
@@ -1537,31 +1776,64 @@ const actions = {
     modal = { name: "relations" };
   },
   "open-detail"(el) {
-    modal = { name: "detail", id: Number(el.dataset.id) };
+    modal = { name: "detail", id: Number(el.dataset.id), view: "bio" };
+  },
+  "view-bio"(el) {
+    modal = { name: "detail", id: Number(el.dataset.id), view: "bio" };
+  },
+  "view-manage"(el) {
+    modal = { name: "detail", id: Number(el.dataset.id), view: "manage" };
+  },
+  "open-grave"(el) {
+    modal = { name: "detail", dead: Number(el.dataset.id) };
+  },
+  "gear-pick"(el) {
+    modal.transfer = { slot: el.dataset.slot };
+    modal.note = "";
+  },
+  "gear-cancel"() {
+    modal.transfer = null;
+  },
+  "gear-give"(el) {
+    const r = transferGear(state, modal.id, el.dataset.slot, Number(el.dataset.to));
+    modal.transfer = null;
+    modal.note = r.ok ? `✅ 轉移完成${r.swap ? "（雙方互換）" : ""}。` : `<span class="bad">${r.reason}</span>`;
+    saveGame();
   },
   "close-modal"() {
-    modal = null;
+    dismissModal();
   },
   "close-run-report"() {
     state.runReports.shift();
     modal = null; // afterChange 會自動接著彈下一場
+    if (state.runReports.length === 0 && resumeAfterReports !== null) { // #4：最後一場結算看完，還原成結算前的暫停狀態
+      state.settings.paused = resumeAfterReports;
+      resumeAfterReports = null;
+    }
   },
   "pick-dungeon"(el) {
-    if (el.dataset.id !== MANDATORY_ID && el.dataset.id !== RIVAL_ID && !isUnlocked(state, getDungeon(el.dataset.id))) return; // 還沒解鎖的章節只能看不能選
+    if (el.dataset.id !== MANDATORY_ID && el.dataset.id !== RIVAL_ID && !isUnlocked(state, getDungeon(el.dataset.id))) return void (dispatchHint = "這個副本還沒解鎖，只能看不能選。"); // 還沒解鎖的章節只能看不能選
+    dispatchHint = "";
     dispatchPick.dungeonId = el.dataset.id;
     dispatchPick.slotId = null;
   },
   "pick-slot"(el) {
     const slot = boardOf(state).slots.find((s) => s.id === Number(el.dataset.id));
-    if (!slot || slot.running) return; // 已經有隊伍出發的槽不能再接
+    if (!slot || slot.running) return void (dispatchHint = "這個任務已經有隊伍出發了，不能再接。"); // 已經有隊伍出發的槽不能再接
+    dispatchHint = "";
     dispatchPick.dungeonId = slot.dungeonId;
     dispatchPick.slotId = slot.id;
   },
   "toggle-member"(el) {
     const id = Number(el.dataset.id);
-    if (getSamsarite(state, id)?.vacationDays > 0) return; // 放假中不能派
-    if (dispatchPick.party.has(id)) dispatchPick.party.delete(id);
-    else if (dispatchPick.party.size < CONFIG.partyMax) dispatchPick.party.add(id);
+    dispatchHint = "";
+    if (dispatchPick.party.has(id)) return void dispatchPick.party.delete(id); // 取消選取：任何狀態都能取消（問題 7 的修法 1）
+    const m = getSamsarite(state, id);
+    if (m?.vacationDays > 0) return void (dispatchHint = `${m.name} 正在放假（還要 ${m.vacationDays} 天），不能派。`);
+    if (m?.podLockDays > 0) return void (dispatchHint = `${m.name} 被鎖在休眠艙裡（還要 ${m.podLockDays} 天），不能派。`);
+    if (m?.locked) return void (dispatchHint = `${m.name} 已鎖定（🔒），要先在他的資料頁解除鎖定才能派。`);
+    if (dispatchPick.party.size >= CONFIG.partyMax) return void (dispatchHint = `一隊最多 ${CONFIG.partyMax} 人，先取消別人再選。`);
+    dispatchPick.party.add(id);
   },
   "confirm-dispatch"() {
     const result = startRun(state, dispatchPick.dungeonId, [...dispatchPick.party], { slotId: dispatchPick.slotId, greedy: dispatchPick.greedy, erosion: dispatchPick.erosion });
@@ -1624,6 +1896,14 @@ const actions = {
     state = createNewGame();
     modal = null;
     bannerText = "";
+    dispatchPick.party.clear(); // #6：舊局的派遣選取不能漏進新局
+    dispatchPick.dungeonId = dispatchPick.slotId = null;
+    dispatchPick.greedy = false;
+    dispatchPick.erosion = 0;
+    peekRunId = null;
+    dispatchHint = "";
+    dismissed = { wish: false, god: false };
+    resumeAfterReports = null;
   },
 };
 
@@ -1658,6 +1938,7 @@ document.addEventListener("change", (event) => {
     return;
   } else return;
   saveGame();
+  render(); // 自動小幫手面板與頂欄的模式標籤要跟著刷新（改了進階開關就變「自訂」）
 });
 
 // 鍵盤快捷鍵（4-E-8）：空白鍵 = 暫停／繼續；數字鍵 1～5 = 倍速（0.5x／1x／2x／5x／10x）

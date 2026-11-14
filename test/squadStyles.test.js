@@ -52,12 +52,13 @@ test("共產流：稅後獎金 100% 絕對均分；戰死者私房錢 100% 進�
   killSamsarite(state, c, "測試", null);
   assert.equal(state.squad.communalFund, 333);
   assert.equal(state.points, before, "不充公");
-  // 隊長自己陣亡：沒有隊長 → 流派暫停，走一般 50% 充公
+  // 隊長自己陣亡（#12）：他死的當下流派仍是共產流，他的私房錢 200 照樣 100% 進互助金；之後沒有隊長、流派暫停，其他人走一般 50% 充公
   b.wallet = 100;
   killSamsarite(state, cap, "測試", null);
+  assert.equal(state.squad.communalFund, 333 + 200, "隊長自己的遺產也進互助金");
   assert.equal(styleOf(state), null);
   killSamsarite(state, b, "測試", null);
-  assert.equal(state.squad.communalFund, 333);
+  assert.equal(state.squad.communalFund, 333 + 200, "沒隊長之後的人不再進互助金");
 });
 
 test("共產流：老鳥（武防達最高階、無傷）捐剩餘私房錢 50%；菜鳥錢不夠買制式裝時互助金補差額", () => {

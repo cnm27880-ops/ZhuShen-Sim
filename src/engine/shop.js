@@ -47,7 +47,12 @@ export function useBlock(state, item, s) {
     ["healInjury", () => (s.injury > 0 ? null : `${s.name} 沒有受傷`)],
     ["permHp", () => ((s.elixirUses ?? 0) < (e.maxUsesPerChar ?? 3) ? null : `${s.name} 的永久強化次數已達上限`)],
     ["sanity", () => (s.stats.sanity < 100 ? null : `${s.name} 的理智已經滿了`)],
-    ["geneLockTarget", () => (s.geneBuff?.target === e.geneLockTarget ? `${s.name} 已經有同階的破鎖加成` : (s.geneLock ?? 0) >= e.geneLockTarget ? `${s.name} 的基因鎖已經 ${s.geneLock} 階` : null)],
+    ["geneLockTarget", () => {
+      const have = s.geneBuff;
+      if (have?.target === e.geneLockTarget) return `${s.name} 已經有同階的破鎖加成`;
+      if (have && (have.target > e.geneLockTarget || (have.costDiscount ?? 0) > (e.costDiscount ?? 0))) return `${s.name} 已有更高階或折扣更大的破鎖加成，買了會被蓋掉`; // #18
+      return (s.geneLock ?? 0) >= e.geneLockTarget ? `${s.name} 的基因鎖已經 ${s.geneLock} 階` : null;
+    }],
     ["deathWard", () => ((s.deathWard ?? 0) >= 1 ? `${s.name} 已經帶著替死護符` : null)],
     ["intelGain", () => (intelTargets(state).length > 0 ? null : "所有已解鎖世界的情報都滿了")],
     ["hateDelta", () => (homeMates(state, s).length > 0 ? null : "空間裡沒有其他人")],
@@ -77,6 +82,7 @@ export function checkBuy(state, item, s, opts = {}) {
   if ((opts.source ?? "shop") === "shop" && !isPermanent(item)) return { ok: false, reason: "這件商品只在黑市出現" };
   if (!s) return { ok: false, reason: "請先選一個人" };
   if (s.location !== "space") return { ok: false, reason: `${s.name} 在副本裡` };
+  if ((s.podLockDays ?? 0) > 0) return { ok: false, reason: `${s.name} 被鎖在私人休眠艙裡（還要 ${s.podLockDays} 天），買不了東西` }; // #17：與 AI 逛街一致
   if (payer === "wallet") {
     if ((s.wallet ?? 0) < price) return { ok: false, reason: `${s.name} 的私房錢不夠` };
   } else if (!canAfford(state, price)) return { ok: false, reason: "積分不夠（連主神高利貸都借不到）" };
@@ -85,11 +91,23 @@ export function checkBuy(state, item, s, opts = {}) {
     if (payer === "wallet" && s.soulbound?.[item.slot]) return { ok: false, reason: `${s.name} 的${SHOP_SLOT_LABELS[item.slot]}是主管賞賜的綁定裝備` };
   } else if (item.kind === "buff") {
     if ((s.consumables?.length ?? 0) >= CONFIG.shop.consumableCap) return { ok: false, reason: `${s.name} 的出征耗材已經囤滿（${CONFIG.shop.consumableCap} 份）` };
+    if (isDominatedBuff(s, item)) return { ok: false, reason: `${s.name} 已經囤了同效果、數值不低於它的耗材（同場只取最高 1 件，不疊加）` }; // #19
   } else {
     const why = useBlock(state, item, s);
     if (why) return { ok: false, reason: why };
   }
   return { ok: true };
+}
+
+/** 出征耗材「同場只取最高 1 件」的效果鍵（不疊加）；mode：max 取最大、min 取最小（負值越小越強） */
+const NON_STACK = { nextRunPowerMult: "max", partyNextRunPowerMult: "max", postRunInjury: "max", partyPostRunSanity: "min", nextRunLoveBonus: "max" };
+
+/** 這件出征耗材的所有效果，緩衝區裡都已有不差於它的同鍵耗材 → 買了等於白買（#19）。有任何可疊加的效果就不擋 */
+function isDominatedBuff(s, item) {
+  const entries = Object.entries(item.effect ?? {});
+  if (entries.length === 0 || entries.some(([k]) => !(k in NON_STACK))) return false;
+  const owned = (s.consumables ?? []).map((id) => getShopItem(id)?.effect ?? {});
+  return entries.every(([k, v]) => owned.some((e) => e[k] !== undefined && (NON_STACK[k] === "max" ? e[k] >= v : e[k] <= v)));
 }
 
 /** 買東西並套用在 targetId 身上。回傳 { ok, reason, price } */
@@ -100,8 +118,8 @@ export function buyItem(state, itemId, targetId, opts = {}) {
   if (!check.ok) return check;
   const payer = opts.payer ?? "treasury";
   const price = opts.price ?? item.price;
-  if (payer === "wallet") spendWallet(state, s, price);
-  else spend(state, price); // 階層解鎖的日誌由 core.addSpent 負責
+  const paid = payer === "wallet" ? spendWallet(state, s, price) : spend(state, price); // 階層解鎖的日誌由 core.addSpent 負責
+  if (!paid) return { ok: false, reason: payer === "wallet" ? `${s.name} 的私房錢不夠` : "積分不夠（連主神高利貸都借不到）" }; // #39：付款失敗就不給貨
   const vars = { A: s, item: item.name, cost: price };
   const self = payer === "wallet";
   const selfLog = () => emit(state, "shop", logText(state, "shopSelf", { ...vars, left: s.wallet }), { samsariteId: s.id });
@@ -116,6 +134,7 @@ export function buyItem(state, itemId, targetId, opts = {}) {
     if (self) {
       delete s.soulbound[item.slot]; // 自己買的不綁定
       selfLog();
+      wishesAfterBuy(state, s, item); // #15：自費買下他許願的那件裝備，一樣算許願完成
     } else {
       s.soulbound[item.slot] = true; // 公庫賞賜：綁定，輪迴者自己逛街不會覆蓋（4-D-1）
       s.stats.sanity = Math.min(100, s.stats.sanity + CONFIG.wallet.giftSanity);
@@ -128,14 +147,14 @@ export function buyItem(state, itemId, targetId, opts = {}) {
     else emit(state, "shop", logText(state, "shopBuff", vars), { samsariteId: s.id });
   } else {
     if (self) selfLog();
-    const note = applyUse(state, item, s);
+    const note = applyUse(state, item, s, opts);
     if (!self) emit(state, "shop", logText(state, "shopUse", { ...vars, note }), { samsariteId: s.id });
   }
   return { ok: true, price };
 }
 
 /** 即用耗材的效果（結構化欄位統一解析，不看單一 id）。回傳效果摘要文字給日誌用 */
-function applyUse(state, item, s) {
+export function applyUse(state, item, s, opts = {}) {
   const e = item.effect ?? {};
   const notes = [];
   const mates = homeMates(state, s);
@@ -191,7 +210,9 @@ function applyUse(state, item, s) {
   if (e.transferMadness && mates.length > 0) {
     s.tags = (s.tags ?? []).filter((t) => t !== "demon_path"); // 抹除瘋狂狀態
     const rng = squadRng(state);
-    const victim = mates[Math.floor(rand(rng) * mates.length)];
+    // #7：玩家在黑市選了黑貨對象就用他（要在空間、不是本人）；沒選或選的不合法才隨機。無論如何都消耗同一次亂數，避免動到亂數流
+    const roll = Math.floor(rand(rng) * mates.length);
+    const victim = mates.find((m) => m.id === opts.victimId) ?? mates[roll];
     victim.stats.sanity = Math.max(0, victim.stats.sanity - (e.madnessSanityHit ?? 25));
     addHate(state, victim, s, e.madnessHate ?? 25);
     noteContraband(state, s, victim, item);

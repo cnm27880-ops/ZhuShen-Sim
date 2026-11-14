@@ -74,6 +74,7 @@ function revoltEligible(state, partyIds) {
  */
 export function buildRivalDungeon(state, partyIds = null) {
   const pend = pendingRival(state);
+  if (!pend) return null; // #37：沒有待派的洲際任務就回 null，不拋 TypeError
   const q = getRivalSquad(pend.squadId);
   const lv = state.spaceLevel ?? 1;
   const cfg = R();
@@ -162,7 +163,7 @@ function draftAndGo(state) {
   return { ok: false };
 }
 function startRivalRun(state, ids) {
-  return startRun(state, RIVAL_ID, ids); // 循環引用只在執行時呼叫，沒問題（同 core.js 的作法）
+  return startRun(state, RIVAL_ID, ids, { ignoreLock: true }); // 循環引用只在執行時呼叫，沒問題（同 core.js 的作法）
 }
 
 // ───────── 出發／結算掛鉤（由 dungeon.js 呼叫）─────────
@@ -203,6 +204,7 @@ export function rivalFinish(state, run, dungeon, survivors, success) {
   const q = getRivalSquad(run.rival.squadId);
   const sq = squadState(state, q.id);
   const notes = [];
+  const fightGone = { n: 0 }; // #21：本場已私奔人數，落敗檢定與挖角檢定共用，才守得住 maxPerFight
   bumpR(state, "fights");
   if (success) {
     bumpR(state, "wins");
@@ -213,8 +215,8 @@ export function rivalFinish(state, run, dungeon, survivors, success) {
     else addChronicle(state, "rival", logText(state, "chronRivalWin", { squad: q.name }));
   } else {
     bumpR(state, "losses");
-    if (state.points > 0) {
-      const lost = Math.round(state.points * R().lossPointsPct); // 戰敗只扣正數公庫的 20%，不扣成惡性負債
+    const lost = state.points > 0 ? Math.round(state.points * R().lossPointsPct) : 0; // 戰敗只扣正數公庫的 20%，不扣成惡性負債
+    if (lost > 0) { // #36：公庫只剩 1 分時 20% 四捨五入是 0，不寫「公庫 -0」
       state.points -= lost;
       notes.push(`公庫 -${lost}`);
       emit(state, "social", logText(state, "rivalLoss", { squad: q.name, lost }));
@@ -224,10 +226,10 @@ export function rivalFinish(state, run, dungeon, survivors, success) {
       s.stats.sanity = Math.max(0, s.stats.sanity - R().lossSanity);
     }
     if (survivors.length > 0) emit(state, "social", logText(state, "rivalShame", { squad: q.name, san: R().lossSanity }));
-    elope(state, q, survivors, notes, R().elope.chance);
+    elope(state, q, survivors, notes, R().elope.chance, fightGone);
     addChronicle(state, "rival", logText(state, "chronRivalLoss", { squad: q.name }));
   }
-  if (q.id === "golden" || q.id === "joyous") elope(state, q, survivors, notes, R().elope.lureChance); // 重金挖角／魅惑拐人：不論勝負再檢定一次
+  if (q.id === "golden" || q.id === "joyous") elope(state, q, survivors, notes, R().elope.lureChance, fightGone); // 重金挖角／魅惑拐人：不論勝負再檢定一次
   hybridEncounter(state, q, survivors, notes);
   return { squadId: q.id, name: q.name, icon: q.icon, win: success, notes, revolt: !!run.rival.revolt };
 }
@@ -275,11 +277,12 @@ function winExtras(state, q, dungeon, survivors, run, notes) {
       const pts = Math.round(base * cfg.goldenWalletPct * (1 + rivalRewardBonus(state)));
       if (survivors.length > 0) {
         const share = Math.floor(pts / survivors.length);
+        let got = 0;
         for (const s of survivors) {
           s.wallet = (s.wallet ?? 0) + share;
-          giveItem(s, "t3_32");
+          if (giveItem(s, "t3_32")) got += 1; // #20：耗材滿格的人拿不到，不能照寫「發了」
         }
-        notes.push(`每人私房錢 +${share}、高階耗材`);
+        notes.push(`每人私房錢 +${share}、高階耗材 ${got}/${survivors.length} 人（耗材已滿者未發放）`);
       }
       break;
     }
@@ -341,19 +344,18 @@ export function elopeCandidate(state, s, cap) {
   return a <= c.affinity || ((s.stats?.sanity ?? 100) < c.lowSanity && a < c.lowSanityAffinity);
 }
 
-function elope(state, q, survivors, notes, chance) {
+function elope(state, q, survivors, notes, chance, fightGone = { n: 0 }) {
   const rv = riv(state);
   const cap = captainOf(state);
   if (!cap) return;
   const pool = new Map();
   for (const s of [...survivors, ...state.samsarites.filter((x) => x.location === "space")]) pool.set(s.id, s); // 參戰者與隊內留守者
   const cands = [...pool.values()].filter((s) => state.samsarites.includes(s) && s.location !== "pod" && !isElopeImmune(state, s) && elopeCandidate(state, s, cap)).sort((a, b) => a.id - b.id);
-  let gone = 0;
   for (const s of cands) {
-    if (gone >= R().elope.maxPerFight) break;
+    if (fightGone.n >= R().elope.maxPerFight) break;
     if (rand(rv) < chance) {
       defectTo(state, q, s);
-      gone += 1;
+      fightGone.n += 1;
       notes.push(`${s.name} 私奔投靠`);
     }
   }
