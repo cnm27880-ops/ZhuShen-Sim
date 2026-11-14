@@ -1,7 +1,7 @@
 // 畫面層：只負責「把 state 畫出來」跟「把玩家的點擊轉成引擎呼叫」。
 // 所有遊戲規則都在 src/engine/，這裡不做任何數值計算以外的決定。
 
-import { CONFIG, RANKS, INJURIES, GACHA_POOLS, PAUSE_EVENTS } from "../data/config.js";
+import { CONFIG, RANKS, INJURIES, PAUSE_EVENTS } from "../data/config.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
 import {
   createNewGame,
@@ -12,11 +12,23 @@ import {
   debtLimitOf,
   canAfford,
   pullGacha,
+  gachaInfo,
   recycle,
   serialize,
   deserialize,
 } from "../engine/core.js";
-import { roomPassRate, clearChance, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, roomCount, roomsToClear } from "../engine/dungeon.js";
+import { roomPassRate, clearChance, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, bossGateInfo, roomCount, roomsToClear } from "../engine/dungeon.js";
+import {
+  enhance as enhanceSamsarite,
+  breakGene as breakSamsariteGene,
+  checkEnhance,
+  checkBreakGene,
+  enhanceGain,
+  enhanceCapOf,
+  insightCapOf,
+  maxGeneOf,
+  geneTierOf,
+} from "../engine/growth.js";
 import { effectivePower } from "../engine/tags.js";
 import { shopTier, nextTierInfo, checkBuy, buyItem, collectionEffects } from "../engine/shop.js";
 import { SHOP_ITEMS, SHOP_KIND_LABELS, SHOP_SLOT_LABELS, getShopItem } from "../data/shop.js";
@@ -137,6 +149,7 @@ function renderTopbar() {
   const upkeep = state.samsarites.filter((s) => s.location !== "dungeon").reduce((sum, s) => sum + upkeepOf(s, state), 0);
   $("upkeep").textContent = `-${upkeep} / 天`;
   $("space-level").textContent = `Lv.${state.spaceLevel}`;
+  $("karma").textContent = `🔮 ${state.karmaCrystals ?? 0}`;
 
   $("speed-controls").innerHTML = CONFIG.speeds
     .map((v) => `<button data-action="set-speed" data-value="${v}" class="${v === state.settings.speed ? "active" : ""}">${v}x</button>`)
@@ -445,6 +458,13 @@ function dispatch() {
   const injured = party.filter((s) => s.injury > 0);
 
   const pct = (v) => `${v >= 0 ? "+" : ""}${Math.round(v * 1000) / 10}%`;
+  // 尾王守門提示：章節已解鎖、但前 3 關通關次數還不夠
+  const gateNote = (d) => {
+    const gate = bossGateInfo(state, d);
+    return d.chapter <= state.spaceLevel && !gate.open
+      ? `<br /><small class="bad">🔒 尾王未開放：本章前 3 關合計通關 ${gate.have}/${gate.need} 次</small>`
+      : "";
+  };
   // 只列出已解鎖的章節＋下一章（鎖住、預告用），其餘不顯示
   const dungeonOptions = DUNGEONS.filter((d) => d.chapter <= state.spaceLevel + 1).map((d) => {
     const st = state.dungeonStats[d.id] ?? { attempts: 0, clears: 0 };
@@ -452,7 +472,7 @@ function dispatch() {
     const head = d === DUNGEONS.find((x) => x.chapter === d.chapter) ? `<h4 class="chapter-head">第 ${d.chapter} 章${open ? "" : `（🔒 首通第 ${d.chapter - 1} 章尾王解鎖）`}・${roomCount(d)} 房過 ${roomsToClear(d)}</h4>` : "";
     return `${head}<div class="option ${d.id === dungeon.id ? "selected" : ""} ${open ? "" : "locked"}" style="${open ? "" : "opacity:.45"}" data-action="pick-dungeon" data-id="${d.id}">
       <span class="option-icon">${d.icon}</span>
-      <span class="grow"><b>${d.name}</b> <small>${d.genre}${d.boss ? "・👑 尾王" : ""}</small><br /><small>${d.intro}</small></span>
+      <span class="grow"><b>${d.name}</b> <small>${d.genre}${d.boss ? "・👑 尾王" : ""}</small><br /><small>${d.intro}</small>${gateNote(d)}</span>
       <small>推薦戰力 ${d.recommendedPower}<br />獎勵 ${d.reward} 分 ×${rewardTierMult(state, d)}${hasIntel(state, d) ? "" : "（首通 +" + Math.round(d.reward * CONFIG.dungeon.firstClearBonusPct) + "）"}<br />${hasIntel(state, d) ? "🗺️ 已通關" : "❓ 首次開荒"}・情報 ${pct(intelBonus(state, d))}・通關 ${st.clears}/${st.attempts}</small>
     </div>`;
   }).join("");
@@ -508,14 +528,24 @@ function dispatch() {
 }
 
 function gacha() {
-  const pools = GACHA_POOLS.map((p) => {
-    const total = p.odds.reduce((sum, o) => sum + o.weight, 0);
-    const odds = p.odds.map((o) => `${Math.round((o.weight / total) * 100)}% ${o.rank}`).join("、");
-    return `<div class="option">
-      <span class="grow"><b>${p.name}</b><br /><small>${odds}・純隨機不保底</small></span>
-      <button class="primary" data-action="pull" data-id="${p.id}" ${canAfford(state, p.cost) ? "" : "disabled"}>抽一次（${p.cost} 分）</button>
-    </div>`;
-  }).join("");
+  const pools = gachaInfo(state)
+    .map((info) => {
+      const p = info.pool;
+      const odds = ["C", "B", "A", "S"]
+        .filter((r) => p.odds[r] > 0)
+        .map((r) => `${p.odds[r]}% ${r}`)
+        .join("、");
+      const pity = p.pity ? `・保底：第 ${p.pity.every} 抽必出 ${p.pity.minRank} 以上（目前 ${info.pity}/${p.pity.every - 1}）` : "・無保底";
+      const price = `${info.cost} 分${p.crystal ? ` + ${p.crystal} 顆結晶` : ""}`;
+      const locked = (state.spaceLevel ?? 1) < p.spaceLevel;
+      return `<div class="option">
+        <span class="grow"><b>${p.name}</b><br /><small>${odds}${pity}・本週已抽 ${info.pulls} 次（每抽 +${p.step} 分）</small>${
+          locked ? `<br /><small class="bad">🔒 ${info.reason}</small>` : ""
+        }</span>
+        <button class="primary" data-action="pull" data-id="${p.id}" ${info.ok ? "" : "disabled"} ${info.ok || locked ? "" : `title="${info.reason}"`}>抽一次（${price}）</button>
+      </div>`;
+    })
+    .join("");
   const last = modal.lastId ? getSamsarite(state, modal.lastId) : null;
   const result = last
     ? `<div class="summary gacha-result" style="--rank-color:var(--rank-${last.rank})">${rankBadge(last.rank)}
@@ -523,7 +553,8 @@ function gacha() {
     : "";
   const debtNote = state.points < 0 ? `<span class="bad">（負債中）</span>` : "";
   return `<h3>🎴 抽卡</h3>
-    <p>目前積分：<b>${state.points}</b> ${debtNote}。積分不夠時可以向主神借，最多借到 ${debtLimitOf(state)} 分。</p>
+    <p>目前積分：<b>${state.points}</b> ${debtNote}。積分不夠時可以向主神借，最多借到 ${debtLimitOf(state)} 分。
+      持有因果結晶：<b>${state.karmaCrystals ?? 0}</b> 顆（神級池每抽消耗 1 顆）。每 ${CONFIG.gacha.resetDays} 天重置「本週抽數」與漲價；保底計數不會重置。</p>
     <div class="option-list">${pools}</div>${result}
     <div class="modal-actions">${closeButton}</div>`;
 }
@@ -553,7 +584,7 @@ function shop() {
   const itemRow = (item) => {
     const locked = item.tier > tier;
     const check = locked ? { ok: false, reason: "" } : checkBuy(state, item, target);
-    const owned = item.kind === "enhance" && target ? ` ${target.bought?.[item.id] ?? 0}/${item.max}` : "";
+    const owned = "";
     const slot = item.kind === "gear" ? `・${SHOP_SLOT_LABELS[item.slot]}` : "";
     const why = !locked && !check.ok ? `<br /><small class="bad">${check.reason}</small>` : "";
     return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
@@ -596,20 +627,27 @@ function detail() {
   const s = getSamsarite(state, modal.id);
   if (!s) return `<h3>查無此人</h3><p>這個人已經不在了。</p><div class="modal-actions">${closeButton}</div>`;
   const home = s.location === "space";
+  const gene = geneTierOf(s);
+  const gain = enhanceGain(s);
+  const enh = checkEnhance(state, s.id);
+  const brk = checkBreakGene(state, s.id);
   return `<h3>${rankBadge(s.rank)} ${s.name}</h3>
     <table class="stats">
       <tr><td>狀態</td><td>${s.location === "pod" ? `🍼 催熟艙（還要 ${s.podDaysLeft} 天）` : `${home ? "主神空間" : "副本中"}・${injuryLabel(s)}`}</td></tr>
       ${s.parents ? `<tr><td>家長</td><td>${parentNames(state, s).join("、") || "（已不在世）"}${s.inheritedTags?.length ? `<br /><small>繼承標籤：${s.inheritedTags.map((id) => getTag(id)?.name ?? id).join("、")}</small>` : ""}</td></tr>` : ""}
       ${s.mood || s.vacationDays > 0 || wishesOf(state, s.id).length ? `<tr><td>心情／許願</td><td>${statusExtras(s).replace("<br />", "")}</td></tr>` : ""}
       <tr><td>生命</td><td>${s.stats.hp}</td></tr>
-      <tr><td>戰力</td><td>${effectivePower(s)}（基礎 ${s.stats.power}，含強化、裝備、標籤）</td></tr>
+      <tr><td>戰力</td><td>${effectivePower(s)}（本體 ${s.stats.power + (s.inheritPower ?? 0)} × 基因鎖 ×${gene.powerMult}，再加裝備白值、乘標籤與心情）</td></tr>
+      <tr><td>基因鎖</td><td>第 ${s.geneLock ?? 0} 階【${gene.name}】・${s.rank} 級最高第 ${maxGeneOf(s)} 階</td></tr>
+      <tr><td>強化</td><td>${s.enhanceCount ?? 0}/${enhanceCapOf(s)} 次・成長倍率 ×${RANKS[s.rank].growthMult}<br /><small>每次：戰力 +${gain.power}、生命 +${gain.hp}、防禦／速度／運氣各 +${gain.defense}</small></td></tr>
+      <tr><td>頓悟</td><td>${s.insightCount ?? 0}/${insightCapOf(s)} 次<br /><small>副本通關時每位存活隊員 ${Math.round(CONFIG.insight.chance * 100)}% 機率頓悟（戰力 +${Math.round(CONFIG.insight.gainPower * RANKS[s.rank].growthMult)}、再隨機一項副屬性）</small></td></tr>
       <tr><td>防禦</td><td>${s.stats.defense}</td></tr>
       <tr><td>速度</td><td>${s.stats.speed}</td></tr>
       <tr><td>理智</td><td>${s.stats.sanity}</td></tr>
       <tr><td>運氣</td><td>${s.stats.luck}</td></tr>
       <tr><td>維持費</td><td>${upkeepOf(s, state)} 分 / 天${s.location === "pod" ? "（催熟艙固定費用）" : `（基礎 ${upkeepBaseOf(state)} ×（1 + 階級 ${Math.round(RANKS[s.rank].upkeepPct * 100)}% + 傷勢 ${Math.round(INJURIES[s.injury].upkeepPct * 100)}%））`}</td></tr>
       <tr><td>資歷</td><td>第 ${s.joinedDay} 天加入・出征 ${s.runs} 次</td></tr>
-      <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}`).join("・")}${s.upgrades?.power || s.upgrades?.dodge ? `<br /><small>強化：戰力 +${s.upgrades.power ?? 0}${s.upgrades.dodge ? `、閃避 +${Math.round(s.upgrades.dodge * 100)}%` : ""}</small>` : ""}</td></tr>
+      <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}`).join("・")}</td></tr>
       <tr><td>標籤</td><td>${(s.tags ?? [])
         .map(getTag)
         .filter(Boolean)
@@ -618,6 +656,11 @@ function detail() {
     </table>
     <h3 style="margin-top:12px">💞 人際關係</h3>
     <div class="rel-list">${relationRows(s)}</div>
+    <p style="margin-top:12px"><small>💪 強化：${enh.ok ? `可以強化（${enh.cost} 分）` : enh.reason}<br />🧬 基因鎖：${brk.ok ? `可以突破到第 ${brk.next} 階（${brk.cost} 分）` : brk.reason}</small></p>
+    <div class="modal-actions">
+      <button class="primary" data-action="enhance" data-id="${s.id}" ${enh.ok ? "" : "disabled"} title="${enh.ok ? "" : enh.reason}">💪 強化${enh.cost ? `（${enh.cost} 分）` : ""}</button>
+      <button class="primary" data-action="break-gene" data-id="${s.id}" ${brk.ok ? "" : "disabled"} title="${brk.ok ? "" : brk.reason}">🧬 突破基因鎖${brk.cost ? `（${brk.cost} 分）` : ""}</button>
+    </div>
     <div class="modal-actions">
       <button class="danger" data-action="ask-recycle" data-id="${s.id}" ${home ? "" : "disabled"}>♻️ 推進回收爐（+${CONFIG.recycle.points} 分）</button>
       <button data-action="toggle-follow" data-id="${s.id}">${s.id === state.settings.followId ? "👁️ 取消鎖定視角" : "👁 鎖定視角"}</button>
@@ -721,6 +764,8 @@ function runResult() {
       ${r.envName ? `環境：${r.envName}<br />` : ""}獎勵：<b class="${r.success ? "good" : "bad"}">+${r.reward} 分</b>${r.firstClear ? "（含首通加成）" : ""}<br />
       ${r.levelUp ? `🏛️ <b class="good">主神空間升到 Lv.${r.levelUp}，第 ${r.levelUp} 章解鎖！</b><br />` : ""}
       ${r.specialReward ? `🎁 特殊獎勵：<b class="good">${r.specialReward}</b>（已永久生效）<br />` : ""}
+      ${r.karma ? `🔮 因果結晶 <b class="good">+${r.karma}</b> 顆（持有 ${state.karmaCrystals ?? 0} 顆）<br />` : ""}
+      ${r.insights?.length ? `💡 頓悟：<b class="good">${r.insights.map((i) => `${i.name}（戰力 +${i.power}）`).join("、")}</b><br />` : ""}
       生還：${survivors}<br />
       死亡：<span class="${r.deaths.length ? "bad" : ""}">${r.deaths.length ? r.deaths.join("、") : "無"}</span>
       ${waiting > 0 ? `<br /><small>還有 ${waiting} 場副本結算排隊中</small>` : ""}
@@ -891,6 +936,16 @@ const actions = {
   pull(el) {
     const s = pullGacha(state, el.dataset.id);
     modal = { name: "gacha", lastId: s?.id };
+    saveGame();
+  },
+  enhance(el) {
+    const r = enhanceSamsarite(state, Number(el.dataset.id));
+    if (!r.ok) alert(r.reason);
+    saveGame();
+  },
+  "break-gene"(el) {
+    const r = breakSamsariteGene(state, Number(el.dataset.id));
+    if (!r.ok) alert(r.reason);
     saveGame();
   },
   "toggle-lock"(el) {

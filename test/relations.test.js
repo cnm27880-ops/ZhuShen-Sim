@@ -62,7 +62,7 @@ test("關係等級與通過率加成：喜歡 +10%、愛慕 +20%、討厭 -10%�
   assert.ok(Math.abs(roomPassRate(state, [a, b], easy) - base - 0.1) < 1e-9);
   bothLove(state, a, b, 25);
   assert.equal(pairLevel(state, a, b), "adore");
-  assert.ok(Math.abs(partyRelationBonus(state, [a, b]) - 0.2) < 1e-9);
+  assert.ok(Math.abs(partyRelationBonus(state, [a, b]) - Math.min(0.2, CONFIG.relations.bonusCap)) < 1e-9); // 愛慕 +20%，被上限（±10%）夾住
 
   bothHate(state, a, c, 60);
   assert.equal(pairLevel(state, a, c), "dislike");
@@ -71,9 +71,9 @@ test("關係等級與通過率加成：喜歡 +10%、愛慕 +20%、討厭 -10%�
   bothHate(state, a, c, 25);
   assert.equal(pairLevel(state, a, c), "hate");
   assert.equal(areEnemies(state, a, c), true);
-  assert.ok(Math.abs(partyRelationBonus(state, [a, c]) + 0.2) < 1e-9);
+  assert.ok(Math.abs(partyRelationBonus(state, [a, c]) + Math.min(0.2, CONFIG.relations.bonusCap)) < 1e-9); // 仇恨 -20%，被上限（±10%）夾住
 
-  // 四個人兩兩愛慕 = 6 對 × 20%，被上限 30% 擋住
+  // 四個人兩兩愛慕 = 6 對 × 20%，被上限擋住
   for (const [x, y] of [[a, d], [b, c], [b, d], [c, d]]) bothLove(state, x, y, 90);
   bothHate(state, a, c, -100);
   bothLove(state, a, c, 90);

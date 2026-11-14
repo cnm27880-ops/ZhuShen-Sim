@@ -44,8 +44,8 @@ test("商品資料表：id 不重複、階層 1~5、種類合法、有價格與�
     assert.ok(i.kind in SHOP_KIND_LABELS, i.id);
     assert.ok(i.price > 0 && Object.keys(i.effect).length > 0, i.id);
     if (i.kind === "gear") assert.ok(["weapon", "armor"].includes(i.slot), i.id);
-    if (i.kind === "enhance") assert.ok(i.max >= 1, i.id);
   }
+  assert.ok(SHOP_ITEMS.every((i) => i.kind !== "enhance"), "Phase 4-B 起商店不再賣強化");
   for (const t of [1, 2, 3, 4, 5]) assert.ok(SHOP_ITEMS.some((i) => i.tier === t), `Tier ${t} 沒有商品`);
   const anchors = [16, 60, 220, 900, 3500];
   anchors.forEach((want, i) => {
@@ -57,7 +57,7 @@ test("商品資料表：id 不重複、階層 1~5、種類合法、有價格與�
 test("沒解鎖的階層買不了，也不會扣積分", () => {
   const { state, s } = setup();
   const before = state.points;
-  const r = buyItem(state, "enh_power1", s.id); // Tier 2
+  const r = buyItem(state, "weapon_steel", s.id); // Tier 2
   assert.equal(r.ok, false);
   assert.match(r.reason, /Tier 2/);
   assert.equal(state.points, before);
@@ -86,18 +86,17 @@ test("買裝備：扣積分、累積花費增加、戰力上升；買新武器�
   assert.ok(state.log.some((e) => e.type === "shop" && e.text.includes("鐵管")), "換裝日誌要提到舊裝備");
 });
 
-test("防具提高傷勢減免，強化提高戰力與閃避，且有購買上限", () => {
+test("防具提高傷勢減免與戰力白值，高階防具另有閃避", () => {
   const { state, s } = setup();
-  state.totalSpent = 3000; // 開 Tier 3
+  state.totalSpent = 12000; // 開 Tier 4
   const base = effectivePower(s);
   buyItem(state, "armor_chain", s.id);
   assert.ok(Math.abs(injuryShieldOf(s) - 0.1) < 1e-9);
   assert.equal(effectivePower(s), base + 22); // Phase 4-A 起防具也有戰力白值
-  for (let i = 0; i < 3; i++) assert.equal(buyItem(state, "enh_power1", s.id).ok, true);
-  assert.equal(buyItem(state, "enh_power1", s.id).ok, false); // 第 4 次：買滿了
-  assert.equal(effectivePower(s), base + 22 + 12);
-  buyItem(state, "enh_dodge", s.id);
-  assert.ok(Math.abs(dodgeOf(s) - 0.04) < 1e-9);
+  assert.equal(dodgeOf(s), 0);
+  buyItem(state, "armor_legend", s.id);
+  assert.ok(Math.abs(dodgeOf(s) - 0.05) < 1e-9);
+  assert.equal(effectivePower(s), base + 340, "換防具不是疊加");
 });
 
 test("強化會乘上標籤的戰力百分比（先加後乘）", () => {
@@ -134,15 +133,16 @@ test("副本裡的人不能用商店", () => {
 test("花費跨過門檻時主神會宣布解鎖（抽卡的花費也算）", () => {
   const { state } = setup(100000);
   state.totalSpent = 500;
-  pullGacha(state, "ba"); // 150 → 650
+  pullGacha(state, "basic"); // 120 → 620
   assert.equal(shopTier(state), 2);
   assert.ok(state.log.some((e) => e.type === "shopTier" && e.text.includes("Tier 2")));
-  pullGacha(state, "ba"); // 還是 Tier 2，不再宣布
+  pullGacha(state, "basic"); // 還是 Tier 2，不再宣布
   assert.equal(state.log.filter((e) => e.type === "shopTier").length, 1);
 });
 
 test("商店日誌模板每個 key 至少 2 個版本", () => {
-  for (const k of ["shopTier", "shopEnhance", "shopGear", "shopGearSwap", "shopHeal", "shopCalm"]) assert.ok(LOGS[k]?.length >= 2, k);
+  for (const k of ["shopTier", "shopGear", "shopGearSwap", "shopHeal", "shopCalm"]) assert.ok(LOGS[k]?.length >= 2, k);
+  assert.equal(LOGS.shopEnhance, undefined, "舊商店強化日誌已移除");
 });
 
 test("特殊獎勵資料表：有填的副本各 3 個（佔位副本先留空），id 唯一、都有效果，類型對得上副本", () => {
@@ -232,8 +232,12 @@ test("存檔：裝備、強化、收藏讀回來還在；舊存檔的收藏名�
   const old = JSON.parse(serialize(state));
   old.collection = ["鬼道術法・引魂符", "不存在的東西"];
   delete old.samsarites[0].gear;
-  delete old.samsarites[0].upgrades;
+  old.samsarites[0].upgrades = { power: 12, dodge: 0.04 }; // 舊商店強化：Phase 4-B 起歸零、不退費
+  old.samsarites[0].bought = { enh_power1: 3 };
   const migrated = deserialize(JSON.stringify(old));
   assert.deepEqual(migrated.collection, ["ghost_talisman"]);
   assert.deepEqual(migrated.samsarites[0].gear, {});
+  assert.equal(migrated.samsarites[0].upgrades, undefined);
+  assert.equal(migrated.samsarites[0].bought, undefined);
+  assert.equal(effectivePower(migrated.samsarites[0]), effectivePower({ ...migrated.samsarites[0], gear: {} }), "舊強化不再加戰力");
 });

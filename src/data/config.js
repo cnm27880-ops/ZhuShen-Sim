@@ -84,7 +84,7 @@ export const CONFIG = {
 
   // ── 標籤（Phase 2）──
   tags: {
-    tagBonusCap: 0.3, // 全隊標籤對「單房通過率」的加減上限（避免標籤疊太高）
+    tagBonusCap: 0.1, // 全隊標籤對「單房通過率」的加減上限（Phase 4-B：露葵拍板由 ±30% 改 ±10%）
     // 新輪迴者的標籤數量：基礎數值標籤 2 個 + 性格機制標籤 1~2 個 + 靈魂核心標籤 1 個
     statCount: 2,
     traitCount: [1, 2],
@@ -167,7 +167,7 @@ export const CONFIG = {
     soulmateAt: 95, // 戀人雙方好感都到這個數字 = 靈魂伴侶
     // 一起出戰的單房通過率加成（計畫 6.3；靈魂伴侶／死敵的數字計畫未定）
     passBonus: { like: 0.1, adore: 0.2, soulmate: 0.3, dislike: -0.1, hate: -0.2, nemesis: -0.25 },
-    bonusCap: 0.3, // 全隊關係對「單房通過率」的加減上限（避免 4 人 6 對疊太高）
+    bonusCap: 0.1, // 全隊關係對「單房通過率」的加減上限（Phase 4-B：露葵拍板由 ±30% 改 ±10%）
     // 每天的行動骰（計畫 13.1：50% 日常 / 30% 找人互動 / 20% 特殊事件）
     dailyRoll: { work: 0.5, social: 0.3 }, // 其餘 20% 是特殊事件（陰謀、標籤事件）
     eventCooldownDays: 7, // 同一對人、同一種互動 7 天內不重複
@@ -220,6 +220,58 @@ export const CONFIG = {
     attackHate: 30, // 被隊友打了：對兇手仇恨 +30
   },
 
+  // ── 基因鎖／強化／頓悟（Phase 4-B，露葵 2026-11-14 拍板）──
+  // 基因鎖 geneLock 0~4 階：入隊 0 階；突破要「先點滿當階強化次數」「空間等級夠」「不超過自身階級上限」
+  gene: {
+    // 索引 = 基因鎖階數。enhanceCap = 該階強化次數上限；powerMult = 本體戰力乘區（只乘本體養成值，不乘裝備白值）
+    // spaceLevel = 突破「到這一階」需要的空間等級；cost = 突破「到這一階」花的積分
+    tiers: [
+      { name: "凡人", enhanceCap: 3, powerMult: 1.0, spaceLevel: 1, cost: 0 },
+      { name: "覺醒", enhanceCap: 6, powerMult: 2.2, spaceLevel: 2, cost: 300 },
+      { name: "超凡", enhanceCap: 10, powerMult: 4.8, spaceLevel: 3, cost: 1200 },
+      { name: "入聖", enhanceCap: 15, powerMult: 10.5, spaceLevel: 4, cost: 4500 },
+      { name: "半神", enhanceCap: 20, powerMult: 23.0, spaceLevel: 5, cost: 16000 },
+    ],
+  },
+  // 個人強化（取代舊商店強化）：每次增加的值 = round(base × 該階級成長倍率)；收費依「第 n 次強化」分段
+  enhance: {
+    gain: { power: 8, hp: 8, defense: 2, speed: 2, luck: 2 },
+    costTiers: [
+      { upTo: 3, cost: 80 },
+      { upTo: 6, cost: 220 },
+      { upTo: 10, cost: 650 },
+      { upTo: 15, cost: 1800 },
+      { upTo: 20, cost: 5000 },
+    ],
+  },
+  // 常規通關頓悟：副本通關結算時，每位存活隊員獨立擲骰；每人累計上限 = (geneLock + 1) × capPerGene
+  insight: {
+    chance: 0.12,
+    capPerGene: 4,
+    gainPower: 3, // 戰力 +round(3 × 成長倍率)
+    gainSub: 2, // 副屬性（hp／defense／speed／luck 四選一）+round(2 × 成長倍率)
+    subStats: ["hp", "defense", "speed", "luck"],
+  },
+  // 尾王守門（防止零養成硬撞矇過）：各章第 4 關尾王需要「該章前 3 關合計成功結算滿 requiredClears 次」
+  bossGate: { requiredClears: 8 },
+  // 四階招募卡池（取代舊 150／400 雙池；Phase 4-B）。每 resetDays 天重置「本週抽數」（漲價計數），保底計數跨週保留
+  // odds 順序 = C／B／A／S；pity = { every: 幾抽必出, minRank: 保底階級 } 或 null
+  // 神級池：基礎 4500 分 + 每抽固定消耗 1 顆因果結晶（結晶不隨週內抽數遞增，只漲積分）
+  gacha: {
+    resetDays: 7, // Day 8、15、22… 重置（(day-1) % 7 === 0 且 day > 1）
+    pools: [
+      { id: "basic", name: "初級池（凡塵徵召）", spaceLevel: 1, base: 120, step: 20, crystal: 0, odds: { C: 75, B: 23, A: 2, S: 0 }, pity: null },
+      { id: "mid", name: "中級池（精銳選拔）", spaceLevel: 2, base: 350, step: 60, crystal: 0, odds: { C: 30, B: 55, A: 15, S: 0 }, pity: { every: 10, minRank: "A" } },
+      { id: "high", name: "高級池（超凡感應）", spaceLevel: 3, base: 1200, step: 200, crystal: 0, odds: { C: 0, B: 60, A: 35, S: 5 }, pity: { every: 25, minRank: "S" } },
+      { id: "divine", name: "神級池（神格降臨）", spaceLevel: 4, base: 4500, step: 800, crystal: 1, odds: { C: 0, B: 25, A: 65, S: 10 }, pity: { every: 12, minRank: "S" } },
+    ],
+  },
+  // 因果結晶：只用於神級池。first = 該關首通必掉（關卡編號 = 全域第幾關 1~20）；chapterRoll = 各章「任一副本通關」機率掉 1 顆（首通掉落與機率掉落各自獨立、可疊加）
+  karma: {
+    firstClear: { 12: 2, 13: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 20: 1 },
+    chapterRoll: { 4: 0.15, 5: 0.25 },
+  },
+
   // ── 自動派遣 ──
   auto: {
     minClearChance: 0.6, // 預估通關率低於這個數字就不自動派（計畫未定）
@@ -236,12 +288,14 @@ export const CONFIG = {
 
 // 階級：維持費附加（基礎費的百分比）+ 各屬性的隨機範圍。
 // Phase 4-A：所有人入隊時五維統一拉平為零階凡人；階級之後只決定成長倍率與基因鎖上限（Phase 4-B）。
+// growthMult = 成長倍率（乘在每次強化與頓悟的增加量上）；maxGene = 基因鎖上限階數；
+// recycleRefund = 回收返還積分（預留：4-B 只存數字，尚未接到回收爐）
 const MORTAL = { power: [26, 34], hp: [90, 110], defense: [8, 14], speed: [8, 14], luck: [8, 14] };
 export const RANKS = {
-  C: { upkeepPct: 0, ...MORTAL },
-  B: { upkeepPct: 0.25, ...MORTAL },
-  A: { upkeepPct: 0.5, ...MORTAL },
-  S: { upkeepPct: 1, ...MORTAL },
+  C: { upkeepPct: 0, growthMult: 1.0, maxGene: 1, recycleRefund: 30, ...MORTAL },
+  B: { upkeepPct: 0.25, growthMult: 1.25, maxGene: 2, recycleRefund: 80, ...MORTAL },
+  A: { upkeepPct: 0.5, growthMult: 1.6, maxGene: 3, recycleRefund: 250, ...MORTAL },
+  S: { upkeepPct: 1, growthMult: 2.0, maxGene: 4, recycleRefund: 800, ...MORTAL },
 };
 
 // 傷勢等級：索引 0~3。超過 3 = 死亡。upkeepPct = 醫藥費（基礎費的百分比；致命傷 150% 是小克依同比例推的暫定值，待確認）
@@ -250,12 +304,6 @@ export const INJURIES = [
   { name: "輕傷", restDays: 1, upkeepPct: 0.25, deathBonus: 0.2 },
   { name: "重傷", restDays: 3, upkeepPct: 0.75, deathBonus: 0.5 },
   { name: "致命傷", restDays: 7, upkeepPct: 1.5, deathBonus: 0.8 },
-];
-
-// 卡池：純隨機、不保底
-export const GACHA_POOLS = [
-  { id: "ba", name: "B~A 池", cost: 150, odds: [{ rank: "B", weight: 70 }, { rank: "A", weight: 30 }] },
-  { id: "as", name: "A~S 池", cost: 400, odds: [{ rank: "A", weight: 70 }, { rank: "S", weight: 30 }] },
 ];
 
 // 會觸發「自動暫停」的事件種類。之後的 Phase 要加新事件（許願、生小孩…）只要在這裡加一行。

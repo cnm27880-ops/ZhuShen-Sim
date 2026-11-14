@@ -32,17 +32,28 @@ export function rollTags(state) {
   ];
 }
 
-/** 商店強化 + 裝備加在某個數值（power / injuryShield / dodge）上的總和 */
+/** 商店裝備加在某個數值（power 白值 / injuryShield / dodge）上的總和（Phase 4-B 起舊商店強化已移除） */
 export function shopBonus(s, key) {
-  const upgrade = s.upgrades?.[key] ?? 0;
-  const gear = Object.values(s.gear ?? {}).reduce((n, id) => n + (getShopItem(id)?.effect?.[key] ?? 0), 0);
-  return upgrade + gear;
+  return Object.values(s.gear ?? {}).reduce((n, id) => n + (getShopItem(id)?.effect?.[key] ?? 0), 0);
 }
 
-/** 套上強化、裝備、標籤後的戰力（基礎戰力 stats.power 不會被改動）：(基礎 + 強化 + 裝備) × (1 + 標籤%) */
+/** 本體值：初始基礎 + 強化累計 + 頓悟累計（這三項都已直接累加在 stats.power）+ 子嗣繼承值 */
+export function bodyPower(s) {
+  return s.stats.power + (s.inheritPower ?? 0);
+}
+
+/** 基因鎖的本體戰力乘區（×1.0 ~ ×23.0）；只乘本體值，不乘裝備白值 */
+export function genePowerMult(s) {
+  return CONFIG.gene.tiers[s.geneLock ?? 0]?.powerMult ?? 1;
+}
+
+/**
+ * 有效戰力（Phase 4-B 公式）：max(1, round((本體值 × 基因鎖乘區 + 武器防具白值) × (1 + 戰力詞條% + 心情%)))
+ * 基礎戰力 stats.power 不會被這個函式改動。
+ */
 export function effectivePower(s) {
   const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0) + moodPowerPct(s);
-  return Math.max(1, Math.round((s.stats.power + shopBonus(s, "power")) * (1 + pct)));
+  return Math.max(1, Math.round((bodyPower(s) * genePowerMult(s) + shopBonus(s, "power")) * (1 + pct)));
 }
 
 /** 心情狀態（許願系統）對戰力的加成：不爽 -10% 之類，數字在 CONFIG.wish.moods */
