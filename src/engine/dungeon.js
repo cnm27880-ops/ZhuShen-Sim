@@ -1,10 +1,11 @@
 // 副本：成功率公式、逐房間檢定、傷亡、結算。
-// 公式（計畫第 5.8 節）：
-//   房間通過率 = (小隊總戰力 / 副本推薦戰力) × 50% + 關係加成 + 標籤與環境相性
-//   （另外：首次開荒 -10%、重打有情報 +5%；賭徒型標籤每房間再隨機浮動）
+// 公式（Phase 4-A 飽和公式）：
+//   房間通過率 = 0.85 × P ÷ (P + R × 0.55) + 情報條 + 關係加成 + 標籤與環境相性 + 心情
+//   P = 小隊總戰力、R = 推薦戰力；情報條每個副本獨立（-3% 起，每結算一場 +1.5%，上限 +9%）
+//   房數與過關門檻依章節（CONFIG.dungeon.chapters）；賭徒型標籤每房間再隨機浮動
 
 import { CONFIG, INJURIES } from "../data/config.js";
-import { getDungeon } from "../data/dungeons.js";
+import { DUNGEONS, getDungeon } from "../data/dungeons.js";
 import { ENV_TAGS, getEnvTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
 import { wishesAfterRun } from "./wishes.js";
@@ -12,7 +13,7 @@ import { godAfterRun } from "./godEvents.js";
 import { effectivePower, moodPassBonus, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf } from "./tags.js";
 import { partyRelationBonus, pickClash, clashText, afterClash, afterDeath, findProtector } from "./relations.js";
 import { logText } from "./templates.js";
-import { emit, setInjury, killSamsarite, checkGameOver } from "./core.js";
+import { emit, setInjury, killSamsarite, checkGameOver, currentDay } from "./core.js";
 import { collectionEffects, collectionPassBonus } from "./shop.js";
 
 /** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
@@ -25,12 +26,31 @@ export function tagBonus(state, party, dungeon, env = null) {
   return tagPassBonus(party, dungeon, env) + (env?.passMod ?? 0) + collectionPassBonus(state, dungeon);
 }
 
-/** 副本情報：通關過一次就有情報（重打 +5%）；沒通關過就是首次開荒（-10%） */
+/** 這個副本有沒有通關過（沒通關過 = 首次開荒：傷勢表較重；首通在結算時判定） */
 export function hasIntel(state, dungeon) {
   return (state.dungeonStats[dungeon.id]?.clears ?? 0) > 0;
 }
+/** 情報條：每個副本獨立，沒打過是 CONFIG.dungeon.intel.start */
 export function intelBonus(state, dungeon) {
-  return hasIntel(state, dungeon) ? CONFIG.dungeon.replayBonus : -CONFIG.dungeon.firstClearPenalty;
+  return state.dungeonStats[dungeon.id]?.intel ?? CONFIG.dungeon.intel.start;
+}
+
+/** 副本所屬章節的設定 { rooms, toClear } */
+export function chapterOf(dungeon) {
+  return CONFIG.dungeon.chapters[dungeon.chapter - 1];
+}
+export function roomCount(dungeon) {
+  return dungeon.rooms.length;
+}
+export function roomsToClear(dungeon) {
+  return chapterOf(dungeon).toClear;
+}
+/** 空間等級 ≥ 章節才解鎖 */
+export function isUnlocked(state, dungeon) {
+  return dungeon.chapter <= (state.spaceLevel ?? 1);
+}
+export function unlockedDungeons(state) {
+  return DUNGEONS.filter((d) => isUnlocked(state, d));
 }
 
 /** 這一次通關的獎勵倍率（獎勵遞減 × 標籤加成 × 環境倍率）。不含首次開荒的固定加分 */
@@ -46,13 +66,19 @@ export function partyPower(party) {
   return party.reduce((sum, s) => sum + effectivePower(s), 0);
 }
 
+/** 飽和公式的戰力基礎率：scale × P ÷ (P + R × k) */
+export function powerRate(power, recommendedPower) {
+  const { scale, k } = CONFIG.dungeon.saturation;
+  return power <= 0 ? 0 : (scale * power) / (power + recommendedPower * k);
+}
+
 /** env：本次副本的環境標籤（規劃自動派遣時還沒抽，傳 null）；swing：標籤的隨機浮動 */
-export function roomPassRate(state, party, dungeon, env = null, swing = 0, firstTime = null) {
+export function roomPassRate(state, party, dungeon, env = null, swing = 0, intelLocked = null) {
   if (party.length === 0) return 0;
-  // firstTime：並行副本在「開場那一刻」就鎖定首次開荒／重打（null = 看目前有沒有情報）
-  const intel = firstTime === null ? intelBonus(state, dungeon) : firstTime ? -CONFIG.dungeon.firstClearPenalty : CONFIG.dungeon.replayBonus;
+  // intelLocked：並行副本在「開場那一刻」就鎖定情報條（null = 看目前的情報條）
+  const intel = intelLocked ?? intelBonus(state, dungeon);
   const raw =
-    (partyPower(party) / dungeon.recommendedPower) * CONFIG.dungeon.basePassRate +
+    powerRate(partyPower(party), dungeon.recommendedPower) +
     relationBonus(state, party) +
     tagBonus(state, party, dungeon, env) +
     moodPassBonus(party) +
@@ -76,7 +102,7 @@ export function chanceAtLeast(n, k, p) {
 /** 預估通關率（不考慮中途有人死掉導致戰力下降，所以是樂觀估計） */
 export function clearChance(state, party, dungeon, env = null) {
   const p = roomPassRate(state, party, dungeon, env);
-  return chanceAtLeast(CONFIG.dungeon.rooms, CONFIG.dungeon.roomsToClear, p);
+  return chanceAtLeast(roomCount(dungeon), roomsToClear(dungeon), p);
 }
 
 function partyOf(state, run) {
@@ -87,6 +113,7 @@ function partyOf(state, run) {
 export function startRun(state, dungeonId, partyIds) {
   const dungeon = getDungeon(dungeonId);
   if (!dungeon) return { ok: false, reason: "找不到這個副本" };
+  if (!isUnlocked(state, dungeon)) return { ok: false, reason: `第 ${dungeon.chapter} 章還沒解鎖（空間 Lv.${dungeon.chapter} 才能進）` };
   if (partyIds.length < 1 || partyIds.length > CONFIG.partyMax) {
     return { ok: false, reason: `一隊要 1~${CONFIG.partyMax} 人` };
   }
@@ -101,12 +128,13 @@ export function startRun(state, dungeonId, partyIds) {
     s.runs += 1;
     enteredInjury[s.id] = s.injury; // 記住「帶傷出征」的等級，用來算死亡率加成
   }
-  const stats = (state.dungeonStats[dungeonId] ??= { attempts: 0, clears: 0 });
+  const intel = intelBonus(state, dungeon); // 開場鎖定，結算才加情報
+  const stats = (state.dungeonStats[dungeonId] ??= { attempts: 0, clears: 0, intel });
   stats.attempts += 1;
 
   const env = pick(state, ENV_TAGS); // 每次進副本隨機抽一個環境標籤
   const firstTime = !hasIntel(state, dungeon);
-  const run = { id: state.nextRunId++, startTick: state.tick, dungeonId, envId: env.id, firstTime, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
+  const run = { id: state.nextRunId++, startTick: state.tick, dungeonId, envId: env.id, firstTime, intel, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
   state.runs.push(run);
   emit(
     state,
@@ -126,7 +154,7 @@ export function startRun(state, dungeonId, partyIds) {
 
 /** 這場副本此刻該不該走下一個房間（每 roomTicks 個時段走一間，所有副本共用同一個時間） */
 export function roomDue(state, run) {
-  return run.roomIndex < CONFIG.dungeon.rooms && state.tick >= run.startTick + run.roomIndex * CONFIG.roomTicks;
+  return run.roomIndex < roomCount(getDungeon(run.dungeonId)) && state.tick >= run.startTick + run.roomIndex * CONFIG.roomTicks;
 }
 
 /** 走一個房間（= 0.2 天）。只結算房間，不推進時間；時間由 dispatch.js 的 step() 統一推進。 */
@@ -136,9 +164,9 @@ export function stepRun(state, run = state.runs[0]) {
   const room = dungeon.rooms[run.roomIndex];
   const party = partyOf(state, run);
   const env = getEnvTag(run.envId) ?? null;
-  const progress = `[${dungeon.name}・${(run.roomIndex + 1) * 20}%・${room.name}]`;
+  const progress = `[${dungeon.name}・${Math.round(((run.roomIndex + 1) / roomCount(dungeon)) * 100)}%・${room.name}]`;
   const clash = pickClash(state, party, run.roomIndex); // 仇人／背刺者：先打自己人，這個房間算失敗
-  const passed = clash ? false : rand(state) < roomPassRate(state, party, dungeon, env, tagSwing(state, party), run.firstTime);
+  const passed = clash ? false : rand(state) < roomPassRate(state, party, dungeon, env, tagSwing(state, party), run.intel);
 
   if (clash) {
     emit(state, "clash", `${progress} ${clashText(state, clash)}`);
@@ -155,9 +183,9 @@ export function stepRun(state, run = state.runs[0]) {
   run.roomIndex += 1;
 }
 
-/** 這場副本是否結束：時間到（一場副本固定 = 1 天；全滅的也要等時間過完才結算，剩下的房間不用走） */
+/** 這場副本是否結束：時間到（房數 × roomTicks；全滅的也要等時間過完才結算，剩下的房間不用走） */
 export function runIsOver(state, run) {
-  return state.tick >= run.startTick + CONFIG.dungeon.rooms * CONFIG.roomTicks;
+  return state.tick >= run.startTick + roomCount(getDungeon(run.dungeonId)) * CONFIG.roomTicks;
 }
 
 /** 依開場順序，讓所有「該走房間」的副本各走一間（順序固定，亂數才可重現） */
@@ -213,10 +241,15 @@ function finishRun(state, run) {
   const dungeon = getDungeon(run.dungeonId);
   const survivors = partyOf(state, run);
   const passedCount = run.results.filter(Boolean).length;
-  const success = survivors.length > 0 && passedCount >= CONFIG.dungeon.roomsToClear;
+  const success = survivors.length > 0 && passedCount >= roomsToClear(dungeon);
   let reward = 0;
   let specialReward = null;
   let dropDesc = "";
+  let levelUp = null;
+  // 情報條：不論成敗，每結算一場就累積（同副本多場依結算順序各加一次）
+  const stats = state.dungeonStats[run.dungeonId];
+  const ic = CONFIG.dungeon.intel;
+  stats.intel = Math.min(ic.max, (stats.intel ?? ic.start) + ic.perRun);
 
   // 首通在「結算時」才判定：同副本同時開多場，先結算的吃首通，後結算的視為重打
   const firstClear = success && !hasIntel(state, dungeon);
@@ -224,14 +257,24 @@ function finishRun(state, run) {
     const env = getEnvTag(run.envId) ?? null;
     reward = Math.round(dungeon.reward * rewardMultiplier(state, dungeon, survivors, env));
     if (firstClear) {
-      reward += CONFIG.dungeon.firstClearBonus;
-      const drop = pick(state, dungeon.specialRewards);
-      specialReward = drop.name;
-      dropDesc = drop.desc;
-      state.collection.push(drop.id);
+      reward += Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct);
+      if (dungeon.specialRewards?.length) {
+        const drop = pick(state, dungeon.specialRewards);
+        specialReward = drop.name;
+        dropDesc = drop.desc;
+        state.collection.push(drop.id);
+      }
+      // 首通本章尾王：空間升 1 級（解鎖下一章），記下是第幾天
+      if (dungeon.boss && dungeon.chapter >= state.spaceLevel) {
+        state.chapterClearDay[dungeon.chapter] = currentDay(state);
+        if (state.spaceLevel < CONFIG.space.maxLevel) {
+          state.spaceLevel += 1;
+          levelUp = state.spaceLevel;
+        }
+      }
     }
     state.points += reward;
-    state.dungeonStats[run.dungeonId].clears += 1;
+    stats.clears += 1;
   } else {
     // 失敗但活著回來：一定帶傷
     for (const s of survivors) if (s.injury === 0) setInjury(s, 1);
@@ -251,6 +294,8 @@ function finishRun(state, run) {
     specialReward,
     envName: getEnvTag(run.envId)?.name ?? null,
     passedCount,
+    rooms: roomCount(dungeon),
+    levelUp,
     results: run.results,
     deaths: run.deaths,
     survivors: survivors.map((s) => ({ name: s.name, injury: s.injury })),
@@ -261,11 +306,13 @@ function finishRun(state, run) {
   const partyIds = run.partyIds;
   state.runs = state.runs.filter((r) => r.id !== run.id);
 
-  const vars = { dungeon: dungeon.name, passed: passedCount, rooms: CONFIG.dungeon.rooms, reward };
+  const vars = { dungeon: dungeon.name, passed: passedCount, rooms: roomCount(dungeon), reward };
   let text;
   if (success) {
     text = logText(state, firstClear ? "runFirstClear" : "runClear", vars);
     if (specialReward) text += "\n" + logText(state, "runSpecial", { item: specialReward, desc: dropDesc });
+    if (firstClear && dungeon.boss && dungeon.chapter === CONFIG.space.maxLevel) text += "\n" + logText(state, "mainClear", { day: currentDay(state) });
+    else if (levelUp) text += "\n" + logText(state, "spaceLevelUp", { level: levelUp, chapter: levelUp });
   } else {
     text = logText(state, survivors.length > 0 ? "runFail" : "runWipe", vars);
   }

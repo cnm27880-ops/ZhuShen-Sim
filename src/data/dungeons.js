@@ -1,16 +1,52 @@
-// 副本資料表。之後要加到 20 個副本，只要在這個陣列繼續往下加物件即可。
-// rooms：5 個房間，每個房間有「通過」與「失敗」兩種日誌文字。{name} 會被換成受害者名字。
+// 副本資料表（Phase 4-A：五章 × 4 關 = 20 個副本）。
+// chapter：第幾章（1~5，空間等級 ≥ 章節才解鎖）；boss：true = 本章尾王（首通讓空間升 1 級）。
+// rooms：房間陣列，長度必須等於 CONFIG.dungeon.chapters 該章的 rooms（5/7/8/10/12，測試會檢查）；
+//   每個房間有「通過」與「失敗」兩種日誌文字，{name} 會被換成受害者名字。
+// recommendedPower／reward：基準草稿（露葵 2026-11-14 給的表，待 npm run sim 驗證）。
+// 第 1 章前 3 關沿用舊的 3 個副本；其他 17 關目前是佔位資料（名字、房間文字、特殊獎勵之後再補，只改這個檔案）。
 // 全部是原創世界觀。
+
+import { CONFIG } from "./config.js";
+
+// 佔位房間：n 間通用文字，最後一間是首領房
+function placeholderRooms(n) {
+  return Array.from({ length: n }, (_, i) => ({
+    name: i === n - 1 ? "首領房（待命名）" : `第 ${i + 1} 區（待命名）`,
+    pass: "小隊有驚無險地通過了這一區。（佔位文字）",
+    fail: "{name}在混亂中被打中了。（佔位文字）",
+  }));
+}
+
+const PLACEHOLDER_GENRES = ["靈異", "科幻", "奇幻"];
+
+// 佔位副本：章節、第幾關（1~4，第 4 關是尾王）、推薦戰力、基礎獎勵
+function placeholder(chapter, slot, recommendedPower, reward) {
+  const boss = slot === 4;
+  return {
+    id: `ch${chapter}_${slot}`,
+    name: boss ? `第 ${chapter} 章尾王（待命名）` : `第 ${chapter} 章・第 ${slot} 關（待命名）`,
+    chapter,
+    boss,
+    genre: PLACEHOLDER_GENRES[(chapter + slot) % PLACEHOLDER_GENRES.length],
+    icon: boss ? "👹" : "🌀",
+    recommendedPower,
+    reward,
+    specialRewards: [],
+    intro: "（佔位副本，世界觀待補）",
+    rooms: placeholderRooms(CONFIG.dungeon.chapters[chapter - 1].rooms),
+  };
+}
 
 export const DUNGEONS = [
   {
     id: "ghost_village",
     name: "霧隱荒村",
+    chapter: 1,
+    boss: false,
     genre: "靈異",
-    difficulty: "簡單",
     icon: "🏚️",
-    recommendedPower: 150,
-    reward: 100,
+    recommendedPower: 90,
+    reward: 95,
     specialRewards: [
       { id: "ghost_talisman", name: "鬼道術法・引魂符", desc: "靈異副本通過率 +8%。", effect: { genreBonus: { 靈異: 0.08 } } },
       { id: "ghost_seal", name: "鬼道術法・封煞咒", desc: "全員受傷時多 10% 機率少受一級。", effect: { injuryShield: 0.1 } },
@@ -28,11 +64,12 @@ export const DUNGEONS = [
   {
     id: "silent_ark",
     name: "沉默方舟號",
+    chapter: 1,
+    boss: false,
     genre: "科幻",
-    difficulty: "中等",
     icon: "🚀",
-    recommendedPower: 5000,
-    reward: 200,
+    recommendedPower: 130,
+    reward: 125,
     specialRewards: [
       { id: "ark_accelerator", name: "科技改造・神經加速器", desc: "所有副本通過率 +4%。", effect: { passBonus: 0.04 } },
       { id: "ark_prosthetic", name: "義體・強化義肢", desc: "全員受傷時多 15% 機率少受一級。", effect: { injuryShield: 0.15 } },
@@ -50,11 +87,12 @@ export const DUNGEONS = [
   {
     id: "ember_war",
     name: "燼塔戰爭",
+    chapter: 1,
+    boss: false,
     genre: "奇幻",
-    difficulty: "困難",
     icon: "🔥",
-    recommendedPower: 100000,
-    reward: 400,
+    recommendedPower: 185,
+    reward: 165,
     specialRewards: [
       { id: "ember_firebolt", name: "魔法・火焰箭", desc: "奇幻副本通過率 +10%。", effect: { genreBonus: { 奇幻: 0.1 } } },
       { id: "ember_staff", name: "魔杖・燼木法杖", desc: "所有副本通關積分 +10%。", effect: { rewardPct: 0.1 } },
@@ -69,6 +107,23 @@ export const DUNGEONS = [
       { name: "塔頂核心", pass: "核心水晶碎裂，三百年的戰爭少了一座塔。", fail: "核心暴走，{name}被魔力洪流正面吞沒。" },
     ],
   },
+  placeholder(1, 4, 260, 230),
+  placeholder(2, 1, 380, 340),
+  placeholder(2, 2, 540, 450),
+  placeholder(2, 3, 760, 600),
+  placeholder(2, 4, 1050, 820),
+  placeholder(3, 1, 1550, 1150),
+  placeholder(3, 2, 2200, 1500),
+  placeholder(3, 3, 3100, 2000),
+  placeholder(3, 4, 4400, 2700),
+  placeholder(4, 1, 6400, 3600),
+  placeholder(4, 2, 9100, 4800),
+  placeholder(4, 3, 12800, 6400),
+  placeholder(4, 4, 18000, 8600),
+  placeholder(5, 1, 26000, 11500),
+  placeholder(5, 2, 37000, 15000),
+  placeholder(5, 3, 52000, 20000),
+  placeholder(5, 4, 72000, 28000),
 ];
 
 export function getDungeon(id) {

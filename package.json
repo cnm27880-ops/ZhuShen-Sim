@@ -6,6 +6,7 @@
   "description": "主神空間主管模擬器 —— 養成管理模擬器（純前端，無外部依賴）",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "sim": "node scripts/sim.mjs"
   }
 }

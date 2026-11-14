@@ -164,6 +164,16 @@ export const LOGS = {
     "🏆 【{dungeon}】首次通關（{passed}/{rooms} 房間），+{reward} 分。",
     "🏆 【{dungeon}】首次攻略成功（{passed}/{rooms} 房間），入帳 {reward} 分。這座副本有情報了。",
   ],
+  // ───────── 空間等級（Phase 4-A；{level} 新等級、{chapter} 解鎖的章節、{day} 第幾天）─────────
+  spaceLevelUp: [
+    "🏛️ 尾王倒下，主神空間升到 Lv.{level}！第 {chapter} 章解鎖。主神：「很好，房租也跟著漲了。」",
+    "🏛️ 主神空間擴建完成（Lv.{level}），第 {chapter} 章的副本開放了。維持費與高利貸上限同步上調。",
+    "🏛️ 空間等級提升為 Lv.{level}。主神在第 {chapter} 章的入口掛上了「歡迎光臨」的牌子，字是用血寫的。",
+  ],
+  mainClear: [
+    "👑 第 {day} 天，主線五章全數首通！主神鼓掌三下：「接下來，我們來點更刺激的。」",
+    "👑 主線通關（第 {day} 天）。主神打了個哈欠：「終於有點意思了。」",
+  ],
   runSpecial: [
     "🎁 首通特殊獎勵：【{item}】已永久生效。{desc}",
     "🎁 首通掉落了【{item}】，從現在起永久生效。{desc}",

@@ -157,10 +157,10 @@ test("臨時開銷稅：照辦扣積分，債務不會低於高利貸上限", ()
   assert.equal(state.points, before - ev.params.loss);
   assert.equal(pendingGodEvent(state), null);
 
-  state.points = CONFIG.debtLimit + 10;
+  state.points = CONFIG.space.debtLimit[0] + 10;
   forceEvent(state, "tax");
   acceptGodEvent(state);
-  assert.equal(state.points, CONFIG.debtLimit);
+  assert.equal(state.points, CONFIG.space.debtLimit[0]);
 });
 
 test("電擊抽查：照辦理智下降（不低於 0）", () => {
@@ -244,7 +244,7 @@ test("化解費比不化解的損失便宜（設定檢查）", () => {
 test("積分不夠（連高利貸都借不到）就不能化解，事件還在", () => {
   const { state } = setup();
   forceEvent(state, "shock");
-  state.points = CONFIG.debtLimit;
+  state.points = CONFIG.space.debtLimit[0];
   const r = resolveGodEvent(state);
   assert.equal(r.ok, false);
   assert.ok(pendingGodEvent(state));

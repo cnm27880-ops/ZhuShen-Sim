@@ -21,6 +21,7 @@ import {
   checkGameOver,
   forgetRelations,
   announceDebtIfNew,
+  debtLimitOf,
 } from "./core.js";
 
 const R = () => CONFIG.relations;
@@ -300,7 +301,7 @@ export function punish(state, a, type = weighted(state, R().punish.weights).type
   if (type === "tag" && (a.tags ?? []).length === 0) type = "points";
   if (type === "points") {
     const wasInDebt = state.points < 0;
-    state.points = Math.max(CONFIG.debtLimit, state.points - R().punish.points);
+    state.points = Math.max(debtLimitOf(state), state.points - R().punish.points);
     emit(state, "relation", logText(state, "punishPoints", { A: a, points: R().punish.points }));
     announceDebtIfNew(state, wasInDebt);
   } else if (type === "tag") {

@@ -97,7 +97,7 @@ test("想吃好的：答應當下扣積分並完成 → 高興；積分不夠不
 
   const t = setup();
   const w2 = forceWish(t.state, t.s, "eat");
-  t.state.points = CONFIG.debtLimit + 1;
+  t.state.points = CONFIG.space.debtLimit[0] + 1;
   assert.equal(checkAccept(t.state, w2).ok, false);
   assert.equal(acceptWish(t.state, w2.id).ok, false);
   assert.equal(t.state.wishes.length, 1, "沒答應成功，許願還在");
@@ -153,21 +153,22 @@ test("想放假：答應後不能派遣（手動／自動）、休完算完成 �
 test("想去副本：只會選推薦戰力不超過上限的副本；通關完成、沒通關失敗、死了取消", () => {
   const { state, s } = setup(3);
   const w = forceWish(state, s, "dungeon");
-  assert.equal(w.params.dungeonId, "ghost_village");
-  assert.ok(getDungeon(w.params.dungeonId).recommendedPower <= CONFIG.wish.dungeonPowerCap);
+  const did = w.params.dungeonId; // Phase 4-A 起上限內有霧隱荒村（R 90）與沉默方舟號（R 130）
+  assert.ok(["ghost_village", "silent_ark"].includes(did), did);
+  assert.ok(getDungeon(did).recommendedPower <= CONFIG.wish.dungeonPowerCap);
   acceptWish(state, w.id);
   assert.equal(w.status, "active");
   // 他沒出征 → 不結算
-  wishesAfterRun(state, "ghost_village", true, [state.samsarites[1].id], [state.samsarites[1].id]);
+  wishesAfterRun(state, did, true, [state.samsarites[1].id], [state.samsarites[1].id]);
   assert.equal(state.wishes.length, 1);
-  wishesAfterRun(state, "ghost_village", true, [s.id], [s.id]);
+  wishesAfterRun(state, did, true, [s.id], [s.id]);
   assert.equal(state.wishes.length, 0);
   assert.equal(s.mood.kind, "happy");
 
   const b = state.samsarites[1];
   const w2 = forceWish(state, b, "dungeon");
   acceptWish(state, w2.id);
-  wishesAfterRun(state, "ghost_village", false, [b.id], [b.id]);
+  wishesAfterRun(state, w2.params.dungeonId, false, [b.id], [b.id]);
   assert.equal(b.mood.kind, "upset");
 
   const c = state.samsarites[2];

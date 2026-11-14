@@ -1,35 +1,51 @@
 // 主神空間主管模擬器 —— 所有「可調整的數字」都集中在這個檔案。
 // 想調整遊戲平衡（價格、維持費、傷勢天數…）只要改這裡，不用動其他程式碼。
 // 數字來源：docs/GAME_DESIGN_PLAN.md 第 19 節；標了「計畫未定」的是 Phase 1 先填的暫定值。
+// Phase 4-A（2026-11-14 露葵拍板）：空間等級、五章 20 關、飽和公式、情報條、五維統一。標「待 sim 驗證」的是基準草稿，用 npm run sim 校正。
 
 export const CONFIG = {
   // ── 時間 ──
   ticksPerDay: 10, // 一天切成 10 個時段（tick）
   tickMs: 2000, // 1x 速度下，每個時段的真實毫秒數（一天 = 20 秒）
   roomMs: 2400, // 1x 速度下，副本每走一個房間的真實毫秒數
-  roomTicks: 2, // 每個房間 = 0.2 天 = 2 個時段（5 個房間剛好 1 天）
+  roomTicks: 2, // 每個房間 = 0.2 天 = 2 個時段（5 房 = 1 天、7 房 = 1.4 天…12 房 = 2.4 天；Phase 4-A 起副本長度跟房數走）
   speeds: [1, 2, 5, 10],
 
-  // ── 開局（計畫未定）──
-  startingPoints: 500,
+  // ── 開局（Phase 4-A：送 3 個 C 級 + 600 分，夠補 1~2 抽並留緩衝）──
+  startingPoints: 600,
   startingSamsarites: 3,
   startingRank: "C",
 
+  // ── 空間等級（Phase 4-A）：Lv.1 開局，每首通一章尾王升 1 級（最高 Lv.5）。索引 0 = Lv.1 ──
+  space: {
+    maxLevel: 5,
+    upkeepBase: [8, 16, 35, 80, 180], // 每人每天基礎維持費；階級／傷勢附加費是它的百分比（見 RANKS.upkeepPct、INJURIES.upkeepPct）
+    debtLimit: [-500, -1500, -4500, -12000, -30000], // 主神高利貸上限（破產線）
+  },
+
   // ── 經濟 ──
-  upkeepBase: 10, // 每人每天基礎維持費
-  debtLimit: -500, // 主神高利貸上限
   debtShockSanity: 10, // 負債期間每天電擊一人，理智 -10
   recycle: { points: 30, sanityLoss: 5 }, // 主神回收爐（理智扣多少：計畫未定）
-  // 商店 4 階的解鎖門檻：「累積花費」（抽卡也算）達到才開放。索引 0 = Tier 1。計畫書建議 0/500/2000/5000，這裡用開發者指定的值
-  shopTierUnlock: [0, 1000, 5000, 10000],
+  // 商店 5 階的解鎖門檻：「累積花費」（抽卡也算）達到才開放。索引 0 = Tier 1（Phase 4-A）
+  shopTierUnlock: [0, 600, 3000, 12000, 45000],
   shopDodgeMax: 0.9, // 閃避機率上限（標籤 + 商店加成加起來）
 
   // ── 副本 ──
   partyMax: 4, // 一隊最多幾人（計畫未定）
   dungeon: {
-    rooms: 5,
-    roomsToClear: 3, // 5 個房間要通過幾個才算通關（計畫寫法有歧義，見 README「待確認」）
-    basePassRate: 0.5, // 計畫書 5.8：戰力剛好等於推薦戰力時，單房通過率只有 50%
+    // 五章的房數與過關門檻（直接寫死，不用公式，避免 6 房／12 房無條件進位變太難）。索引 0 = 第 1 章
+    // 副本資料（src/data/dungeons.js）的 rooms 陣列長度必須等於該章 rooms（測試會檢查）
+    chapters: [
+      { rooms: 5, toClear: 3 },
+      { rooms: 7, toClear: 4 },
+      { rooms: 8, toClear: 5 },
+      { rooms: 10, toClear: 6 },
+      { rooms: 12, toClear: 7 },
+    ],
+    // 飽和公式：單房戰力基礎率 = scale × P ÷ (P + R × k)。P = 小隊總戰力、R = 推薦戰力；戰力再高也只會逼近 scale
+    saturation: { scale: 0.85, k: 0.55 },
+    // 情報條：每個副本獨立。第一次 start，之後每結算一場（不論成敗）+perRun，最多 max（8 場刷滿）
+    intel: { start: -0.03, perRun: 0.015, max: 0.09 },
     minPassRate: 0.05,
     maxPassRate: 0.95,
     // 房間失敗時，受害者傷勢「加重幾級」的機率權重（計畫只寫「隨機決定」）
@@ -45,16 +61,25 @@ export const CONFIG = {
       { levels: 2, weight: 38 },
       { levels: 3, weight: 17 },
     ],
-    firstClearBonus: 50, // 首次通關額外 +50 分
-    replayBonus: 0.05, // 重打已通關副本（有情報）通過率 +5%（計畫 5.5）
+    firstClearBonusPct: 0.5, // 首次通關額外 + 基礎獎勵 × 50%（舊版固定 +50 分，對後期關卡太少；待 sim 驗證）
     // 獎勵遞減（計畫 5.7）：用「這是第幾次通關」查表，從上往下第一個符合的生效
     rewardTiers: [
       { upTo: 1, mult: 1.0 }, // 首次通關：基礎值（另外加 firstClearBonus）
       { upTo: 3, mult: 1.2 },
       { upTo: 5, mult: 1.0 },
       { upTo: 10, mult: 0.8 },
-      { upTo: Infinity, mult: 0.6 }, // 地板價
+      { upTo: Infinity, mult: 0.75 }, // 地板價（刷圖低保倍率，Phase 4-A 由 0.6 調為 0.75）
     ],
+  },
+
+  // ── 主神強制血腥任務（Phase 4-D 才會用到，4-A 先記錄拍板數字）──
+  forcedMission: {
+    powerMult: 0.55, // R = max(本章基準, 前 4 強總戰力 × 0.55)，派最強 4 人約 77% 通關
+    rooms: 5,
+    toClear: 3,
+    passCap: 0.8, // 單房通過率上限；不吃情報加成
+    baseR: [220, 850, 3600, 15000, 60000], // 各空間等級的基準 R（待 sim 驗證）
+    reward: [260, 900, 3000, 9500, 30000],
   },
 
   // ── 標籤（Phase 2）──
@@ -209,20 +234,22 @@ export const CONFIG = {
   logMax: 300,
 };
 
-// 階級：維持費加成 + 各屬性的隨機範圍（屬性範圍：計畫未定）
+// 階級：維持費附加（基礎費的百分比）+ 各屬性的隨機範圍。
+// Phase 4-A：所有人入隊時五維統一拉平為零階凡人；階級之後只決定成長倍率與基因鎖上限（Phase 4-B）。
+const MORTAL = { power: [26, 34], hp: [90, 110], defense: [8, 14], speed: [8, 14], luck: [8, 14] };
 export const RANKS = {
-  C: { upkeep: 0, power: [34, 42], hp: [80, 100], defense: [8, 12], speed: [8, 12], luck: [1, 10] },
-  B: { upkeep: 5, power: [42, 54], hp: [110, 140], defense: [12, 18], speed: [10, 16], luck: [1, 12] },
-  A: { upkeep: 10, power: [68, 84], hp: [150, 190], defense: [18, 26], speed: [14, 22], luck: [1, 15] },
-  S: { upkeep: 20, power: [105, 135], hp: [210, 260], defense: [26, 38], speed: [20, 30], luck: [1, 20] },
+  C: { upkeepPct: 0, ...MORTAL },
+  B: { upkeepPct: 0.25, ...MORTAL },
+  A: { upkeepPct: 0.5, ...MORTAL },
+  S: { upkeepPct: 1, ...MORTAL },
 };
 
-// 傷勢等級：索引 0~3。超過 3 = 死亡。
+// 傷勢等級：索引 0~3。超過 3 = 死亡。upkeepPct = 醫藥費（基礎費的百分比；致命傷 150% 是小克依同比例推的暫定值，待確認）
 export const INJURIES = [
-  { name: "無傷", restDays: 0, upkeep: 0, deathBonus: 0 },
-  { name: "輕傷", restDays: 1, upkeep: 5, deathBonus: 0.2 },
-  { name: "重傷", restDays: 3, upkeep: 15, deathBonus: 0.5 },
-  { name: "致命傷", restDays: 7, upkeep: 30, deathBonus: 0.8 },
+  { name: "無傷", restDays: 0, upkeepPct: 0, deathBonus: 0 },
+  { name: "輕傷", restDays: 1, upkeepPct: 0.25, deathBonus: 0.2 },
+  { name: "重傷", restDays: 3, upkeepPct: 0.75, deathBonus: 0.5 },
+  { name: "致命傷", restDays: 7, upkeepPct: 1.5, deathBonus: 0.8 },
 ];
 
 // 卡池：純隨機、不保底

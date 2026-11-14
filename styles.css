@@ -204,6 +204,7 @@ main { flex: 1; min-height: 0; display: flex; gap: 14px; padding: 14px 18px; }
 .route-node.pass { border-color: #69db7c; background: #2b8a3e; color: #fff; }
 .route-node.fail { border-color: #ff8787; background: #c92a2a; color: #fff; animation: shake 0.4s; }
 .route-node-label { position: absolute; top: 38px; width: 96px; text-align: center; font-size: 11px; font-weight: 400; color: rgba(255, 255, 255, 0.7); }
+.route.dense .route-node-label { display: none; } /* 房間超過 6 間（第 2 章起）：名字會擠在一起，改成滑鼠移到節點上看 */
 .route-party { position: absolute; top: 60%; display: flex; gap: 0; transform: translate(-50%, -112%); transition: left calc(1.2s / var(--speed, 1)) ease-in-out; }
 .route-party .mini { position: static; margin: 0; width: 38px; cursor: default; }
 .route-party .mini-name { color: #e9ecf3; background: rgba(0, 0, 0, 0.35); }

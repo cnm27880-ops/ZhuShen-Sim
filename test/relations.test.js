@@ -194,7 +194,7 @@ test("主神懲罰：扣 500 分（不低於高利貸上限）／洗標籤／抹
   a.tags = ["born_strong", "nimble"];
   state.points = 100;
   punish(state, a, "points");
-  assert.equal(state.points, Math.max(CONFIG.debtLimit, 100 - 500));
+  assert.equal(state.points, Math.max(CONFIG.space.debtLimit[0], 100 - 500));
   punish(state, a, "tag");
   assert.equal(a.tags.length, 1);
   punish(state, a, "erase");
@@ -327,6 +327,7 @@ test("借刀殺人的破壞裝備：下次出征被打中更容易重傷、出�
 
 test("自動派遣：開著「禁止仇恨／死敵同隊」就不會把仇人編在一起", () => {
   const { state, people } = setup(5, "A");
+  people.forEach((s) => (s.stats.power = 60)); // Phase 4-A 起階級不影響初始戰力，直接給夠打第 1 關的戰力
   bothHate(state, people[0], people[1], 85);
   bothHate(state, people[2], people[3], 85);
   state.settings.protect.noEnemies = true;
