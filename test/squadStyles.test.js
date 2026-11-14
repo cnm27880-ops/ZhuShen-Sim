@@ -63,11 +63,11 @@ test("共產流：稅後獎金 100% 絕對均分；戰死者私房錢 100% 進�
 test("共產流：老鳥（武防達最高階、無傷）捐剩餘私房錢 50%；菜鳥錢不夠買制式裝時互助金補差額", () => {
   const state = squad("communal", 3);
   const [cap, vet, rookie] = state.samsarites;
-  vet.gear = { weapon: "weapon_club", armor: "armor_cloth" }; // 一階（目前最高階 = 一階）
+  vet.gear = { weapon: "t1_01", armor: "t1_03", accessory: "t1_05", bloodline: "t1_07" }; // 一階（目前最高階 = 一階）
   vet.wallet = 100;
   rookie.wallet = 10;
   cap.wallet = 0;
-  cap.gear = { weapon: "weapon_club", armor: "armor_cloth" };
+  cap.gear = { weapon: "t1_01", armor: "t1_03", accessory: "t1_05", bloodline: "t1_07" };
   state.squad.communalFund = 500;
   dailyShopping(state);
   assert.ok(vet.wallet <= 50, `老鳥捐掉一半：${vet.wallet}`);

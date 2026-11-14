@@ -9,7 +9,8 @@
 
 import { squadMarketMult } from "./squad.js"; // 傭兵流黑市 95 折（4-E-2；循環引用只在執行時呼叫）
 import { CONFIG } from "../data/config.js";
-import { SHOP_ITEMS, getShopItem } from "../data/shopItems.js";
+import { SHOP_ITEMS, getShopItem, isNewItem } from "../data/shopItems.js";
+import { DUNGEONS } from "../data/dungeons.js";
 import { weighted } from "./rng.js";
 import { emit, spend, shopTier, currentDay, getSamsarite } from "./core.js";
 import { checkBuy, buyItem } from "./shop.js";
@@ -92,6 +93,47 @@ export function lockSlot(state, index, locked = true) {
   }
   slot.locked = true;
   return { ok: true };
+}
+
+/** 世界情報條填了幾成（0～1；情報條實際值是 -3%～+9% 的通過率加成，這裡換算成進度） */
+export function intelFill(state, worldId) {
+  const ic = CONFIG.dungeon.intel;
+  const v = state.dungeonStats?.[worldId]?.intel ?? ic.start;
+  return Math.min(1, Math.max(0, (v - ic.start) / (ic.max - ic.start)));
+}
+
+/** 已解鎖章節、情報還沒滿的世界（世界情報道具的目標） */
+export function intelTargets(state) {
+  return DUNGEONS.filter((d) => d.chapter <= (state.spaceLevel ?? 1) && !intelFull(state, d.id));
+}
+
+/** 替某世界增加情報 gainPct 個百分點（35 = 填 35%，滿格 100%）；沒打過的世界也會建立情報紀錄 */
+export function gainIntel(state, worldId, gainPct) {
+  const ic = CONFIG.dungeon.intel;
+  const stats = (state.dungeonStats[worldId] ??= { attempts: 0, clears: 0, intel: ic.start });
+  stats.intel = Math.min(ic.max, (stats.intel ?? ic.start) + (gainPct / 100) * (ic.max - ic.start));
+  return stats.intel;
+}
+
+/** 舊存檔的黑市貨架若含舊版失效商品（不在新 200 件表內）：只把那一格自動重抽，其他格不動（4-E-8 存檔相容） */
+export function refreshStaleSlots(state) {
+  const m = marketOf(state);
+  const tier = shopTier(state);
+  const taken = new Set(m.slots.filter((s) => s.itemId && isNewItem(s.itemId)).map((s) => s.itemId));
+  let n = 0;
+  m.slots = m.slots.map((slot) => {
+    if (slot.itemId && isNewItem(slot.itemId)) return slot;
+    n += 1;
+    const kind = CONFIG.market.slotPlan[slot.index];
+    const cands = poolOf(kind)
+      .filter((i) => (i.tier === tier || i.tier === tier - 1) && !taken.has(i.id))
+      .map((i) => ({ item: i, weight: i.tier === tier ? CONFIG.market.curTierWeight : CONFIG.market.prevTierWeight }));
+    if (cands.length === 0) return { index: slot.index, itemId: null, sold: true, locked: false };
+    const hit = weighted(m, cands).item;
+    taken.add(hit.id);
+    return { index: slot.index, itemId: hit.id, sold: false, locked: false };
+  });
+  return n;
 }
 
 /** 世界情報是否已滿格 */

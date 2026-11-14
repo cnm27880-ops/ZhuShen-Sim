@@ -29,6 +29,7 @@ import { addChronicle } from "./lineage.js";
 import { dramaAfterRun } from "./drama.js";
 import { rollRogueEncounter, rogueBossOf, rogueDungeon, resolveRogueFight } from "./lineage.js";
 import { squadRng } from "./squad.js";
+import { gearAfterRun } from "./gearFx.js";
 
 /** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
 export function relationBonus(state, party) {
@@ -193,6 +194,10 @@ export function startRun(state, dungeonId, partyIds, opts = {}) {
     s.runs += 1;
     enteredInjury[s.id] = s.injury; // 記住「帶傷出征」的等級，用來算死亡率加成
   }
+  // 爆發耗材（4-E-8）：全隊爆發（partyNextRunPowerMult）與個人爆發同場只取最高 1 件，不連乘；全隊戰後理智代價記在 run 上
+  const partyPct = Math.max(0, ...party.map((s) => s.runBuff?.partyPowerPct ?? 0));
+  const partySan = Math.min(0, ...party.map((s) => s.runBuff?.partyPostRunSanity ?? 0));
+  if (partyPct > 0) for (const s of party) (s.runBuff ??= {}).powerPct = Math.max(s.runBuff.powerPct ?? 0, partyPct);
   const intel = mandatory ? 0 : intelBonus(state, dungeon); // 開場鎖定，結算才加情報
   if (!mandatory) {
     const stats = (state.dungeonStats[dungeonId] ??= { attempts: 0, clears: 0, intel });
@@ -202,7 +207,7 @@ export function startRun(state, dungeonId, partyIds, opts = {}) {
   const env = mandatory ? null : pick(state, ENV_TAGS); // 每次進副本隨機抽一個環境標籤（強制任務沒有）
   const firstTime = mandatory ? false : !hasIntel(state, dungeon);
   const mutationId = slot?.mutationId ?? null;
-  const run = { id: state.nextRunId++, startTick: state.tick, dungeonId, mutationId, slotId: slot?.id ?? null, greedy: !!opts.greedy, envId: env?.id ?? null, firstTime, intel, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
+  const run = { partyPostRunSanity: partySan, id: state.nextRunId++, startTick: state.tick, dungeonId, mutationId, slotId: slot?.id ?? null, greedy: !!opts.greedy, envId: env?.id ?? null, firstTime, intel, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
   if (!mandatory) run.rogueId = rollRogueEncounter(state); // 常規副本 10% 遭遇叛逃野生 Boss 亂入最後一房（4-E-4）
   if (mandatory) {
     run.mandatory = true;
@@ -362,6 +367,17 @@ export function hurt(state, run, victim, dungeon, attacker = null) {
     dies = false; // 健康免猝死鐵律：最重只會落入致命傷
     newLevel = Math.min(newLevel, INJURIES.length - 1);
   }
+  if (dies && (victim.deathWard ?? 0) >= 1) {
+    // 替死護符（4-E-8）：消耗護符免死；一般護符改落輕傷，高階護符（fullRecover）傷勢清零並回滿理智
+    victim.deathWard = 0;
+    if (victim.deathWardFull) {
+      setInjury(victim, 0);
+      victim.stats.sanity = 100;
+    } else setInjury(victim, 1);
+    victim.deathWardFull = false;
+    emit(state, "injury", logText(state, "deathWard", { A: victim }));
+    return;
+  }
   if (dies && bondGuard(state, run, partyOf(state, run), victim)) return; // 羈絆流託付後背：夥伴替他擋下致死一刀（4-E-2）
   if (dies && rand(state) < Math.max(0, speedSaveChance(victim) + (getMutation(run.mutationId)?.speedSaveMod ?? 0))) { // 濃霧走散：鎖血率 -5%
     // 速度：極限閃避鎖血，免於死亡，改落致命傷
@@ -450,7 +466,8 @@ function finishRun(state, run) {
     reward = Math.round(reward * farmingRewardMult(state, run)); // 養殖流：肉豬陣亡每層 +20%（4-E-2）
     if (survivors.length >= 2) {
       // 同行情誼：存活隊員兩兩好感 +bondLove（吊橋效應 ×1.5；傭兵流減半），不消耗亂數
-      const bond = Math.round(CONFIG.dungeon.bondLove * (mut?.loveMult ?? 1) * squadBondMult(state));
+      const loveBonus = Math.max(0, ...survivors.map((s) => s.runBuff?.loveBonus ?? 0)); // 合群清茶等：同行好感額外加成，取最高 1 件（4-E-8）
+      const bond = Math.round(CONFIG.dungeon.bondLove * (mut?.loveMult ?? 1) * squadBondMult(state)) + loveBonus;
       for (const a of survivors) for (const b of survivors) if (a.id !== b.id) addLove(state, a, b, bond);
     }
     loot = distributeLoot(state, survivors, reward, { run, dungeon }); // 先抽稅入公庫（流派覆寫分潤見 4-E-2），其餘由存活隊員平分進私房錢（4-D-1）
@@ -467,6 +484,11 @@ function finishRun(state, run) {
     for (const s of survivors) if (s.injury === 0) setInjury(s, 1);
   }
   if (rogue?.win) loot.rogueBounty = distributeLoot(state, survivors, rogue.bounty, { run, dungeon }).tax; // 賞金也走流派分潤（4-E-4）
+  gearAfterRun(state, survivors); // 裝備被動：出戰扣理智、隨機扣隊友理智（4-E-8）
+  for (const s of survivors) {
+    if (s.runBuff?.postRunInjury) setInjury(s, Math.min(INJURIES.length - 1, s.injury + s.runBuff.postRunInjury)); // 燃血類耗材：戰後傷勢 +1
+    if (run.partyPostRunSanity) s.stats.sanity = Math.max(0, s.stats.sanity + run.partyPostRunSanity); // 全隊爆發耗材：戰後全員理智代價
+  }
   for (const s of survivors) {
     s.location = "space";
     s.runBuff = null; // 單場 buff 用完即止（4-D-2）

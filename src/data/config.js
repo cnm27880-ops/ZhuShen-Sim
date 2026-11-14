@@ -61,6 +61,7 @@ export const CONFIG = {
   shop: {
     consumableCap: 3, // 出征耗材緩衝區最多囤幾份（下次出征全部套用，單場）
     worldPassCap: 0.06, // 全隊「特產裝備綁定世界通過率加成」合計上限
+    demonTendencyChance: 0.05, // 穿著帶「入魔傾向」被動的裝備，每天獲得走火入魔詞條的機率（4-E-8；t5_36 必定入魔）
   },
   market: {
     refreshDays: 3, // 每幾天自動刷新一次 8 格黑市
@@ -92,6 +93,7 @@ export const CONFIG = {
   shopping: {
     maxActionsPerDay: 2, // 每人每天最多幾次購買／強化動作
     reservePct: 0.2, // 自主強化／敗家後，私房錢至少留這個比例當備用金
+    harmSanityBelow: 50, // 理智低於這個數字，AI 禁買會害理智的黑貨與耗材（4-E-8）
     calmBelow: 45, // 理智低於這個數字，優先買回理智耗材
     lowSanity: 45, // 理智低於這個數字算「低理智者」（愛搞事）
     dramaChance: 0.05, // 愛搞事的人，每天偷買 drama 黑貨對隊友使用的機率（4-D-7：露葵拍板由 15% 下修為 5%）
@@ -288,6 +290,7 @@ export const CONFIG = {
 
   // ── 跨代子嗣、先人遺物、叛逃野生 Boss（Phase 4-E-4；引擎在 engine/lineage.js）──
   lineage: {
+    pregnancyItemAffinity: 60, // 催生黑貨的對象：雙向淨好感 >= 60（4-E-8）
     pairAffinity: 75, // 雙向淨好感 >= 75（而且都不是重傷以上）才有機會孕育
     birthChance: 0.02, // 符合條件的一對，每天孕育機率（4-E-7：5%→2%，目標自然演化每局子嗣 4～6）
     cooldownDays: 60, // 同一對孕育冷卻（4-E-7：30→60；3-F 戀人生子與孕育共用同一把雙親冷卻鎖）

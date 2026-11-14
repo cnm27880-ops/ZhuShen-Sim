@@ -18,7 +18,7 @@
 // 全部是原創世界觀。
 
 import { CONFIG } from "./config.js";
-import { WORLD_LIST } from "./worlds.js";
+import { WORLD_LIST, WORLD_NAME_INTRO } from "./worlds.js";
 
 // 佔位房間：n 間通用文字，最後一間是首領房
 function placeholderRooms(n) {
@@ -134,12 +134,17 @@ const REAL_WORLDS = [
 // 依 WORLD_LIST 順序組成最終的 30 張：有真實內容的（第 1 章前 3 個世界）直接用，其餘產生佔位資料
 const REAL = new Map(REAL_WORLDS.map((d) => [d.id, d]));
 export const DUNGEONS = WORLD_LIST.map((w) => {
+  const base = buildWorld(w);
+  const t = WORLD_NAME_INTRO[w.id]; // 4-E-8：30 世界正式名稱與題材描述（房間文字與首通特殊獎勵沿用原內容）
+  return t ? { ...base, name: t.name, intro: t.intro } : base;
+});
+function buildWorld(w) {
   if (REAL.has(w.id)) return REAL.get(w.id);
   const a = CHAPTER_ANCHOR[w.chapter];
   if (w.boss) return placeholder(w.id, w.chapter, 0, a.boss[0], a.boss[1]);
   const slot = WORLD_LIST.filter((x) => x.chapter === w.chapter && !x.boss).findIndex((x) => x.id === w.id); // 0~4
   return placeholder(w.id, w.chapter, slot + 1, spread(a.r, slot), spread(a.reward, slot));
-});
+}
 
 export function getDungeon(id) {
   return DUNGEONS.find((d) => d.id === id);

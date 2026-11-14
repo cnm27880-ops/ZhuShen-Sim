@@ -81,7 +81,7 @@ export function giveBirth(state, a, b, opts = {}) {
   child.podDaysLeft = opts.podDays ?? C().podDays;
   child.parents = [a.id, b.id];
   child.joinedDay = currentDay(state);
-  applyLineage(state, child, [a, b], g, !!opts.lineage); // 世代、天賦白值（總封頂 +25%）、保證繼承性格詞條（4-E-4）
+  applyLineage(state, child, [a, b], g, !!opts.lineage, opts.talent ?? "normal"); // 世代、天賦白值（總封頂 +25%）、保證繼承性格詞條（4-E-4）
   state.samsarites.push(child);
 
   // 家人之間有一點好感（不到「喜歡」，不會直接變成出征加成）

@@ -10,7 +10,7 @@
 
 import { CONFIG } from "../data/config.js";
 import { DUNGEONS } from "../data/dungeons.js";
-import { getShopItem } from "../data/shopItems.js";
+import { getShopItem, itemStat } from "../data/shopItems.js";
 import { getTag } from "../data/tags.js";
 import { rand, pick } from "./rng.js";
 import { emit, currentDay, getSamsarite, spend, canAfford, forgetRelations, setInjury } from "./core.js";
@@ -48,11 +48,15 @@ export function addChronicle(state, kind, text) {
  *   inheritPower = round(孩子基礎戰力 × talentPct)（會吃基因鎖乘區，所以是「基礎屬性加成」）
  *   lineage 為 true（孕育系統生的）時，保證繼承一個家長的性格詞條
  */
-export function applyLineage(state, child, parents, rng, lineage = false) {
+export function applyLineage(state, child, parents, rng, lineage = false, talent = "normal") {
   child.generation = Math.max(...parents.map((p) => p.generation ?? 1)) + 1;
   const avgGene = parents.reduce((n, p) => n + (p.geneLock ?? 0), 0) / parents.length;
   const avgTalent = parents.reduce((n, p) => n + (p.talentPct ?? 0), 0) / parents.length;
   child.talentPct = Math.round(Math.min(L().talentCap, avgGene * L().talentPerGene + avgTalent * L().talentFromParent) * 10000) / 10000;
+  // 催生黑貨（4-E-8）：high = 天賦至少達上限的 60%、max = 直接頂滿上限（仍不會超過 +25% 封頂）
+  if (talent === "high") child.talentPct = Math.max(child.talentPct, L().talentCap * 0.6);
+  else if (talent === "max") child.talentPct = L().talentCap;
+  child.talentPct = Math.round(Math.min(L().talentCap, child.talentPct) * 10000) / 10000;
   child.inheritPower = Math.round(child.stats.power * child.talentPct);
   if (lineage) {
     const parentTraits = [...new Set(parents.flatMap((p) => p.tags ?? []).filter((t) => getTag(t)?.kind === "trait"))];
@@ -71,21 +75,30 @@ export function applyLineage(state, child, parents, rng, lineage = false) {
 const pairKey = (a, b) => (a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`);
 
 /** 這一對現在能不能孕育？回傳 null（可以）或原因 */
-export function lineageBlock(state, a, b) {
+export function lineageBlock(state, a, b, minAffinity = L().pairAffinity) {
   if (a.location !== "space" || b.location !== "space") return "雙方都要在主神空間";
   if (a.injury >= 2 || b.injury >= 2) return "有人重傷以上";
-  if (affinity(state, a, b) < L().pairAffinity || affinity(state, b, a) < L().pairAffinity) return `雙向淨好感要 >= ${L().pairAffinity}`;
+  if (affinity(state, a, b) < minAffinity || affinity(state, b, a) < minAffinity) return `雙向淨好感要 >= ${minAffinity}`;
   if ((state.cooldowns?.[`birth:${pairKey(a, b)}`] ?? 0) > currentDay(state)) return "這一對還在冷卻";
   if (podBabies(state).length >= CONFIG.child.maxInPod) return "催熟艙滿了";
   if (squadMembers(state).length >= popLimit(state)) return "空間人數已達上限";
   return null;
 }
 
-/** 孕育道具／黑貨的接口：跳過機率直接受孕（仍受條件限制，除非 opts.force）。回傳孩子或 null */
+/** 催生黑貨的對象（4-E-8）：空間裡與他雙向淨好感 >= 60、其餘條件（沒重傷、冷卻、人口、催熟艙）都過的人；好感高的優先。沒有回 null */
+export function pregnancyPartner(state, s) {
+  const need = CONFIG.lineage.pregnancyItemAffinity;
+  const list = state.samsarites
+    .filter((o) => o.id !== s.id && !lineageBlock(state, s, o, need))
+    .sort((x, y) => affinity(state, s, y) + affinity(state, y, s) - (affinity(state, s, x) + affinity(state, x, s)) || x.id - y.id);
+  return list[0] ?? null;
+}
+
+/** 孕育道具／黑貨的接口：跳過機率直接受孕（仍受條件限制，除非 opts.force）。opts.talent：normal／high／max。回傳孩子或 null */
 export function inducePregnancy(state, a, b, opts = {}) {
   if (!opts.force && lineageBlock(state, a, b)) return null;
   bump(state, "birth");
-  return giveBirth(state, a, b, { rng: squadRng(state), podDays: L().podDays, cooldownDays: L().cooldownDays, lineage: true });
+  return giveBirth(state, a, b, { rng: squadRng(state), podDays: L().podDays, cooldownDays: L().cooldownDays, lineage: true, talent: opts.talent ?? "normal" });
 }
 
 /** 加速培育：每剩 1 天花公庫 60 × 空間等級；立刻出艙 */
@@ -108,10 +121,10 @@ export function speedUpPod(state, babyId) {
 /** 戰死前身上最高階的武器或防具（階層高者優先，再看戰力白值）。沒有裝備回 null */
 function bestGear(s) {
   let best = null;
-  for (const slot of ["weapon", "armor"]) {
+  for (const slot of ["weapon", "armor", "accessory"]) {
     const item = getShopItem(s.gear?.[slot]);
     if (!item) continue;
-    const key = item.tier * 100000 + (item.effect?.power ?? 0);
+    const key = item.tier * 1000000 + itemStat(item, "power");
     if (!best || key > best.key) best = { key, item, slot };
   }
   return best;

@@ -32,7 +32,7 @@ import { enhance, checkEnhance, breakGene, checkBreakGene } from "../src/engine/
 import { setTaxRate } from "../src/engine/wallet.js";
 import { marketOf, buyMarketSlot, checkMarketBuy, slotPrice } from "../src/engine/market.js";
 import { styleOf } from "../src/engine/squad.js";
-import { getShopItem } from "../src/data/shopItems.js";
+import { getShopItem, itemStat, GEAR_SLOTS } from "../src/data/shopItems.js";
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {
@@ -80,7 +80,7 @@ function canSpare(state, cost, days = RESERVE_DAYS) {
 }
 
 function gearPower(id) {
-  return SHOP_ITEMS.find((i) => i.id === id)?.effect?.power ?? 0;
+  return itemStat(getShopItem(id), "power");
 }
 
 const alive = (state) => state.samsarites.filter((s) => s.location !== "pod");
@@ -107,19 +107,19 @@ function botDay(state) {
   }
   // 2. 裝備（只幫在家的核心 4 人買）
   const home = core4(state).filter((s) => s.location === "space");
-  const gear = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard").sort((a, b) => (b.effect.power ?? 0) - (a.effect.power ?? 0));
+  const gear = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard").sort((a, b) => itemStat(b, "power") - itemStat(a, "power"));
   for (const s of home) {
-    for (const slot of ["weapon", "armor"]) {
+    for (const slot of GEAR_SLOTS) {
       const best = gear.find((i) => i.slot === slot && checkBuy(state, i, s).ok && canSpare(state, i.price));
       if (best && gearPower(best.id) > gearPower(s.gear?.[slot])) buyItem(state, best.id, s.id);
     }
   }
   // 2.5 黑市賞賜：公庫替核心 4 人買黑市的特產武防／血統（比身上的強才買；賞賜會綁定）
-  const slotValue = (item) => (item ? (item.slot === "bloodline" ? (item.effect.powerPct ?? 0) * 1000 : item.effect.power ?? 0) : -1);
+  const slotValue = (item) => (item ? itemStat(item, "power") : -1);
   for (const s of home) {
     marketOf(state).slots.forEach((slot, index) => {
       const item = getShopItem(slot.itemId);
-      if (!item || slot.sold || item.kind !== "gear") return;
+      if (!item || slot.sold || item.kind !== "gear" || item.category !== "specialty") return; // 公庫只賞賜世界特產（黑貨裝備有副作用，不送）
       if (slotValue(item) <= slotValue(getShopItem(s.gear?.[item.slot]))) return;
       if (checkMarketBuy(state, index, s.id).ok && canSpare(state, slotPrice(state, slot).price)) buyMarketSlot(state, index, s.id);
     });

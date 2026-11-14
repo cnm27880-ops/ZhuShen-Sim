@@ -18,6 +18,7 @@ import { effectivePower } from "./tags.js";
 import { affinity, shiftAffinity } from "./relations.js";
 import { addChronicle } from "./lineage.js";
 import { logText } from "./templates.js";
+import { passiveSum } from "./gearFx.js";
 
 const S = () => CONFIG.squad;
 
@@ -205,7 +206,9 @@ function succeed(state, pool) {
     const feud = affinity(state, a, b) < S().coupAffinity && affinity(state, b, a) < S().coupAffinity;
     if (gap < S().coupGapPct && (feud || deriveSquadStyle(a) !== deriveSquadStyle(b))) {
       // 隊長印記爭奪戰：依戰力比例擲骰，勝者上位，敗者受傷掉理智
-      const win = rand(squadRng(state)) < pa / (pa + pb);
+      const ca = pa * (1 + passiveSum(a, "coupPowerBonus")); // 篡權神格：政變奪權檢定戰力 +20%（4-E-8）
+      const cb = pb * (1 + passiveSum(b, "coupPowerBonus"));
+      const win = rand(squadRng(state)) < ca / (ca + cb);
       const [w, l] = win ? [a, b] : [b, a];
       setInjury(l, Math.min(3, l.injury + S().coupLoserInjury));
       l.stats.sanity = Math.max(0, l.stats.sanity - S().coupLoserSanity);

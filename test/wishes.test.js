@@ -18,6 +18,7 @@ import {
   isOnVacation,
 } from "../src/engine/wishes.js";
 import { buyItem } from "../src/engine/shop.js";
+import { getShopItem } from "../src/data/shopItems.js";
 import { effectivePower, moodPassBonus } from "../src/engine/tags.js";
 import { roomPassRate, startRun } from "../src/engine/dungeon.js";
 import { autoCandidates } from "../src/engine/dispatch.js";
@@ -184,7 +185,7 @@ test("想要裝備：只許已解鎖階層、沒穿著的裝備；幫他買下�
   const item = w.params.itemId;
   assert.ok(item);
   acceptWish(state, w.id);
-  buyItem(state, "potion_calm", s.id);
+  buyItem(state, "t1_28", s.id);
   assert.equal(state.wishes.length, 1);
   assert.equal(buyItem(state, item, s.id).ok, true);
   assert.equal(state.wishes.length, 0);
@@ -192,10 +193,10 @@ test("想要裝備：只許已解鎖階層、沒穿著的裝備；幫他買下�
   // 已穿著的不會再許
   for (let i = 0; i < 20; i++) {
     const t = setup();
-    t.s.gear = { weapon: "weapon_club" }; // Tier 1 只剩帆布外套可許
+    t.s.gear = { weapon: "t1_01" };
     const made = forceWish(t.state, t.s, "gear");
-    assert.equal(made.params.itemId, "armor_cloth");
-    assert.equal(["weapon_steel", "armor_chain", "weapon_alloy"].includes(made.params.itemId), false, "Tier 2 以上還沒解鎖");
+    assert.notEqual(made.params.itemId, "t1_01", "已穿著的不會再許");
+    assert.equal(getShopItem(made.params.itemId).tier, 1, "Tier 2 以上還沒解鎖");
   }
 });
 

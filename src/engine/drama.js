@@ -15,6 +15,7 @@ import { affinity, shiftAffinity, addLove, addHate } from "./relations.js";
 import { styleOf, captainOf, squadRng, squadOf, squadUnlocked, seizeCaptain, bump } from "./squad.js";
 import { addChronicle } from "./lineage.js";
 import { logText } from "./templates.js";
+import { passiveSum } from "./gearFx.js";
 
 const D = () => CONFIG.drama;
 const clampSan = (v) => Math.max(0, Math.min(100, v));
@@ -78,7 +79,7 @@ const CASTS = {
       const fans = pool.filter((s) => s.id !== b.id && affinity(state, s, b) >= 45);
       return fans.flatMap((a) => fans.filter((c) => a.id < c.id).map((c) => ({ A: a, B: b, C: c })));
     }),
-  doll: (state, pool) => recentContraband(state, pool, (r) => r.itemId.startsWith("drama_custom_doll")),
+  doll: (state, pool) => recentContraband(state, pool, (r) => ["t3_38", "t4_39", "t5_39"].includes(r.itemId)), // 催生黑貨被對象發現（4-E-8：舊捏造人偶已停售，事件改綁催生黑貨）
 };
 
 // ───────── 抽群組、抽事件 ─────────
@@ -178,8 +179,8 @@ export function applyEvent(state, ev, cast, pool = []) {
 function resolveCoupNight(state, cast) {
   const { A, B: cap, list } = cast;
   const T = D().coupTrigger;
-  const ps = list.reduce((n, s) => n + effectivePower(s), 0);
-  const pc = effectivePower(cap) * T.win;
+  const ps = list.reduce((n, s) => n + effectivePower(s) * (1 + passiveSum(s, "coupPowerBonus")), 0); // 篡權神格（4-E-8）
+  const pc = effectivePower(cap) * T.win * (1 + passiveSum(cap, "coupPowerBonus"));
   if (rand(squadRng(state)) < ps / (ps + pc)) {
     setInjury(cap, Math.max(cap.injury, 2));
     addSan(cap, -15);

@@ -36,28 +36,28 @@ test("商店門檻讀 config：0 / 600 / 3000 / 12000 / 45000，依累積花費�
   assert.equal(nextTierInfo(state), null);
 });
 
-test("商品資料表：id 不重複、階層 1~5、種類合法、有價格與效果；武器＋防具白值對齊各章錨點", () => {
+test("商品資料表：id 不重複、階層 1~5、種類合法、有價格；常駐武器白值對齊各章錨點（±10%）", () => {
   const ids = new Set(SHOP_ITEMS.map((i) => i.id));
   assert.equal(ids.size, SHOP_ITEMS.length);
   for (const i of SHOP_ITEMS) {
     assert.ok([1, 2, 3, 4, 5].includes(i.tier), i.id);
     assert.ok(i.kind in SHOP_KIND_LABELS, i.id);
-    assert.ok(i.price > 0 && Object.keys(i.effect).length > 0, i.id);
-    if (i.kind === "gear") assert.ok(["weapon", "armor", "bloodline"].includes(i.slot), i.id);
+    assert.ok(i.price > 0, i.id);
+    if (i.kind === "gear") assert.ok(["weapon", "armor", "accessory", "bloodline"].includes(i.slot) && Object.keys(i.stats).length > 0, i.id);
   }
-  assert.ok(SHOP_ITEMS.every((i) => i.kind !== "enhance"), "Phase 4-B 起商店不再賣強化");
   for (const t of [1, 2, 3, 4, 5]) assert.ok(SHOP_ITEMS.some((i) => i.tier === t), `Tier ${t} 沒有商品`);
-  const anchors = [16, 60, 220, 900, 3500];
+  const anchors = [18, 60, 220, 900, 3500];
   anchors.forEach((want, i) => {
-    const gearPower = SHOP_ITEMS.filter((x) => x.tier === i + 1 && x.kind === "gear" && x.category === "standard").reduce((n, x) => n + (x.effect.power ?? 0), 0);
-    assert.equal(gearPower, want, `Tier ${i + 1} 武器＋防具白值`);
+    for (const w of SHOP_ITEMS.filter((x) => x.tier === i + 1 && x.category === "standard" && x.slot === "weapon")) {
+      assert.ok(Math.abs(w.stats.power - want) <= want * 0.1 + 1, `${w.id} 戰力 ${w.stats.power} 偏離錨點 ${want}`);
+    }
   });
 });
 
 test("沒解鎖的階層買不了，也不會扣積分", () => {
   const { state, s } = setup();
   const before = state.points;
-  const r = buyItem(state, "weapon_steel", s.id); // Tier 2
+  const r = buyItem(state, "t2_01", s.id); // Tier 2
   assert.equal(r.ok, false);
   assert.match(r.reason, /Tier 2/);
   assert.equal(state.points, before);
@@ -66,68 +66,67 @@ test("沒解鎖的階層買不了，也不會扣積分", () => {
 
 test("積分不夠（連高利貸都借不到）買不了", () => {
   const { state, s } = setup(CONFIG.space.debtLimit[0] + 10);
-  assert.equal(buyItem(state, "weapon_club", s.id).ok, false);
+  assert.equal(buyItem(state, "t1_01", s.id).ok, false);
   assert.equal(state.totalSpent, 0);
 });
 
 test("買裝備：扣積分、累積花費增加、戰力上升；買新武器會換掉舊的", () => {
   const { state, s } = setup();
   const base = effectivePower(s);
-  assert.equal(buyItem(state, "weapon_club", s.id).ok, true);
-  assert.equal(state.points, 100000 - 80);
-  assert.equal(state.totalSpent, 80);
-  assert.equal(effectivePower(s), base + 10);
-  assert.equal(partyPower([s]), base + 10); // 隊伍戰力也跟著變
-  assert.equal(checkBuy(state, getShopItem("weapon_club"), s).ok, false); // 同一件不能重買
+  assert.equal(buyItem(state, "t1_01", s.id).ok, true);
+  assert.equal(state.points, 100000 - 120);
+  assert.equal(state.totalSpent, 120);
+  assert.equal(effectivePower(s), base + 18);
+  assert.equal(partyPower([s]), base + 18); // 隊伍戰力也跟著變
+  assert.equal(checkBuy(state, getShopItem("t1_01"), s).ok, false); // 同一件不能重買
   state.totalSpent = 600; // 開 Tier 2
-  assert.equal(buyItem(state, "weapon_steel", s.id).ok, true);
-  assert.equal(s.gear.weapon, "weapon_steel");
-  assert.equal(effectivePower(s), base + 38); // 換掉，不是疊加
-  assert.ok(state.log.some((e) => e.type === "shop" && e.text.includes("鐵管")), "換裝日誌要提到舊裝備");
+  assert.equal(buyItem(state, "t2_01", s.id).ok, true);
+  assert.equal(s.gear.weapon, "t2_01");
+  assert.equal(effectivePower(s), base + 62); // 換掉，不是疊加
+  assert.ok(state.log.some((e) => e.type === "shop" && e.text.includes("制式衝鋒槍")), "換裝日誌要提到舊裝備");
 });
 
-test("防具提高傷勢減免與戰力白值，高階防具另有閃避", () => {
+test("防具提供戰力與防禦白值，換防具不是疊加；飾品與血統是獨立欄位", () => {
   const { state, s } = setup();
   state.totalSpent = 12000; // 開 Tier 4
   const base = effectivePower(s);
-  buyItem(state, "armor_chain", s.id);
-  assert.ok(Math.abs(injuryShieldOf(s) - 0.1) < 1e-9);
-  assert.equal(effectivePower(s), base + 22); // Phase 4-A 起防具也有戰力白值
-  assert.equal(dodgeOf(s), 0);
-  buyItem(state, "armor_legend", s.id);
-  assert.ok(Math.abs(dodgeOf(s) - 0.05) < 1e-9);
-  assert.equal(effectivePower(s), base + 340, "換防具不是疊加");
+  buyItem(state, "t2_03", s.id);
+  assert.equal(effectivePower(s), base + 54);
+  assert.equal(s.gear.armor, "t2_03");
+  buyItem(state, "t4_03", s.id);
+  assert.equal(effectivePower(s), base + 840, "換防具不是疊加");
+  buyItem(state, "t4_05", s.id);
+  assert.equal(effectivePower(s), base + 840 + 790, "飾品另一個欄位");
 });
 
 test("強化會乘上標籤的戰力百分比（先加後乘）", () => {
   const { state, s } = setup();
   s.tags = ["hot_blood"];
   const pct = effectivePower(s) / s.stats.power - 1; // 這個標籤給的百分比
-  buyItem(state, "weapon_club", s.id);
-  assert.equal(effectivePower(s), Math.round((s.stats.power + 10) * (1 + pct)));
+  buyItem(state, "t1_01", s.id);
+  assert.equal(effectivePower(s), Math.round((s.stats.power + 18) * (1 + pct)));
 });
 
-test("藥水：傷藥降一級、急救針全癒、鎮定劑加理智；不需要時不能買", () => {
+test("藥水：傷藥降一級、急救針降兩級、鎮定劑加理智；不需要時不能買", () => {
   const { state, s } = setup();
-  assert.equal(buyItem(state, "potion_heal", s.id).ok, false); // 沒受傷
+  assert.equal(buyItem(state, "t1_27", s.id).ok, false); // 沒受傷
   s.stats.sanity = 100;
-  assert.equal(buyItem(state, "potion_calm", s.id).ok, false); // 理智已滿
+  assert.equal(buyItem(state, "t1_28", s.id).ok, false); // 理智已滿
   s.stats.sanity = 50;
-  assert.equal(buyItem(state, "potion_calm", s.id).ok, true);
-  assert.equal(s.stats.sanity, 75);
+  assert.equal(buyItem(state, "t1_28", s.id).ok, true);
+  assert.equal(s.stats.sanity, 70);
   setInjury(s, 3);
-  assert.equal(buyItem(state, "potion_heal", s.id).ok, true);
+  assert.equal(buyItem(state, "t1_27", s.id).ok, true);
   assert.equal(s.injury, 2);
   assert.equal(s.restDaysLeft, 3);
-  state.totalSpent = 600;
-  assert.equal(buyItem(state, "potion_revive", s.id).ok, true);
+  assert.equal(buyItem(state, "t1_29", s.id).ok, true);
   assert.equal(s.injury, 0);
 });
 
 test("副本裡的人不能用商店", () => {
   const { state, s } = setup();
   s.location = "dungeon";
-  assert.equal(buyItem(state, "weapon_club", s.id).ok, false);
+  assert.equal(buyItem(state, "t1_01", s.id).ok, false);
 });
 
 test("花費跨過門檻時主神會宣布解鎖（抽卡的花費也算）", () => {
@@ -222,10 +221,10 @@ test("首通掉落記錄的是獎勵 id，而且有對應資料", () => {
 
 test("存檔：裝備、強化、收藏讀回來還在；舊存檔的收藏名字會轉成 id", () => {
   const { state, s } = setup();
-  buyItem(state, "weapon_club", s.id);
+  buyItem(state, "t1_01", s.id);
   state.collection = ["ember_staff"];
   const back = deserialize(serialize(state));
-  assert.equal(back.samsarites[0].gear.weapon, "weapon_club");
+  assert.equal(back.samsarites[0].gear.weapon, "t1_01");
   assert.equal(effectivePower(back.samsarites[0]), effectivePower(s));
   assert.deepEqual(back.collection, ["ember_staff"]);
 

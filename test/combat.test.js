@@ -28,9 +28,9 @@ test("subStat：初始 + 強化累計 + 裝備白值，且不吃基因鎖乘區"
   s.stats.defense = 10;
   s.geneLock = 3; // 戰力乘區 ×4.8，副屬性不受影響
   assert.equal(subStat(s, "defense"), 10);
-  assert.equal(buyItem(state, "armor_cloth", s.id).ok, true); // 防禦 +4、生命 +10
-  assert.equal(subStat(s, "defense"), 14);
-  assert.equal(subStat(s, "hp"), s.stats.hp + 10);
+  assert.equal(buyItem(state, "t1_03", s.id).ok, true); // 防禦 +5、生命 +15
+  assert.equal(subStat(s, "defense"), 15);
+  assert.equal(subStat(s, "hp"), s.stats.hp + 15);
 });
 
 test("防禦與速度機率公式與上限", () => {

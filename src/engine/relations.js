@@ -12,6 +12,8 @@ import { getTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
 import { effectivePower, sanityClashMult, loveGainMultOf } from "./tags.js";
 import { logText } from "./templates.js";
+import { captainOf } from "./squad.js";
+import { gearMult } from "./gearFx.js";
 import { maybeWish } from "./wishes.js";
 import {
   emit,
@@ -44,6 +46,7 @@ function ensureRel(state, a, b) {
 export function addLove(state, a, b, delta) {
   const r = ensureRel(state, a, b);
   if (delta > 0) delta = Math.round(delta * loveGainMultOf(a)); // 走火入魔者「自己對別人」的好感獲取減半（別人對他照常；露葵 2026-11-14 拍板）
+  if (delta > 0 && captainOf(state)?.id === b.id) delta = Math.round(delta * gearMult(a, "captainLoveMult")); // 裝備被動：對隊長的好感獲取倍率（4-E-8）
   r.love = clamp(r.love + delta);
 }
 
@@ -66,10 +69,22 @@ export function shiftAffinity(state, a, b, delta) {
 /** 仇恨增加；滿了就結成死敵（兩個方向都是死敵） */
 export function addHate(state, a, b, delta) {
   const r = ensureRel(state, a, b);
+  if (delta > 0 && captainOf(state)?.id === b.id) delta = Math.round(delta * gearMult(a, "captainHateMult")); // 裝備被動：對隊長的仇恨增長倍率（4-E-8）
   r.hate = clamp(r.hate + delta);
   if (r.hate >= R().nemesisAt && pairStatus(state, a, b) !== "nemesis") {
     setPairStatus(state, a, b, "nemesis");
     emit(state, "relation", logText(state, "nemesis", { A: a, B: b }));
+  }
+}
+
+/** 化解恩怨（耗材用）：把 a→b 的仇恨減 reduce（clear = 直接歸零，死敵狀態與復仇標記一併解除）。不動 love */
+export function softenHate(state, a, b, { reduce = 0, clear = false } = {}) {
+  const r = state.relations?.[`${a.id}>${b.id}`];
+  if (!r) return;
+  r.hate = clear ? 0 : Math.max(0, r.hate - reduce);
+  if (clear || r.hate < R().nemesisAt) {
+    if (clear && r.status === "nemesis") r.status = undefined;
+    if (clear) r.revenge = false;
   }
 }
 

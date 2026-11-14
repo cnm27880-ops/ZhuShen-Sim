@@ -747,6 +747,15 @@ function shop() {
     <div class="modal-actions">${closeButton}</div>`;
 }
 
+const STAT_LABEL = { power: "戰力", hp: "生命", defense: "防禦", speed: "速度", luck: "氣運" };
+const PASSIVE_LABEL = { dailySanity: (v) => `每日理智 ${v}`, runSanity: (v) => `每次出戰理智 ${v}`, partyRunSanity: (v) => `出戰隨機扣隊友理智 ${-v}`, demonTendency: (v) => (v === "sure" ? "必帶入魔傾向" : "附入魔傾向"), captainHateMult: (v) => `對隊長仇恨增長 ×${v}`, captainLoveMult: (v) => `對隊長好感獲取 ×${v}`, coupPowerBonus: (v) => `政變奪權戰力 +${Math.round(v * 100)}%` };
+/** 商品的白值與被動一行摘要（商店／黑市顯示用） */
+function itemFx(item) {
+  const stats = Object.entries(item.stats ?? {}).map(([k, v]) => `${STAT_LABEL[k]}${v >= 0 ? "+" : ""}${v}`).join("　");
+  const passive = Object.entries(item.passive ?? {}).map(([k, v]) => PASSIVE_LABEL[k]?.(v)).filter(Boolean).join("、");
+  return `${stats ? `<br /><small class="good">${stats}</small>` : ""}${passive ? `<br /><small class="warn">⚠️ ${passive}</small>` : ""}`;
+}
+
 function shopStandardTab(tier, target) {
   const itemRow = (item) => {
     const locked = item.tier > tier;
@@ -755,7 +764,7 @@ function shopStandardTab(tier, target) {
     const why = !locked && !check.ok ? `<br /><small class="bad">${check.reason}</small>` : "";
     return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
       <span class="option-icon">${item.icon}</span>
-      <span class="grow"><b>${item.name}</b> <small>${SHOP_CATEGORY_LABELS[item.category]}・${SHOP_KIND_LABELS[item.kind]}${slot}</small><br /><small>${item.desc}</small>${why}</span>
+      <span class="grow"><b>${item.name}</b> <small>${SHOP_CATEGORY_LABELS[item.category]}・${SHOP_KIND_LABELS[item.kind]}${slot}</small><br /><small>${item.desc}</small>${itemFx(item)}${why}</span>
       <button class="primary" data-action="buy" data-id="${item.id}" ${check.ok ? "" : "disabled"}>${locked ? "🔒" : item.price + " 分"}</button>
     </div>`;
   };
@@ -801,7 +810,7 @@ function shopMarketTab(home, target) {
       const priceHtml = slot.discounted ? `<s>${item.price}</s> <b class="good">${slot.price}</b> 分` : `${slot.price} 分`;
       return `<div class="slot ${slot.sold ? "sold" : ""} ${slot.locked ? "locked-slot" : ""}">
         <div class="slot-head"><span class="option-icon">${item.icon}</span><span class="grow"><b>${item.name}</b><br /><small>${SHOP_CATEGORY_LABELS[item.category]}・T${item.tier}${item.kind === "gear" ? "・" + SHOP_SLOT_LABELS[item.slot] : ""}</small></span>${slot.locked ? "🔒" : ""}</div>
-        <small>${item.desc}</small>${world}
+        <small>${item.desc}</small>${itemFx(item)}${world}
         ${!slot.sold && !check.ok ? `<small class="bad">${check.reason}</small>` : ""}
         <div class="slot-actions">
           <button data-action="market-lock" data-id="${slot.index}" ${slot.sold ? "disabled" : ""}>${slot.locked ? "🔓 解除鎖定" : "🔒 鎖定"}</button>

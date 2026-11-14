@@ -228,12 +228,12 @@ export const DRAMA_EVENTS = [
     ],
   },
   {
-    id: "doll_exposed", group: "melee", name: "造人泥替身被本尊撞破", cast: "doll", chronicle: true,
+    id: "doll_exposed", group: "melee", name: "催生黑貨被本尊撞破", cast: "doll", chronicle: true,
     fx: { aff: [-20, -20], hate: [0, 20], sanityA: -10, exposed: true },
     texts: [
-      "🎎 {A} 偷偷捏了 {B} 的泥人替身，被本尊撞個正著！{B} 看著那個醜到不行的娃娃，氣得渾身發抖。",
-      "🎎 「這是我？這個歪嘴的是我？」{B} 舉著 {A} 捏的泥人，聲音顫抖。修羅場，正式開演。",
-      "🎎 {A} 的造人泥手藝被 {B} 當場抓包。{B} 沉默了三秒，然後說：「我們來聊聊。」",
+      "🎎 {A} 偷偷下了催生黑貨，被 {B} 撞個正著！{B} 看著那包還沒拆乾淨的禁忌藥粉，氣得渾身發抖。",
+      "🎎 「你給我下的是什麼？」{B} 舉著 {A} 遺落的藥包，聲音顫抖。修羅場，正式開演。",
+      "🎎 {A} 的小動作被 {B} 當場抓包。{B} 沉默了三秒，然後說：「我們來聊聊。」",
     ],
   },
 ];
