@@ -192,16 +192,22 @@ export function stepRun(state, run = state.runs[0]) {
   if (clash) {
     emit(state, "clash", `${progress} ${clashText(state, clash)}`);
     afterClash(state, clash);
+    loseSanityOf(clash.victim, CONFIG.sanity.roomFailLoss);
     hurt(state, run, clash.victim, dungeon, clash.attacker);
   } else if (passed) {
     emit(state, "roomPass", `${progress} ${room.pass}`);
   } else {
     const victim = pick(state, party);
     emit(state, "roomFail", `${progress} ${room.fail.replace("{name}", victim.name)}`);
+    loseSanityOf(victim, CONFIG.sanity.roomFailLoss); // 單房失敗：受害者理智 -5（4-C-2）
     hurt(state, run, victim, dungeon);
   }
   run.results.push(passed);
   run.roomIndex += 1;
+}
+
+function loseSanityOf(s, amount) {
+  s.stats.sanity = Math.max(0, s.stats.sanity - amount);
 }
 
 /** 這場副本是否結束：時間到（房數 × roomTicks；全滅的也要等時間過完才結算，剩下的房間不用走） */
@@ -271,7 +277,7 @@ export function hurt(state, run, victim, dungeon, attacker = null) {
   if (dies) {
     run.deaths.push(victim.name);
     killSamsarite(state, victim, attacker ? `死在了隊友 ${attacker.name} 手上（【${dungeon.name}】）` : `死在了【${dungeon.name}】`, attacker);
-    afterDeath(state, victim, attacker);
+    afterDeath(state, victim, attacker, partyOf(state, run)); // 同隊其他隊員理智 -10（4-C-2）
     return;
   }
   setInjury(victim, newLevel);

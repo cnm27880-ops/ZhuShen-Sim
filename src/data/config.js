@@ -92,6 +92,21 @@ export const CONFIG = {
     luckReward: { perPoint: 0.005, max: 0.5 }, // 存活隊員平均 luck 每 1 點 +0.5% 結算積分，上限 +50%
   },
 
+  // ── 理智閉環（Phase 4-C-2）：sanity 0～100 ──
+  sanity: {
+    // 由高到低；找第一個 sanity >= min 的檔位。powerPct 加進有效戰力的百分比區；clashMult 乘在隊內負面關係內鬥／背刺機率上
+    tiers: [
+      { min: 70, powerPct: 0, clashMult: 1 },
+      { min: 30, powerPct: -0.1, clashMult: 1.5 },
+      { min: 0, powerPct: -0.25, clashMult: 2.5 }, // 1～29（0 也算，反正日結會暴走）
+    ],
+    roomFailLoss: 5, // 副本單房失敗：受害者理智 -5
+    teammateDeathLoss: 10, // 副本內同隊有人戰死：其他隊員理智 -10（取代舊的 deathFearSanity -3；空間內的死亡仍用 relations.deathFearSanity）
+    restRecover: 3, // 人在主神空間（含帶傷休養）每日自然恢復
+    crashDemonChance: 0.5, // 理智歸零日結：入魔砍傷隊友的機率（沒有其他人在空間就改自殘）；其餘自殘
+    crashRecoverTo: 40, // 暴走發作後理智回升到
+  },
+
   // ── 標籤（Phase 2）──
   tags: {
     tagBonusCap: 0.1, // 全隊標籤對「單房通過率」的加減上限（Phase 4-B：露葵拍板由 ±30% 改 ±10%）

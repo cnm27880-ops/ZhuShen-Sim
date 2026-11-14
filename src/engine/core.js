@@ -10,6 +10,7 @@ import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
 import { dailyGod, cancelGodOf, newGodState } from "./godEvents.js"; // 同上（Phase 3-E 主神搞事）
 import { dailyNursery, newNurseryState, podCost } from "./children.js"; // 同上（Phase 3-F 生小孩）
+import { dailySanity, newSanityState } from "./sanity.js"; // 同上（Phase 4-C-2 理智暴走）
 import { newGrowthState } from "./growth.js"; // 同上（Phase 4-B 基因鎖／強化／頓悟；growth.js 也會 import 這個檔案）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
@@ -52,6 +53,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     wishes: [], // 進行中的許願（見 engine/wishes.js）
     nextWishId: 1,
     nursery: newNurseryState(seed), // 生小孩：獨立亂數流（見 engine/children.js）
+    sanity: newSanityState(seed), // 理智暴走：獨立亂數流（見 engine/sanity.js）
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
     cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
     dungeonStats: {}, // { 副本id: { attempts, clears } }；clears > 0 代表已有該副本情報
@@ -208,6 +210,7 @@ export function endOfDay(state) {
   let cost = 0;
   for (const s of atHome) {
     cost += upkeepOf(s, state); // 先用「今天的傷勢」算錢，再結算休息
+    s.stats.sanity = Math.min(100, s.stats.sanity + CONFIG.sanity.restRecover); // 人在空間（含帶傷休養）每日自然恢復理智（4-C-2）
     if (s.injury > 0) {
       s.restDaysLeft -= 1;
       if (s.restDaysLeft <= 0) {
@@ -348,6 +351,7 @@ export function pullGacha(state, poolId) {
 export function advanceTick(state) {
   state.tick += 1;
   if (state.tick % CONFIG.ticksPerDay === 0) {
+    dailySanity(state); // 理智歸零的人暴走（要在 endOfDay 補理智之前，Phase 4-C-2）
     endOfDay(state);
     dailyWishes(state); // 心情／休假倒數、許願超時（Phase 3-B）
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
@@ -405,6 +409,7 @@ export function deserialize(json) {
   delete state.run;
   for (const r of state.runs) r.id ??= state.nextRunId++;
   state.nextRunId = Math.max(state.nextRunId, 1 + Math.max(0, ...state.runs.map((r) => r.id)));
+  state.sanity ??= newSanityState(state.rngState); // 舊存檔沒有理智暴走欄位（Phase 4-C-2）
   state.god ??= newGodState(state.rngState); // 舊存檔沒有主神搞事欄位（Phase 3-E）
   state.god.pending ??= null;
   state.god.mission ??= null;

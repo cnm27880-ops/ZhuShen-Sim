@@ -78,6 +78,23 @@ export function luckRewardPct(party) {
   return Math.min(max, Math.max(0, avg * perPoint));
 }
 
+/** 理智檔位（Phase 4-C-2）：sanity ≥ 70 無懲罰；30～69 戰力 -10%、內鬥 ×1.5；0～29 戰力 -25%、內鬥 ×2.5 */
+function sanityTier(s) {
+  const v = s.stats?.sanity ?? 100;
+  return CONFIG.sanity.tiers.find((t) => v >= t.min) ?? CONFIG.sanity.tiers[CONFIG.sanity.tiers.length - 1];
+}
+export function sanityPowerPct(s) {
+  return sanityTier(s).powerPct;
+}
+/** 隊內負面關係內鬥／背刺機率的倍率（兩人取理智較低的那個檔位，所以呼叫端傳兩人中較低者） */
+export function sanityClashMult(s) {
+  return sanityTier(s).clashMult;
+}
+/** 標籤對「別人對他的好感獲取」的倍率（走火入魔 ×0.5）；沒有就 1 */
+export function loveGainMultOf(s) {
+  return tagsOf(s).reduce((m, t) => m * (t.loveGainMult ?? 1), 1);
+}
+
 /** 本體值：初始基礎 + 強化累計 + 頓悟累計（這三項都已直接累加在 stats.power）+ 子嗣繼承值 */
 export function bodyPower(s) {
   return s.stats.power + (s.inheritPower ?? 0);
@@ -93,7 +110,7 @@ export function genePowerMult(s) {
  * 基礎戰力 stats.power 不會被這個函式改動。
  */
 export function effectivePower(s) {
-  const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0) + moodPowerPct(s) + injuryPowerPct(s);
+  const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0) + moodPowerPct(s) + injuryPowerPct(s) + sanityPowerPct(s);
   return Math.max(1, Math.round((bodyPower(s) * genePowerMult(s) + shopBonus(s, "power")) * (1 + pct)));
 }
 

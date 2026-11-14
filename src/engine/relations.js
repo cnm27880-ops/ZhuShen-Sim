@@ -10,7 +10,7 @@ import { CONFIG, INJURIES } from "../data/config.js";
 import { SOCIAL_EVENTS, SCHEMES, DISCOVER_TEXTS, TAG_SPECIALS } from "../data/relations.js";
 import { getTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
-import { effectivePower } from "./tags.js";
+import { effectivePower, sanityClashMult, loveGainMultOf } from "./tags.js";
 import { logText } from "./templates.js";
 import { maybeWish } from "./wishes.js";
 import {
@@ -43,6 +43,7 @@ function ensureRel(state, a, b) {
 
 export function addLove(state, a, b, delta) {
   const r = ensureRel(state, a, b);
+  if (delta > 0) delta = Math.round(delta * loveGainMultOf(b)); // 走火入魔：別人對他的好感獲取減半
   r.love = clamp(r.love + delta);
 }
 
@@ -336,7 +337,7 @@ function gainTag(s, id) {
  *  - 功德無量笑面虎：偷遺產，全屬性永久 +10%，沒人喜歡他
  *  - 其他人：害怕下一個死的是自己
  */
-export function afterDeath(state, dead, killer = null) {
+export function afterDeath(state, dead, killer = null, teammates = null) {
   const living = state.samsarites;
   for (const m of living) {
     if (killer && m.id === killer.id) continue;
@@ -372,7 +373,12 @@ export function afterDeath(state, dead, killer = null) {
     emit(state, "relation", logText(state, "inherit", { A: t, D: dead }));
   }
 
-  for (const o of living) o.stats.sanity = Math.max(0, o.stats.sanity - R().deathFearSanity);
+  if (teammates) {
+    // 副本內戰死（4-C-2）：同隊其他隊員理智大跌，留在空間的人沒親眼看到
+    for (const o of teammates) o.stats.sanity = Math.max(0, o.stats.sanity - CONFIG.sanity.teammateDeathLoss);
+  } else {
+    for (const o of living) o.stats.sanity = Math.max(0, o.stats.sanity - R().deathFearSanity);
+  }
   forgetRelations(state, dead.id);
 }
 
@@ -396,7 +402,9 @@ export function pickClash(state, party, roomIndex) {
   for (let i = 0; i < party.length; i++) {
     for (let j = i + 1; j < party.length; j++) {
       const level = pairLevel(state, party[i], party[j]);
-      const chance = R().infightChance[level];
+      const base = R().infightChance[level];
+      const lower = (party[i].stats.sanity ?? 100) <= (party[j].stats.sanity ?? 100) ? party[i] : party[j];
+      const chance = base ? Math.min(1, base * sanityClashMult(lower)) : 0; // 理智低 → 內鬥更容易發生（4-C-2）
       if (chance && rand(state) < chance) {
         const iHates = getRel(state, party[i], party[j]).hate >= getRel(state, party[j], party[i]).hate;
         return { attacker: iHates ? party[i] : party[j], victim: iHates ? party[j] : party[i], kind: "enemy" };
@@ -405,7 +413,7 @@ export function pickClash(state, party, roomIndex) {
   }
   if (party.length > 1) {
     for (const s of party) {
-      if (hasTag(s, "backstabber") && rand(state) < R().backstabChance) {
+      if (hasTag(s, "backstabber") && rand(state) < Math.min(1, R().backstabChance * sanityClashMult(s))) {
         return { attacker: s, victim: pick(state, party.filter((o) => o.id !== s.id)), kind: "backstab" };
       }
     }
