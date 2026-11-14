@@ -287,12 +287,21 @@ test("回收爐：依階級返還積分（C 30）、其他人理智下降", () =
   assert.equal(state.samsarites.includes(a), false);
 });
 
-test("沒人又借不到錢 = 遊戲結束；還借得到就不算", () => {
+test("沒人又借不到錢 = 遊戲結束（關掉空投救援時）；還借得到就不算；開著空投救援則不會結束", () => {
   const state = createNewGame(2);
   state.samsarites = [];
-  assert.equal(checkGameOver(state), false);
-  state.points = CONFIG.space.debtLimit[0];
-  assert.equal(checkGameOver(state), true);
+  CONFIG.airdrop.rescue = false;
+  try {
+    assert.equal(checkGameOver(state), false);
+    state.points = CONFIG.space.debtLimit[0];
+    assert.equal(checkGameOver(state), true);
+  } finally {
+    CONFIG.airdrop.rescue = true;
+  }
+  const rescued = createNewGame(2);
+  rescued.samsarites = [];
+  rescued.points = CONFIG.space.debtLimit[0];
+  assert.equal(checkGameOver(rescued), false, "空投救援開著：沒人也不結束");
 });
 
 test("開著自動派遣放著跑 60 天不會壞掉，存檔讀回來一模一樣", () => {

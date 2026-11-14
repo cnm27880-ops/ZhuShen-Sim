@@ -29,7 +29,8 @@ export const CONFIG = {
   debtShockSanity: 10, // 負債期間每天電擊一人，理智 -10
   recycle: { sanityLoss: 5 }, // 主神回收爐：其他人理智扣多少（計畫未定）；返還積分改看階級 RANKS[rank].recycleRefund（4-C-3）
   // 絕境空投（4-C-3）：存活人數（不含催熟艙）< minAlive 且積分 < pointsBelow，連續滿 everyDays 天，主神免費空投 1 名新人
-  airdrop: { minAlive: 2, pointsBelow: 120, everyDays: 3, rank: "C" },
+  // rescue：true 時空投當作安全網，「沒人又借不到錢」不再直接判遊戲結束（否則全滅當下就死檔，空投來不及；4-C-6）
+  airdrop: { minAlive: 2, pointsBelow: 120, everyDays: 3, rank: "C", rescue: true },
   // 商店 5 階的解鎖門檻：「累積花費」（抽卡也算）達到才開放。索引 0 = Tier 1（Phase 4-A）
   shopTierUnlock: [0, 600, 3000, 12000, 45000],
   shopDodgeMax: 0.9, // 閃避機率上限（標籤 + 商店加成加起來）
@@ -328,6 +329,7 @@ export const CONFIG = {
     targetClearChance: 0.9, // 通關率到這個數字就算「夠穩」，不再多派人（計畫未定）
     maxCandidates: 14, // 最多拿戰力前幾名來排列組合（避免人太多時算太久）
     dispatchAtTick: 5, // 每天第幾個時段檢查一次自動派遣
+    holdForMandatory: true, // 強制任務待派時，前 4 強留給任務、等他們回家再派（期限前最後一個時段才硬派；4-C-6）
     missionFirst: true, // 有主神突襲任務時，自動派遣優先派任務目標去指定副本（通關率仍要達 minClearChance；Phase 3-E）
   },
 

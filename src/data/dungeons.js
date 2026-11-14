@@ -5,6 +5,9 @@
 // recommendedPower／reward：Phase 4-A 是基準草稿（露葵 2026-11-14 給的表）；Phase 4-B 依 npm run sim -- --seeds=100 --days=900 校正：
 //   尾王 R 倍率 ×1.8／2.4／2.5／2.0／0.65、第 5 章一般關 R ×0.6、各章獎勵 ×1／2.5／4.5／9／8（原基準表見 git 歷史）。
 //   校正目標：各章尾王首通中位數約 Day 30／80／165／300／450（見 CLAUDE.md 的 4-B 摘要）。
+// Phase 4-C-6：維持費改制＋空投＋副屬性＋英靈碑之後經濟過寬，依 npm run sim -- --seeds=100 --days=900 再校正：
+//   獎勵倍率回調（相對 4-B 的值）第 2～5 章 ×1／0.6／0.4／0.4（即相對 4-A 原始表 ×2.5／2.7／3.6／3.2）；
+//   R 再乘：第 2 章 ×1.1、第 3 章一般 ×1.6／尾王 ×2.2、第 4 章 ×1.6、第 5 章 ×1.4（積分不再是瓶頸，進度由 R 決定）。
 // 第 1 章前 3 關沿用舊的 3 個副本；其他 17 關目前是佔位資料（名字、房間文字、特殊獎勵之後再補，只改這個檔案）。
 // 全部是原創世界觀。
 
@@ -110,22 +113,22 @@ export const DUNGEONS = [
     ],
   },
   placeholder(1, 4, 468, 230),
-  placeholder(2, 1, 380, 850),
-  placeholder(2, 2, 540, 1125),
-  placeholder(2, 3, 760, 1500),
-  placeholder(2, 4, 2520, 2050),
-  placeholder(3, 1, 1550, 5175),
-  placeholder(3, 2, 2200, 6750),
-  placeholder(3, 3, 3100, 9000),
-  placeholder(3, 4, 11000, 12150),
-  placeholder(4, 1, 6400, 32400),
-  placeholder(4, 2, 9100, 43200),
-  placeholder(4, 3, 12800, 57600),
-  placeholder(4, 4, 36000, 77400),
-  placeholder(5, 1, 15600, 92000),
-  placeholder(5, 2, 22200, 120000),
-  placeholder(5, 3, 31200, 160000),
-  placeholder(5, 4, 46800, 224000),
+  placeholder(2, 1, 418, 850),
+  placeholder(2, 2, 594, 1125),
+  placeholder(2, 3, 836, 1500),
+  placeholder(2, 4, 2772, 2050),
+  placeholder(3, 1, 2480, 3105),
+  placeholder(3, 2, 3520, 4050),
+  placeholder(3, 3, 4960, 5400),
+  placeholder(3, 4, 24200, 7290),
+  placeholder(4, 1, 10240, 12960),
+  placeholder(4, 2, 14560, 17280),
+  placeholder(4, 3, 20480, 23040),
+  placeholder(4, 4, 57600, 30960),
+  placeholder(5, 1, 21840, 36800),
+  placeholder(5, 2, 31080, 48000),
+  placeholder(5, 3, 43680, 64000),
+  placeholder(5, 4, 65520, 89600),
 ];
 
 export function getDungeon(id) {

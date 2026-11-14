@@ -398,7 +398,7 @@ export function advanceTick(state) {
   }
 }
 
-/** 沒人可用、又抽不起最便宜的卡池 = 遊戲結束 */
+/** 沒人可用、又抽不起最便宜的卡池 = 遊戲結束（4-C-6 起空投開著時由空投救援，不會結束，見 CONFIG.airdrop.rescue） */
 export function checkGameOver(state) {
   if (state.gameOver) return true;
   // 用「基礎價」判斷（不含本週漲價）：沒人時沒有維持費，等到下週重置價格就回來了，不算卡死
@@ -407,7 +407,7 @@ export function checkGameOver(state) {
       .filter((p) => p.spaceLevel <= (state.spaceLevel ?? 1) && p.crystal <= (state.karmaCrystals ?? 0))
       .map((p) => p.base)
   );
-  if (state.samsarites.length === 0 && !canAfford(state, cheapest)) {
+  if (state.samsarites.length === 0 && !canAfford(state, cheapest) && !CONFIG.airdrop.rescue) {
     state.gameOver = true;
     emit(state, "gameOver", logText(state, "gameOver"));
   }
