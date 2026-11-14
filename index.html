@@ -35,9 +35,6 @@
 
       <!-- 功能 -->
       <div class="tb-group tb-tools" aria-label="功能">
-        <button id="btn-gossip" data-action="open-gossip" title="《主神八卦日報》：把本局的修羅場、頭條與英靈碑畫成圖卡，可下載 PNG">八卦</button>
-        <button id="btn-squad" data-action="open-squad" title="小隊指揮部：隊長、流派、先人遺物、空間編年史">小隊</button>
-        <button id="btn-guide" data-action="open-guide" title="新任主神上崗手冊">手冊</button>
         <button class="icon-btn" data-action="open-settings" title="設定" aria-label="設定"><span class="gear"></span></button>
       </div>
     </header>
@@ -72,11 +69,19 @@
         <!-- 次要功能 -->
         <div class="act-sub">
           <button data-action="open-shop">商店</button>
-          <button id="btn-inventory" data-action="open-inventory" title="物資面板：倉庫裡的藥品，點一件再點人就能使用，最需要的人排最前面">物資</button>
-          <button data-action="open-relations">關係</button>
-          <button id="btn-stele" data-action="open-stele">英靈碑</button>
-          <button id="btn-facility" data-action="open-facility" title="主神空間永久基建：重力修煉室、生命溫養艙、法則共鳴碑、萬界育嬰堂、星界觀測樞">基建</button>
-          <button id="btn-auto" data-action="open-auto" title="自動小幫手：選一種模式就好，想自己調再開進階自訂">自動</button>
+          <button id="btn-inventory" data-action="open-inventory" title="物資面板">物資</button>
+          <button id="btn-auto" data-action="open-auto" title="自動小幫手">自動</button>
+          <div class="more-wrap">
+            <button data-action="toggle-more" id="btn-more">更多</button>
+            <div id="more-menu" class="more-menu" hidden>
+              <button data-action="open-relations">關係</button>
+              <button id="btn-stele" data-action="open-stele">英靈碑</button>
+              <button id="btn-facility" data-action="open-facility">基建</button>
+              <button id="btn-squad" data-action="open-squad">小隊</button>
+              <button id="btn-gossip" data-action="open-gossip">八卦日報</button>
+              <button id="btn-guide" data-action="open-guide">手冊</button>
+            </div>
+          </div>
         </div>
         <!-- 有事件才出現的待辦 -->
         <div class="act-alert">

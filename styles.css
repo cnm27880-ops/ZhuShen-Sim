@@ -651,3 +651,18 @@ button:disabled { opacity: 1; background: #f1f1f1; border-color: #e6e6e6; color:
 button.primary:disabled { background: #f1f1f1; color: #6b6b6b; border-color: #e6e6e6; }
 #modal h3:not(:first-child), #modal h4 { font-size: 16px; font-weight: 700; margin: 24px 0 8px; color: #000; }
 #modal small, #modal .muted { color: #4b4f58; }
+
+/* ── 精簡版型：更多選單、名冊卡小圓點 ── */
+.more-wrap { position: relative; }
+.more-menu { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 20; display: flex; flex-direction: column; gap: 4px; min-width: 150px; padding: 8px; background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06); }
+.more-menu[hidden] { display: none; }
+.more-menu button { border: 0; text-align: left; border-radius: 50px; }
+.more-menu button:hover { background: #f7f7f5; }
+#btn-guide.pulse { animation: blink 1.4s steps(2) infinite; }
+.tag-dots { display: inline-flex; gap: 3px; align-items: center; }
+.tag-dot { width: 9px; height: 9px; border-radius: 50%; background: #fff; border: 1.5px solid #c9c9c9; }
+.tag-dot-R { border-color: #3b82f6; background: #3b82f6; } .tag-dot-SR { border-color: #a855f7; background: #a855f7; }
+.tag-dot-SSR { border-color: #eab308; background: #eab308; } .tag-dot-UR { border-color: #ef4444; background: #ef4444; }
+.card-meta { justify-content: flex-start; gap: 14px; }
+#roster .card { flex-basis: 170px; }
+.summary-opts { display: flex; gap: 16px; margin-top: 8px; }
