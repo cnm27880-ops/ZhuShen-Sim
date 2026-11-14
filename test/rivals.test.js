@@ -7,7 +7,7 @@ import { RIVAL_SQUADS, getRivalSquad, RIVAL_ID } from "../src/data/rivals.js";
 import { createNewGame, createSamsarite, currentDay, advanceTick, serialize, deserialize } from "../src/engine/core.js";
 import { startRun, dungeonOfRun } from "../src/engine/dungeon.js";
 import { step } from "../src/engine/dispatch.js";
-import { buildRivalDungeon, baseRivalR, dailyRivals, rivalFinish, rivalSnapshot, isElopeImmune, hybridBirth, pendingRival, defectTo } from "../src/engine/rivals.js";
+import { buildRivalDungeon, baseRivalR, dailyRivals, rivalFinish, rivalSnapshot, isElopeImmune, elopeCandidate, hybridBirth, pendingRival, defectTo } from "../src/engine/rivals.js";
 import { shiftAffinity, affinity, getRel } from "../src/engine/relations.js";
 import { effectivePower } from "../src/engine/tags.js";
 
@@ -190,21 +190,21 @@ test("私奔免疫鐵律：隊長、神眷綁定（soulbound）、玩家自捏�
   });
 });
 
-test("私奔：對隊長淨好感 <= -30 的非免疫者 20% 跳槽，單場最多 1 人，進宿敵隊名冊；好感夠高者不走", () => {
+test("私奔：對隊長淨好感 <= -5（或低理智且好感 < 15）的非免疫者跳槽，單場最多 1 人，進宿敵隊名冊；好感夠高者不走", () => {
   withCfg(CONFIG.rival.elope, { chance: 1 }, () => {
     const state = setup(6, { level: 2 });
     const cap = makeCaptain(state);
     const [, a, b, c] = state.samsarites;
     shiftAffinity(state, a, cap, -50);
     shiftAffinity(state, b, cap, -50);
-    shiftAffinity(state, c, cap, -10); // 不到 -30
+    shiftAffinity(state, c, cap, 20); // 好感正向、理智正常：不是候選
     withPending(state, "dongying");
     const r = startRun(state, RIVAL_ID, ids(state));
     state.samsarites.forEach((s) => (s.location = "space"));
     const before = state.samsarites.length;
     rivalFinish(state, r.run, dungeonOfRun(r.run), state.samsarites, false);
     assert.equal(state.samsarites.length, before - 1, "單場最多 1 人");
-    assert.ok(state.samsarites.includes(c), "-10 不達門檻");
+    assert.ok(state.samsarites.includes(c), "好感為正且理智正常不走");
     const roster = state.rivals.squads.dongying.roster;
     assert.equal(roster.length, 1);
     assert.equal(roster[0].role, "defector");
@@ -366,4 +366,33 @@ test("洲際碰撞完整流程：出征、結算進摘要（含 rival 欄位）�
   const back = deserialize(serialize(state));
   assert.equal(back.rivals.squads.golden.roster.length, 1);
   assert.equal(back.rivals.stats.fights, 1);
+});
+
+test("私奔放寬：-5 以下、或理智 < 45 且淨好感 < 15 才是候選；golden／joyous 不論勝負再挖角一次", () => {
+  const state = setup(4, { level: 2 });
+  const cap = makeCaptain(state);
+  const [, a, b, c] = state.samsarites;
+  shiftAffinity(state, a, cap, -5);
+  b.stats.sanity = 30; shiftAffinity(state, b, cap, 10);
+  c.stats.sanity = 30; shiftAffinity(state, c, cap, 20);
+  assert.equal(elopeCandidate(state, a, cap), true);
+  assert.equal(elopeCandidate(state, b, cap), true);
+  assert.equal(elopeCandidate(state, c, cap), false, "低理智但好感 >= 15");
+  assert.equal(CONFIG.rival.elope.chance, 0.35);
+  assert.equal(CONFIG.rival.elope.lureChance, 0.12);
+  withCfg(CONFIG.rival.elope, { lureChance: 1 }, () => {
+    withCfg(CONFIG.rival.hybrid, { joyousChance: 0, otherChance: 0 }, () => {
+      for (const [id, win] of [["golden", true], ["joyous", false], ["polaris", true]]) {
+        const st = setup(4, { level: 2 });
+        const cp = makeCaptain(st);
+        shiftAffinity(st, st.samsarites[1], cp, -50);
+        withPending(st, id);
+        const r = startRun(st, RIVAL_ID, ids(st));
+        st.samsarites.forEach((s) => (s.location = "space"));
+        const n = st.samsarites.length;
+        withCfg(CONFIG.rival.elope, { chance: 0 }, () => rivalFinish(st, r.run, dungeonOfRun(r.run), st.samsarites, win));
+        assert.equal(st.samsarites.length, id === "polaris" ? n : n - 1, `${id} 勝負 ${win}`);
+      }
+    });
+  });
 });

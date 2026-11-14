@@ -224,9 +224,10 @@ export function rivalFinish(state, run, dungeon, survivors, success) {
       s.stats.sanity = Math.max(0, s.stats.sanity - R().lossSanity);
     }
     if (survivors.length > 0) emit(state, "social", logText(state, "rivalShame", { squad: q.name, san: R().lossSanity }));
-    elope(state, q, survivors, notes);
+    elope(state, q, survivors, notes, R().elope.chance);
     addChronicle(state, "rival", logText(state, "chronRivalLoss", { squad: q.name }));
   }
+  if (q.id === "golden" || q.id === "joyous") elope(state, q, survivors, notes, R().elope.lureChance); // 重金挖角／魅惑拐人：不論勝負再檢定一次
   hybridEncounter(state, q, survivors, notes);
   return { squadId: q.id, name: q.name, icon: q.icon, win: success, notes, revolt: !!run.rival.revolt };
 }
@@ -333,17 +334,24 @@ export function isElopeImmune(state, s) {
   return !!s.customProfile;
 }
 
-function elope(state, q, survivors, notes) {
+/** 私奔候選：對隊長淨好感 <= -5，或（理智 < 45 且淨好感 < 15） */
+export function elopeCandidate(state, s, cap) {
+  const a = affinity(state, s, cap);
+  const c = R().elope;
+  return a <= c.affinity || ((s.stats?.sanity ?? 100) < c.lowSanity && a < c.lowSanityAffinity);
+}
+
+function elope(state, q, survivors, notes, chance) {
   const rv = riv(state);
   const cap = captainOf(state);
   if (!cap) return;
   const pool = new Map();
   for (const s of [...survivors, ...state.samsarites.filter((x) => x.location === "space")]) pool.set(s.id, s); // 參戰者與隊內留守者
-  const cands = [...pool.values()].filter((s) => state.samsarites.includes(s) && s.location !== "pod" && !isElopeImmune(state, s) && affinity(state, s, cap) <= R().elope.affinity).sort((a, b) => a.id - b.id);
+  const cands = [...pool.values()].filter((s) => state.samsarites.includes(s) && s.location !== "pod" && !isElopeImmune(state, s) && elopeCandidate(state, s, cap)).sort((a, b) => a.id - b.id);
   let gone = 0;
   for (const s of cands) {
     if (gone >= R().elope.maxPerFight) break;
-    if (rand(rv) < R().elope.chance) {
+    if (rand(rv) < chance) {
       defectTo(state, q, s);
       gone += 1;
       notes.push(`${s.name} 私奔投靠`);

@@ -529,7 +529,7 @@ export const CONFIG = {
     lossInjury: 2, // 落敗：參戰存活者傷勢至少重傷
     lossSanity: 15, // 洲際羞辱：參戰存活者理智 -15
     defectorRPct: 0.03, // 每名叛逃到敵隊的前我方成員，使該隊 R +3%（以敵方打手身分登場）
-    elope: { affinity: -30, chance: 0.2, maxPerFight: 1 }, // 落敗：對隊長淨好感 <= -30 的成員 20% 私奔（單場最多 1 人）
+    elope: { affinity: -5, lowSanity: 45, lowSanityAffinity: 15, chance: 0.35, lureChance: 0.12, maxPerFight: 1 }, // 候選：對隊長淨好感 <= -5，或（理智 < 45 且淨好感 < 15）。落敗 35% 私奔；對 golden／joyous 不論勝負再多一次 12% 挖角檢定（各單場最多 1 人）
     counter: { chance: 0.15, rosterCap: 24 }, // 勝利：我方人數 < 上限、隊長 bond／communal 流派，15% 拐走對面失意副手
     hybrid: { joyousChance: 0.35, otherChance: 0.1, talentBonus: 0.15, cooldownDays: 60, minAffinity: 30 }, // 戰場停火・春風一度
     pigRevolt: { chance: 0.4, rReduce: 0.15, minAvgAffinity: 40, recruitLove: 50 }, // 東櫻肉豬策反
