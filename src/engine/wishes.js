@@ -102,7 +102,7 @@ export function acceptWish(state, wishId) {
   emit(state, "wishAccept", logText(state, "wishAccept", vars));
   w.status = "active";
   if (w.mode === "pay") {
-    spend(state, w.params.cost);
+    spend(state, w.params.cost, false); // 許願吃好的不計入商店階級（#16）
     completeWish(state, w);
   } else if (w.mode === "rest") {
     s.vacationDays = w.params.rest; // 休假期間不能派遣，維持費照付（人在主神空間本來就要付）

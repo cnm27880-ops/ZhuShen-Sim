@@ -166,7 +166,7 @@ export function replaceCaptain(state, id) {
   const s = getSamsarite(state, id);
   if (check.free) return appointCaptain(state, id);
   const preview = replacePreview(state, id);
-  spend(state, check.cost);
+  spend(state, check.cost, false);
   state.karmaCrystals -= check.crystal;
   setCaptain(state, s, "force");
   for (const o of preview.snub) {

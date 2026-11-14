@@ -266,12 +266,13 @@ export function addSpent(state, cost) {
   }
 }
 
-export function spend(state, cost) {
+/** countTier 預設 true：商店／黑市／強化／抽卡的消費計入商店階級解鎖；基建、刷新、事件類消費傳 false（#16） */
+export function spend(state, cost, countTier = true) {
   if (!canAfford(state, cost)) return false;
   const wasInDebt = state.points < 0;
   state.points -= cost;
   announceDebtIfNew(state, wasInDebt);
-  addSpent(state, cost);
+  if (countTier) addSpent(state, cost);
   return true;
 }
 

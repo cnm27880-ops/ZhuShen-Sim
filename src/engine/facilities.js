@@ -68,7 +68,7 @@ export function checkUpgrade(state, id) {
 export function upgradeFacility(state, id, { auto = false } = {}) {
   const c = checkUpgrade(state, id);
   if (!c.ok) return c;
-  spend(state, c.pay);
+  if (!spend(state, c.pay, false)) return { ...c, ok: false, reason: "積分不夠（已達高利貸上限）" }; // 基建不計入商店階級（#16）；防禦性檢查（#39）
   if (c.subsidy > 0) state.squad.communalFund -= c.subsidy;
   state.erosionCrystals -= c.crystals;
   state.facilities[id] = c.next;

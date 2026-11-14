@@ -93,3 +93,72 @@ test("#23：催熟完成但人口已滿，嬰兒暫留艙內，有空位後才�
   assert.equal(baby.location, "space", "有空位就出艙");
   assert.ok(typeof hatch === "function" && currentDay(state) >= 1);
 });
+
+import { buyItem, checkBuy } from "../src/engine/shop.js";
+import { SHOP_ITEMS as SHOP_ITEMS_SYNC } from "../src/data/shopItems.js";
+import { upgradeFacility } from "../src/engine/facilities.js";
+import { shopTier } from "../src/engine/core.js";
+
+function shopState(n = 3) {
+  const { state, people } = setup(n, 21);
+  state.points = 100000;
+  return { state, people };
+}
+
+test("#7：黑貨轉嫁對象照玩家選的人；沒選或選錯才隨機", () => {
+  const { state, people: [a, b, c] } = shopState(3);
+  state.totalSpent = 99999; // 解鎖高階
+  const madness = SHOP_ITEMS_SYNC.find((i) => i.effect?.transferMadness);
+  assert.ok(madness, "找得到奪舍禁符");
+  state.samsarites.forEach((s) => (s.stats.sanity = 100));
+  const r = buyItem(state, madness.id, a.id, { source: "market", victimId: c.id });
+  assert.equal(r.ok, true);
+  assert.ok(c.stats.sanity < 100, "被選中的人受害");
+  assert.equal(b.stats.sanity, 100, "沒被選的人沒事");
+});
+
+test("#17：被鎖進休眠艙的人，手動商店不能幫他買東西", () => {
+  const { state, people: [a] } = shopState(1);
+  a.podLockDays = 5;
+  const gear = SHOP_ITEMS_SYNC.find((i) => i.tier === 1 && i.kind === "gear" && i.category === "standard");
+  const r = checkBuy(state, gear, a, {});
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /休眠艙/);
+});
+
+test("#18：低階破鎖丹不能蓋掉身上較高階的破鎖加成", () => {
+  const { state, people: [a] } = shopState(1);
+  state.totalSpent = 99999;
+  a.geneBuff = { target: 4, costDiscount: 0.3 };
+  const low = SHOP_ITEMS_SYNC.find((i) => i.effect?.geneLockTarget === 1);
+  assert.ok(low);
+  assert.equal(checkBuy(state, low, a, { source: "market" }).ok, false);
+  assert.deepEqual(a.geneBuff, { target: 4, costDiscount: 0.3 }, "原本的 Buff 沒被動到");
+});
+
+test("#19：已囤同效果且不低於它的出征耗材，不能再買一份", () => {
+  const { state, people: [a] } = shopState(1);
+  assert.equal(buyItem(state, "t1_37", a.id, { source: "market" }).ok, true);
+  const again = buyItem(state, "t1_37", a.id, { source: "market" });
+  assert.equal(again.ok, false);
+  assert.equal(a.consumables.length, 1);
+});
+
+test("#16：升級基建不計入商店階級，不會一次跳兩階", () => {
+  const { state } = shopState(1);
+  state.points = 1000000;
+  const before = state.totalSpent;
+  const r = upgradeFacility(state, "gravity");
+  assert.equal(r.ok, true);
+  assert.equal(state.totalSpent, before, "基建花費不算商店累積花費");
+  assert.equal(shopTier(state), 1);
+});
+
+test("#39：付款失敗就不給貨（防禦性）", () => {
+  const { state, people: [a] } = shopState(1);
+  const item = SHOP_ITEMS_SYNC.find((i) => i.tier === 1 && i.kind === "gear" && i.category === "standard");
+  state.points = -100000; // 已超過高利貸上限
+  const r = buyItem(state, item.id, a.id, {});
+  assert.equal(r.ok, false);
+  assert.ok(!a.gear?.[item.slot]);
+});

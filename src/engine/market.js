@@ -70,7 +70,7 @@ export function manualRefreshCost(state) {
 
 export function manualRefresh(state) {
   const cost = manualRefreshCost(state);
-  if (!spend(state, cost)) return { ok: false, reason: "積分不夠（已達高利貸上限）", cost };
+  if (!spend(state, cost, false)) return { ok: false, reason: "積分不夠（已達高利貸上限）", cost };
   const m = marketOf(state);
   m.manualToday = (m.manualDay === currentDay(state) ? m.manualToday : 0) + 1;
   m.manualDay = currentDay(state);
