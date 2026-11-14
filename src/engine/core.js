@@ -24,7 +24,7 @@ import { relicBonusOf, refreshRelicBonus } from "./relics.js"; // 同上（Phase
 import { leaveHeirloom, dailyLineage } from "./lineage.js"; // 同上（Phase 4-E-4 遺物、子嗣、叛逃）
 import { dailyDrama } from "./drama.js"; // 同上（Phase 4-E-3 5:2:1 狗血事件）
 import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, communalInherit, styleOf, squadSteleMult } from "./squad.js"; // 同上（Phase 4-E 小隊隊長與流派）
-import { addLife, addLifeOnce, bioOf } from "./life.js"; // 人物傳記（功能 5；循環引用只在執行時呼叫）
+import { addLife, addLifeOnce, bioOf, compactBio } from "./life.js"; // 人物傳記（功能 5；循環引用只在執行時呼叫）
 import { newFacilities, dailyFacilities, refreshFacilityBonus, gravityPct, podsHeal, restSanityBonus } from "./facilities.js"; // 同上（Phase 4-F-3 永久基建）
 import { newRivalState, dailyRivals } from "./rivals.js"; // 同上（Phase 4-F-1／2 洲際宿敵團戰）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
@@ -233,7 +233,7 @@ export function killSamsarite(state, s, cause, killer = null, stele = null) {
     addLifeOnce(state, killer, "firstKill", "kill", `第一次親手殺死同伴：${s.name}。`);
   }
   addLife(state, s, "death", `${cause}。`);
-  const bio = bioOf(state, s, { alive: false, deathDay: currentDay(state), cause }); // 傳記快照要在移出名冊、清關係之前存
+  const bio = compactBio(bioOf(state, s, { alive: false, deathDay: currentDay(state), cause })); // 傳記快照要在移出名冊、清關係之前存
   state.samsarites = state.samsarites.filter((x) => x.id !== s.id);
   clearBondPartner(state, s.id);
   cancelWishesOf(state, s.id);
@@ -402,7 +402,7 @@ export function recycle(state, id) {
   const s = getSamsarite(state, id);
   if (!s || s.location !== "space") return false;
   addLife(state, s, "death", "被主管推進了回收爐。");
-  const bio = bioOf(state, s, { alive: false, deathDay: currentDay(state), cause: "被主管推進回收爐" });
+  const bio = compactBio(bioOf(state, s, { alive: false, deathDay: currentDay(state), cause: "被主管推進回收爐" }));
   state.samsarites = state.samsarites.filter((x) => x.id !== id);
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause: "被主管推進回收爐", bio });
   forgetRelations(state, id);

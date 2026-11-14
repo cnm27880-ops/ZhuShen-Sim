@@ -377,7 +377,10 @@ test("功能 5：一生大事記——到職、第一次出征／受傷／殺人
   assert.equal(g.bio.alive, false);
   assert.equal(g.bio.cause, "測試被殺");
   assert.ok(g.bio.life.some((e) => e.kind === "death"));
-  assert.equal(graveBio(state, state.graveyard.length - 1), g.bio);
+  const shown = graveBio(state, state.graveyard.length - 1); // 墓園存的是精簡傳記，顯示時補回標籤與成就
+  assert.equal(shown.cause, g.bio.cause);
+  assert.ok(Array.isArray(shown.tags) && Array.isArray(shown.achievements) && Array.isArray(shown.statuses));
+  assert.deepEqual(shown.tags.map((t) => t.id), g.bio.tagIds);
   const bioA = bioOf(state, a);
   assert.equal(bioA.children.length, 1);
   assert.ok(bioA.achievements.some((x) => x.id === "bloodied"));
