@@ -168,3 +168,22 @@ test("存檔：舊存檔補稅率與私房錢欄位；新欄位往返不遺失",
   assert.equal(loaded.samsarites[0].wallet, 0);
   assert.deepEqual(loaded.samsarites[0].soulbound, {});
 });
+
+test("整合：自動派遣跑 60 天——私房錢不為負、數字都是整數、輪迴者有在自己逛街、奇物加成不超過封頂、不會遊戲結束", () => {
+  const state = createNewGame(7);
+  state.settings.autoDispatch = true;
+  for (const key of Object.keys(state.settings.pauseOn)) state.settings.pauseOn[key] = false;
+  let guard = 0;
+  while (state.tick < CONFIG.ticksPerDay * 60 && !state.gameOver && guard++ < 10000) {
+    step(state);
+    state.events.length = 0;
+    state.runReports.length = 0;
+    for (const s of state.samsarites) {
+      assert.ok(Number.isInteger(s.wallet) && s.wallet >= 0, `${s.name} 私房錢 ${s.wallet}`);
+      assert.ok((s.relicBonus ?? 0) <= CONFIG.relic.powerCap + 1e-9);
+    }
+    assert.ok(Number.isInteger(state.points));
+  }
+  assert.equal(state.gameOver, false);
+  assert.ok(state.totalSpent > 0);
+});

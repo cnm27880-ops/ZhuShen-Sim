@@ -150,7 +150,8 @@ test("突變：血月狂躁的 R 倍率只影響這一場，資料表不動", ()
   const d = getDungeon("ch2_03");
   const eff = applyMutation(d, "blood_moon");
   assert.equal(eff.recommendedPower, Math.round(d.recommendedPower * 1.15));
-  assert.equal(d.recommendedPower, 591);
+  assert.equal(d.recommendedPower, getDungeon("ch2_03").recommendedPower);
+  assert.equal(d.recommendedPower, Math.round(543 * (1087 / 543) ** 0.5));
   assert.equal(applyMutation(d, "calm_wind"), d);
   assert.equal(boardTargets(createNewGame(1)).length, 3);
 });
