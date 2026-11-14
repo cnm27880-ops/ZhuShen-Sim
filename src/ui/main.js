@@ -8,13 +8,15 @@ import {
   currentDay,
   getSamsarite,
   upkeepOf,
+  upkeepBaseOf,
+  debtLimitOf,
   canAfford,
   pullGacha,
   recycle,
   serialize,
   deserialize,
 } from "../engine/core.js";
-import { roomPassRate, clearChance, partyPower, startRun, hasIntel, rewardTierMult } from "../engine/dungeon.js";
+import { roomPassRate, clearChance, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, roomCount, roomsToClear } from "../engine/dungeon.js";
 import { effectivePower } from "../engine/tags.js";
 import { shopTier, nextTierInfo, checkBuy, buyItem, collectionEffects } from "../engine/shop.js";
 import { SHOP_ITEMS, SHOP_KIND_LABELS, SHOP_SLOT_LABELS, getShopItem } from "../data/shop.js";
@@ -132,8 +134,9 @@ function renderTopbar() {
   $("points").classList.toggle("debt", state.points < 0);
   $("day-label").textContent = `第 ${currentDay(state)} 天`;
   $("day-bar-fill").style.width = `${((state.tick % CONFIG.ticksPerDay) / CONFIG.ticksPerDay) * 100}%`;
-  const upkeep = state.samsarites.filter((s) => s.location !== "dungeon").reduce((sum, s) => sum + upkeepOf(s), 0);
+  const upkeep = state.samsarites.filter((s) => s.location !== "dungeon").reduce((sum, s) => sum + upkeepOf(s, state), 0);
   $("upkeep").textContent = `-${upkeep} / 天`;
+  $("space-level").textContent = `Lv.${state.spaceLevel}`;
 
   $("speed-controls").innerHTML = CONFIG.speeds
     .map((v) => `<button data-action="set-speed" data-value="${v}" class="${v === state.settings.speed ? "active" : ""}">${v}x</button>`)
@@ -219,10 +222,10 @@ function renderDungeonView(run) {
     view.className = `theme-${dungeon.id}`;
     view.innerHTML = `<h3>${dungeon.icon} ${dungeon.name} <small></small></h3>
       <div class="dungeon-intro">${dungeon.intro ?? ""}</div>
-      <div class="route">
+      <div class="route ${n > 6 ? "dense" : ""}">
         <div class="route-line"></div><div class="route-progress"></div>
         ${dungeon.rooms
-          .map((r, i) => `<div class="route-node" style="left:${px(i)}%">${i + 1}</div><div class="route-node-label" style="left:${px(i)}%;transform:translateX(-50%)">${r.name}</div>`)
+          .map((r, i) => `<div class="route-node" style="left:${px(i)}%" title="${r.name}">${i + 1}</div><div class="route-node-label" style="left:${px(i)}%;transform:translateX(-50%)">${r.name}</div>`)
           .join("")}
         <div class="route-party"></div>
       </div>
@@ -251,9 +254,10 @@ function renderDungeonView(run) {
       .join("");
   }
 
-  const rate = party.length ? Math.round(roomPassRate(state, party, dungeon, env, 0, run.firstTime) * 100) : 0;
+  const rate = party.length ? Math.round(roomPassRate(state, party, dungeon, env, 0, run.intel) * 100) : 0;
   const done = Math.min(run.roomIndex, n);
-  view.querySelector(".dungeon-status").textContent = `已走完 ${done}/${n} 間・存活 ${party.length} 人・房間通過率 ${rate}%${party.length ? "" : "（全滅，等時間到結算）"}`;
+  const roomName = n > 6 && done < n ? `・下一間：${dungeon.rooms[done].name}` : ""; // 房間多時節點下方不放名字，改寫在這裡
+  view.querySelector(".dungeon-status").textContent = `已走完 ${done}/${n} 間${roomName}・存活 ${party.length} 人・房間通過率 ${rate}%${party.length ? "" : "（全滅，等時間到結算）"}`;
   const follow = getSamsarite(state, state.settings.followId);
   view.querySelector(".dungeon-back").innerHTML =
     peekRunId != null
@@ -331,7 +335,7 @@ function renderRunList(viewing = null) {
           return `<span class="run-node ${cls}">${r === true ? "✓" : r === false ? "✕" : i + 1}</span>`;
         })
         .join("");
-      const rate = party.length ? Math.round(roomPassRate(state, party, dungeon, env, 0, run.firstTime) * 100) : 0;
+      const rate = party.length ? Math.round(roomPassRate(state, party, dungeon, env, 0, run.intel) * 100) : 0;
       const names = party.map((s) => `${s.injury > 0 ? "🩹" : "🔦"}${s.name}`).join("、") || "全滅";
       return `<div class="run-card theme-${dungeon.id} ${viewing?.id === run.id ? "viewing" : ""}" data-action="peek-run" data-run-id="${run.id}" title="點一下在主畫面查看這一場">
         <div class="run-title">${dungeon.icon} <b>${dungeon.name}</b> <small>${env ? env.name : ""}</small></div>
@@ -401,7 +405,7 @@ function renderRoster() {
       (s) => `
       <div class="card rank-border-${s.rank} ${s.location === "dungeon" ? "away" : s.location === "pod" ? "pod" : ""}" data-action="open-detail" data-id="${s.id}">
         <div class="card-top">${rankBadge(s.rank)}<span class="grow">${s.name}</span><span>${s.locked ? "🔒" : ""}</span><span class="follow-btn ${s.id === state.settings.followId ? "on" : ""}" data-action="toggle-follow" data-id="${s.id}" title="${s.id === state.settings.followId ? "取消鎖定視角" : "鎖定視角（他下副本時畫面跟著切）"}">👁</span></div>
-        <div class="card-meta"><span>⚔️ ${effectivePower(s)}</span><span>🧠 ${s.stats.sanity}</span><span>💸 ${upkeepOf(s)}/天</span></div>
+        <div class="card-meta"><span>⚔️ ${effectivePower(s)}</span><span>🧠 ${s.stats.sanity}</span><span>💸 ${upkeepOf(s, state)}/天</span></div>
         <div class="tags">${tagChips(s)}</div>
         <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
         <div class="card-status">${locationLabel(s)}${statusExtras(s)}</div>
@@ -440,12 +444,16 @@ function dispatch() {
   const party = home.filter((s) => dispatchPick.party.has(s.id));
   const injured = party.filter((s) => s.injury > 0);
 
-  const dungeonOptions = DUNGEONS.map((d) => {
+  const pct = (v) => `${v >= 0 ? "+" : ""}${Math.round(v * 1000) / 10}%`;
+  // 只列出已解鎖的章節＋下一章（鎖住、預告用），其餘不顯示
+  const dungeonOptions = DUNGEONS.filter((d) => d.chapter <= state.spaceLevel + 1).map((d) => {
     const st = state.dungeonStats[d.id] ?? { attempts: 0, clears: 0 };
-    return `<div class="option ${d.id === dungeon.id ? "selected" : ""}" data-action="pick-dungeon" data-id="${d.id}">
+    const open = isUnlocked(state, d);
+    const head = d === DUNGEONS.find((x) => x.chapter === d.chapter) ? `<h4 class="chapter-head">第 ${d.chapter} 章${open ? "" : `（🔒 首通第 ${d.chapter - 1} 章尾王解鎖）`}・${roomCount(d)} 房過 ${roomsToClear(d)}</h4>` : "";
+    return `${head}<div class="option ${d.id === dungeon.id ? "selected" : ""} ${open ? "" : "locked"}" style="${open ? "" : "opacity:.45"}" data-action="pick-dungeon" data-id="${d.id}">
       <span class="option-icon">${d.icon}</span>
-      <span class="grow"><b>${d.name}</b> <small>${d.genre}・${d.difficulty}</small><br /><small>${d.intro}</small></span>
-      <small>推薦戰力 ${d.recommendedPower}<br />獎勵 ${d.reward} 分 ×${rewardTierMult(state, d)}${hasIntel(state, d) ? "" : "（首通 +" + CONFIG.dungeon.firstClearBonus + "）"}<br />${hasIntel(state, d) ? "🗺️ 有情報" : "❓ 首次開荒"}・通關 ${st.clears}/${st.attempts}</small>
+      <span class="grow"><b>${d.name}</b> <small>${d.genre}${d.boss ? "・👑 尾王" : ""}</small><br /><small>${d.intro}</small></span>
+      <small>推薦戰力 ${d.recommendedPower}<br />獎勵 ${d.reward} 分 ×${rewardTierMult(state, d)}${hasIntel(state, d) ? "" : "（首通 +" + Math.round(d.reward * CONFIG.dungeon.firstClearBonusPct) + "）"}<br />${hasIntel(state, d) ? "🗺️ 已通關" : "❓ 首次開荒"}・情報 ${pct(intelBonus(state, d))}・通關 ${st.clears}/${st.attempts}</small>
     </div>`;
   }).join("");
 
@@ -466,7 +474,7 @@ function dispatch() {
     const chance = Math.round(clearChance(state, party, dungeon) * 100);
     const cls = chance >= 75 ? "good" : chance >= 50 ? "warn" : "bad";
     summary = `小隊總戰力 <b>${partyPower(party)}</b> / 推薦 ${dungeon.recommendedPower}<br />
-      每個房間通過率 <b>${rate}%</b>，${CONFIG.dungeon.rooms} 個房間通過 ${CONFIG.dungeon.roomsToClear} 個以上才算通關<br />
+      每個房間通過率 <b>${rate}%</b>（含情報 ${pct(intelBonus(state, dungeon))}），${roomCount(dungeon)} 個房間通過 ${roomsToClear(dungeon)} 個以上才算通關（約 ${(roomCount(dungeon) * CONFIG.roomTicks) / CONFIG.ticksPerDay} 天）<br />
       預估通關率 <b class="${cls}">${chance}%</b>（進副本時才會抽環境標籤，實際會再浮動）`;
     const relBonus = Math.round(partyRelationBonus(state, party) * 100);
     if (relBonus !== 0) {
@@ -480,7 +488,7 @@ function dispatch() {
       summary += `<br /><span class="bad">⚔️ 隊內有仇人：${enemyPairs.join("、")}（每個房間有機率先打起來）</span>`;
     }
     if (!hasIntel(state, dungeon)) {
-      summary += `<br /><span class="warn">❓ 首次開荒：沒有情報，通過率 -${Math.round(CONFIG.dungeon.firstClearPenalty * 100)}%、傷勢更重；首通有額外 ${CONFIG.dungeon.firstClearBonus} 分與特殊獎勵。</span>`;
+      summary += `<br /><span class="warn">❓ 首次開荒：傷勢更重；首通有額外 ${Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct)} 分${dungeon.specialRewards?.length ? "與特殊獎勵" : ""}${dungeon.boss ? (dungeon.chapter >= CONFIG.space.maxLevel ? "，並完成主線" : "，並讓主神空間升級、解鎖下一章") : ""}。</span>`;
     }
     if (injured.length > 0) {
       summary += `<br /><span class="bad">⚠ 帶傷出征：${injured
@@ -511,11 +519,11 @@ function gacha() {
   const last = modal.lastId ? getSamsarite(state, modal.lastId) : null;
   const result = last
     ? `<div class="summary gacha-result" style="--rank-color:var(--rank-${last.rank})">${rankBadge(last.rank)}
-        <b>${last.name}</b>戰力 ${last.stats.power}・維持費 ${upkeepOf(last)} / 天</div>`
+        <b>${last.name}</b>戰力 ${last.stats.power}・維持費 ${upkeepOf(last, state)} / 天</div>`
     : "";
   const debtNote = state.points < 0 ? `<span class="bad">（負債中）</span>` : "";
   return `<h3>🎴 抽卡</h3>
-    <p>目前積分：<b>${state.points}</b> ${debtNote}。積分不夠時可以向主神借，最多借到 ${CONFIG.debtLimit} 分。</p>
+    <p>目前積分：<b>${state.points}</b> ${debtNote}。積分不夠時可以向主神借，最多借到 ${debtLimitOf(state)} 分。</p>
     <div class="option-list">${pools}</div>${result}
     <div class="modal-actions">${closeButton}</div>`;
 }
@@ -554,7 +562,7 @@ function shop() {
       <button class="primary" data-action="buy" data-id="${item.id}" ${check.ok ? "" : "disabled"}>${locked ? "🔒" : item.price + " 分"}</button>
     </div>`;
   };
-  const sections = [1, 2, 3, 4]
+  const sections = CONFIG.shopTierUnlock.map((_, i) => i + 1)
     .map((t) => {
       const need = CONFIG.shopTierUnlock[t - 1];
       const head = t <= tier ? `Tier ${t}` : `🔒 Tier ${t}（累積花費 ${need} 分解鎖）`;
@@ -599,7 +607,7 @@ function detail() {
       <tr><td>速度</td><td>${s.stats.speed}</td></tr>
       <tr><td>理智</td><td>${s.stats.sanity}</td></tr>
       <tr><td>運氣</td><td>${s.stats.luck}</td></tr>
-      <tr><td>維持費</td><td>${upkeepOf(s)} 分 / 天${s.location === "pod" ? "（催熟艙固定費用）" : `（基礎 ${CONFIG.upkeepBase} + 階級 ${RANKS[s.rank].upkeep} + 傷勢 ${INJURIES[s.injury].upkeep}）`}</td></tr>
+      <tr><td>維持費</td><td>${upkeepOf(s, state)} 分 / 天${s.location === "pod" ? "（催熟艙固定費用）" : `（基礎 ${upkeepBaseOf(state)} ×（1 + 階級 ${Math.round(RANKS[s.rank].upkeepPct * 100)}% + 傷勢 ${Math.round(INJURIES[s.injury].upkeepPct * 100)}%））`}</td></tr>
       <tr><td>資歷</td><td>第 ${s.joinedDay} 天加入・出征 ${s.runs} 次</td></tr>
       <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}`).join("・")}${s.upgrades?.power || s.upgrades?.dodge ? `<br /><small>強化：戰力 +${s.upgrades.power ?? 0}${s.upgrades.dodge ? `、閃避 +${Math.round(s.upgrades.dodge * 100)}%` : ""}</small>` : ""}</td></tr>
       <tr><td>標籤</td><td>${(s.tags ?? [])
@@ -709,8 +717,9 @@ function runResult() {
     : "無";
   return `<h3>${r.success ? "🏆 通關" : "💀 失敗"}：${r.dungeonName}</h3>
     <div class="summary">
-      <span class="result-rooms">${rooms}</span><br />房間通過 ${r.passedCount}/${CONFIG.dungeon.rooms}<br />
-      ${r.envName ? `環境：${r.envName}<br />` : ""}獎勵：<b class="${r.success ? "good" : "bad"}">+${r.reward} 分</b>${r.firstClear ? "（含首通 +" + CONFIG.dungeon.firstClearBonus + "）" : ""}<br />
+      <span class="result-rooms">${rooms}</span><br />房間通過 ${r.passedCount}/${r.rooms ?? r.results.length}<br />
+      ${r.envName ? `環境：${r.envName}<br />` : ""}獎勵：<b class="${r.success ? "good" : "bad"}">+${r.reward} 分</b>${r.firstClear ? "（含首通加成）" : ""}<br />
+      ${r.levelUp ? `🏛️ <b class="good">主神空間升到 Lv.${r.levelUp}，第 ${r.levelUp} 章解鎖！</b><br />` : ""}
       ${r.specialReward ? `🎁 特殊獎勵：<b class="good">${r.specialReward}</b>（已永久生效）<br />` : ""}
       生還：${survivors}<br />
       死亡：<span class="${r.deaths.length ? "bad" : ""}">${r.deaths.length ? r.deaths.join("、") : "無"}</span>
@@ -862,6 +871,7 @@ const actions = {
     modal = null; // afterChange 會自動接著彈下一場
   },
   "pick-dungeon"(el) {
+    if (!isUnlocked(state, getDungeon(el.dataset.id))) return; // 還沒解鎖的章節只能看不能選
     dispatchPick.dungeonId = el.dataset.id;
   },
   "toggle-member"(el) {

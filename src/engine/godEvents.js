@@ -12,7 +12,7 @@ import { CONFIG, INJURIES } from "../data/config.js";
 import { GOD_EVENTS, getGodEvent } from "../data/godEvents.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
 import { randInt, pick, rand, weighted } from "./rng.js";
-import { emit, currentDay, spend, canAfford, getSamsarite, setInjury, announceDebtIfNew } from "./core.js";
+import { emit, currentDay, spend, canAfford, getSamsarite, setInjury, announceDebtIfNew, debtLimitOf } from "./core.js";
 import { setMood, isOnVacation } from "./wishes.js";
 import { logText } from "./templates.js";
 
@@ -161,7 +161,7 @@ function applyEvent(state, ev, timedOut) {
 
   if (ev.mode === "tax") {
     const wasInDebt = state.points < 0;
-    state.points = Math.max(CONFIG.debtLimit, state.points - ev.params.loss);
+    state.points = Math.max(debtLimitOf(state), state.points - ev.params.loss);
     announceDebtIfNew(state, wasInDebt);
     emit(state, "god", logText(state, "godDone_tax", vars));
   } else if (ev.mode === "shock") {
@@ -196,7 +196,7 @@ function applyEvent(state, ev, timedOut) {
 function raidPenalty(state, target, dungeonId, logKey) {
   const k = G().kinds.raid;
   const wasInDebt = state.points < 0;
-  state.points = Math.max(CONFIG.debtLimit, state.points - k.penaltyPoints);
+  state.points = Math.max(debtLimitOf(state), state.points - k.penaltyPoints);
   announceDebtIfNew(state, wasInDebt);
   state.god.mission = null;
   const text = logText(state, logKey, { A: target, dungeon: getDungeon(dungeonId)?.name, penalty: k.penaltyPoints });

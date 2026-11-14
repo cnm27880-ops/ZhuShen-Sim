@@ -38,6 +38,8 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     tick: 0,
     points: CONFIG.startingPoints,
     totalSpent: 0, // 累積花費（Phase 3 商店階級解鎖會用到）
+    spaceLevel: 1, // 空間等級 Lv.1~5（Phase 4-A）：每首通一章尾王 +1，決定維持費、破產線、解鎖到第幾章
+    chapterClearDay: {}, // { 章節: 首通尾王是第幾天 }（npm run sim 統計用）
     nextId: 1,
     samsarites: [],
     graveyard: [],
@@ -113,10 +115,15 @@ export function getSamsarite(state, id) {
   return state.samsarites.find((s) => s.id === id);
 }
 
-/** 每日維持費 = 基礎 + 階級加成 + 傷勢加成 */
-export function upkeepOf(s) {
+/** 目前空間等級的基礎日維持費 */
+export function upkeepBaseOf(state) {
+  return CONFIG.space.upkeepBase[(state?.spaceLevel ?? 1) - 1];
+}
+
+/** 每日維持費 = 基礎 ×（1 + 階級附加% + 傷勢醫藥費%），四捨五入。基礎費跟空間等級走（沒傳 state 當 Lv.1） */
+export function upkeepOf(s, state = null) {
   if (s.location === "pod") return CONFIG.child.podUpkeep; // 催熟艙的嬰兒只吃固定的小額
-  return CONFIG.upkeepBase + RANKS[s.rank].upkeep + INJURIES[s.injury].upkeep;
+  return Math.round(upkeepBaseOf(state) * (1 + RANKS[s.rank].upkeepPct + INJURIES[s.injury].upkeepPct));
 }
 
 export function setInjury(s, level) {
@@ -147,9 +154,14 @@ function loseSanity(s, amount) {
 
 // ───────── 經濟 ─────────
 
+/** 主神高利貸上限（破產線），跟空間等級走 */
+export function debtLimitOf(state) {
+  return CONFIG.space.debtLimit[(state.spaceLevel ?? 1) - 1];
+}
+
 /** 積分可以花到負的（主神高利貸），但不能低於上限 */
 export function canAfford(state, cost) {
-  return state.points - cost >= CONFIG.debtLimit;
+  return state.points - cost >= debtLimitOf(state);
 }
 
 /** 商店目前開到第幾階（1~4），依累積花費 totalSpent 和 CONFIG.shopTierUnlock 決定 */
@@ -177,7 +189,7 @@ export function spend(state, cost) {
 
 export function announceDebtIfNew(state, wasInDebt) {
   if (!wasInDebt && state.points < 0) {
-    emit(state, "debt", logText(state, "debt", { limit: CONFIG.debtLimit }));
+    emit(state, "debt", logText(state, "debt", { limit: debtLimitOf(state) }));
   }
 }
 
@@ -188,7 +200,7 @@ export function endOfDay(state) {
 
   let cost = 0;
   for (const s of atHome) {
-    cost += upkeepOf(s); // 先用「今天的傷勢」算錢，再結算休息
+    cost += upkeepOf(s, state); // 先用「今天的傷勢」算錢，再結算休息
     if (s.injury > 0) {
       s.restDaysLeft -= 1;
       if (s.restDaysLeft <= 0) {
@@ -201,8 +213,8 @@ export function endOfDay(state) {
   cost += podCost(state); // 催熟艙裡的嬰兒也要吃飯
   const wasInDebt = state.points < 0;
   state.points -= cost;
-  const hitLimit = state.points < CONFIG.debtLimit;
-  if (hitLimit) state.points = CONFIG.debtLimit;
+  const hitLimit = state.points < debtLimitOf(state);
+  if (hitLimit) state.points = debtLimitOf(state);
 
   emit(state, "dayEnd", logText(state, "dayEnd", { day, home: atHome.length, cost }));
   announceDebtIfNew(state, wasInDebt);
@@ -320,6 +332,8 @@ export function deserialize(json) {
     s.podDaysLeft ??= 0;
     s.parents ??= null;
   }
+  state.spaceLevel ??= 1; // Phase 4-A 之前的存檔沒有空間等級
+  state.chapterClearDay ??= {};
   state.wishes ??= [];
   state.nextWishId ??= 1 + Math.max(0, ...state.wishes.map((w) => w.id));
   state.relations ??= {};

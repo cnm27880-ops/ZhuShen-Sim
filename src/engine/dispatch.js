@@ -7,7 +7,8 @@ import { emit, advanceTick, checkGameOver } from "./core.js";
 import { logText } from "./templates.js";
 import { areEnemies as pairEnemies } from "./relations.js";
 import { activeMission } from "./godEvents.js";
-import { clearChance, partyPower, startRun, stepDueRooms, settleRuns } from "./dungeon.js";
+import { effectivePower } from "./tags.js";
+import { clearChance, partyPower, startRun, stepDueRooms, settleRuns, unlockedDungeons, isUnlocked } from "./dungeon.js";
 
 // 兩人是否為仇恨／死敵（關係系統在 engine/relations.js）
 export function areEnemies(state, a, b) {
@@ -19,7 +20,7 @@ export function autoCandidates(state) {
   return state.samsarites
     .filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0))
     .filter((s) => !(state.settings.protect.noInjured && s.injury > 0))
-    .sort((a, b) => b.stats.power - a.stats.power)
+    .sort((a, b) => effectivePower(b) - effectivePower(a))
     .slice(0, CONFIG.auto.maxCandidates);
 }
 
@@ -75,14 +76,15 @@ export function planAutoDispatch(state) {
   let candidates = autoCandidates(state);
   const mission = CONFIG.auto.missionFirst ? activeMission(state) : null;
   const target = mission ? state.samsarites.find((s) => s.id === mission.samsariteId) : null;
-  const missionDungeon = mission ? DUNGEONS.find((d) => d.id === mission.dungeonId) : null;
+  const found = mission ? DUNGEONS.find((d) => d.id === mission.dungeonId) : null;
+  const missionDungeon = found && isUnlocked(state, found) ? found : null;
   const usable = target && missionDungeon && target.location === "space" && !target.locked && !(target.vacationDays > 0) && !(state.settings.protect.noInjured && target.injury > 0);
   if (usable) {
     if (!candidates.includes(target)) candidates = [...candidates.slice(0, CONFIG.auto.maxCandidates - 1), target]; // 戰力太低被截掉也要算進來
     const plan = bestPlan(state, candidates, [missionDungeon], target);
     if (plan) return plan;
   }
-  return bestPlan(state, candidates, DUNGEONS);
+  return bestPlan(state, candidates, unlockedDungeons(state));
 }
 
 /** 一次排出多隊：每輪挑最划算的一隊，剩下的人再組下一隊，直到沒有達標的組合（人手用完）。回傳派出幾隊 */

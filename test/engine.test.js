@@ -35,29 +35,45 @@ test("同一個種子會產生一模一樣的開局", () => {
   assert.equal(createNewGame(42).samsarites.length, CONFIG.startingSamsarites);
 });
 
-test("維持費符合計畫書第 12.2 節的四個範例", () => {
+test("維持費：Lv.1 基礎 8 分 ×（1 + 階級% + 傷勢%），四捨五入；空間升級後基礎費跟著漲", () => {
   const state = createNewGame(1);
-  assert.equal(upkeepOf(make(state, "C", 0)), 10);
-  assert.equal(upkeepOf(make(state, "B", 1)), 20);
-  assert.equal(upkeepOf(make(state, "A", 2)), 35);
-  assert.equal(upkeepOf(make(state, "S", 3)), 60);
+  assert.equal(upkeepOf(make(state, "C", 0)), 8); // 8 × 1
+  assert.equal(upkeepOf(make(state, "B", 1)), 12); // 8 × (1 + 25% + 25%)
+  assert.equal(upkeepOf(make(state, "A", 2)), 18); // 8 × (1 + 50% + 75%)
+  assert.equal(upkeepOf(make(state, "S", 3)), 28); // 8 × (1 + 100% + 150%)
+  state.spaceLevel = 3;
+  assert.equal(upkeepOf(make(state, "C", 0), state), 35);
+  assert.equal(upkeepOf(make(state, "B", 0), state), 44); // 35 × 1.25 = 43.75
 });
 
-test("房間通過率：已有情報、戰力等於推薦戰力時是 55%（50% + 重打 5%），並且有上下限", () => {
+test("房間通過率：飽和公式 0.85 × P ÷ (P + R × 0.55) + 情報條，並且有上下限", () => {
   const state = createNewGame(1);
-  state.dungeonStats[easy.id] = { attempts: 1, clears: 1 }; // 已有情報
+  state.dungeonStats[easy.id] = { attempts: 1, clears: 1, intel: 0 }; // 情報條剛好 0
   const fake = (power) => [{ stats: { power }, tags: [] }];
-  assert.ok(Math.abs(roomPassRate(state, fake(easy.recommendedPower), easy) - 0.55) < 1e-9);
-  assert.equal(roomPassRate(state, fake(100000), easy), CONFIG.dungeon.maxPassRate);
-  assert.equal(roomPassRate(createNewGame(1), fake(1), easy), CONFIG.dungeon.minPassRate); // 首次開荒又超弱 → 吃到下限
+  assert.ok(Math.abs(roomPassRate(state, fake(easy.recommendedPower), easy) - 0.85 / 1.55) < 1e-9); // P = R → 54.8%
+  assert.ok(Math.abs(roomPassRate(state, fake(easy.recommendedPower * 2), easy) - (0.85 * 2) / 2.55) < 1e-9); // 戰力翻倍只多 12%
+  const huge = roomPassRate(state, fake(10 ** 9), easy);
+  assert.ok(huge > 0.849 && huge < 0.85); // 戰力再高也只逼近 85%（沒情報、沒加成時）
+  assert.equal(roomPassRate(createNewGame(1), fake(1), easy), CONFIG.dungeon.minPassRate); // 超弱 → 吃到下限
   assert.ok(Math.abs(chanceAtLeast(5, 5, 0.7) - 0.7 ** 5) < 1e-9);
   assert.ok(clearChance(state, fake(400), easy) > 0.8);
 });
 
-test("首次開荒：通過率 -10%；通關後變成有情報", () => {
+test("情報條：每個副本獨立，-3% 起、每結算一場（不論成敗）+1.5%、最多 +9%；開場就鎖定", () => {
   const state = createNewGame(1);
   const fake = [{ stats: { power: easy.recommendedPower }, tags: [] }];
-  assert.ok(Math.abs(roomPassRate(state, fake, easy) - 0.4) < 1e-9);
+  assert.ok(Math.abs(roomPassRate(state, fake, easy) - (0.85 / 1.55 - 0.03)) < 1e-9);
+  const s = state.samsarites[0];
+  s.stats.power = 1; // 一定輸，用來確認「輸了也加情報」
+  for (let i = 1; i <= 10; i++) {
+    setInjury(s, 0);
+    if (!state.samsarites.includes(s)) break;
+    const { run } = startRun(state, easy.id, [s.id]);
+    assert.ok(Math.abs(run.intel - Math.min(0.09, -0.03 + 0.015 * (i - 1))) < 1e-9, "開場鎖定的是結算前的情報");
+    while (state.runs.length) step(state);
+    assert.ok(Math.abs(state.dungeonStats[easy.id].intel - Math.min(0.09, -0.03 + 0.015 * i)) < 1e-9);
+  }
+  assert.equal(state.dungeonStats[getDungeon("silent_ark").id], undefined, "別的副本不受影響");
 });
 
 test("標籤：戰力加成、類型相性、環境相性、加成上限", () => {
@@ -96,7 +112,7 @@ test("標籤資料表：id 不重複、30 個 MVP 標籤、環境標籤引用的
   for (const t of TAGS) for (const envId of Object.keys(t.envBonus ?? {})) assert.ok(ENV_TAGS.some((e) => e.id === envId), envId);
 });
 
-test("獎勵遞減：第 1 次基礎、2-3 次 120%、4-5 次 100%、6-10 次 80%、11 次後 60%", () => {
+test("獎勵遞減：第 1 次基礎、2-3 次 120%、4-5 次 100%、6-10 次 80%、11 次後 75%（地板價）", () => {
   const state = createNewGame(1);
   const mult = (clears) => {
     state.dungeonStats[easy.id] = { attempts: clears, clears };
@@ -107,11 +123,11 @@ test("獎勵遞減：第 1 次基礎、2-3 次 120%、4-5 次 100%、6-10 次 80
   assert.equal(mult(2), 1.2); // 第 3 次
   assert.equal(mult(3), 1.0); // 第 4 次
   assert.equal(mult(5), 0.8); // 第 6 次
-  assert.equal(mult(10), 0.6); // 第 11 次
-  assert.equal(mult(99), 0.6);
+  assert.equal(mult(10), 0.75); // 第 11 次
+  assert.equal(mult(99), 0.75);
 });
 
-test("首次通關：額外 +50 分、掉一個特殊獎勵並收入收藏；第二次不再有", () => {
+test("首次通關：額外 + 基礎獎勵 × 50%、掉一個特殊獎勵並收入收藏；第二次不再有", () => {
   const state = createNewGame(1);
   state.samsarites = [];
   const squad = [make(state, "S"), make(state, "S"), make(state, "S"), make(state, "S")];
@@ -128,7 +144,7 @@ test("首次通關：額外 +50 分、掉一個特殊獎勵並收入收藏；第
     assert.equal(first.firstClear, true);
     assert.ok(first.specialReward);
     assert.equal(state.collection.length, 1);
-    assert.ok(first.reward >= CONFIG.dungeon.firstClearBonus);
+    assert.ok(first.reward >= Math.round(easy.reward * CONFIG.dungeon.firstClearBonusPct));
     startRun(state, easy.id, state.samsarites.map((s) => s.id));
     while (state.runs.length) step(state);
     assert.equal(state.lastRun.firstClear, false);
@@ -139,19 +155,19 @@ test("首次通關：額外 +50 分、掉一個特殊獎勵並收入收藏；第
 test("每日結算：扣維持費、養傷倒數、傷癒", () => {
   const state = createNewGame(1);
   state.samsarites = [];
-  const s = make(state, "C", 1); // 輕傷：休 1 天、每天 15 分
+  const s = make(state, "C", 1); // 輕傷：休 1 天、每天 8 × 1.25 = 10 分
   state.tick = CONFIG.ticksPerDay;
   endOfDay(state);
-  assert.equal(state.points, CONFIG.startingPoints - 15);
+  assert.equal(state.points, CONFIG.startingPoints - 10);
   assert.equal(s.injury, 0);
 });
 
 test("高利貸：積分不會低於上限，負債時會電擊扣理智", () => {
   const state = createNewGame(1);
-  state.points = CONFIG.debtLimit + 5;
+  state.points = CONFIG.space.debtLimit[0] + 5;
   state.tick = CONFIG.ticksPerDay;
   endOfDay(state);
-  assert.equal(state.points, CONFIG.debtLimit);
+  assert.equal(state.points, CONFIG.space.debtLimit[0]);
   assert.ok(state.samsarites.every((s) => s.stats.sanity === 100 - CONFIG.debtShockSanity));
   assert.ok(state.events.some((e) => e.type === "shock"));
 });
@@ -168,7 +184,7 @@ test("抽卡：扣對的錢、只出該池的階級、借不到錢就抽不了",
       assert.equal(state.points, before - pool.cost);
     }
   }
-  state.points = CONFIG.debtLimit + 100;
+  state.points = CONFIG.space.debtLimit[0] + 100;
   assert.equal(pullGacha(state, "ba"), null);
   assert.equal(canAfford(state, 100), true);
 });
@@ -214,12 +230,16 @@ test("派遣檢查：人數上限、同一個人不能同時在兩場副本", ()
 });
 
 test("自動派遣：不派鎖定的人、不派受傷的人（開關開著時）、挑獎勵最高的可行副本", () => {
-  // 注意：中等 5000、困難 100000 的推薦戰力目前遠超過隊伍戰力（等裝備／血統上線才打得動），所以現階段可行的只有簡單副本
+  // 4 人 × 戰力 30 = 120：霧隱荒村（R 90）通關率約 64% 達標，沉默方舟號（R 130）約 51% 不達標
   const state = createNewGame(9);
   state.samsarites = [];
   const strong = [make(state, "S"), make(state, "S"), make(state, "S"), make(state, "S")];
+  for (const s of strong) Object.assign(s, { tags: [] }, { stats: { ...s.stats, power: 30 } });
   const plan = planAutoDispatch(state);
   assert.equal(plan.dungeon.id, "ghost_village");
+  strong.forEach((s) => (s.stats.power = 60)); // 變強之後改打獎勵更高的副本（但還沒解鎖的第 2 章不會去）
+  const richer = planAutoDispatch(state);
+  assert.ok(richer.dungeon.reward > easy.reward && richer.dungeon.chapter === 1);
 
   strong[0].locked = true;
   setInjury(strong[1], 1);
@@ -262,7 +282,7 @@ test("沒人又借不到錢 = 遊戲結束；還借得到就不算", () => {
   const state = createNewGame(2);
   state.samsarites = [];
   assert.equal(checkGameOver(state), false);
-  state.points = CONFIG.debtLimit;
+  state.points = CONFIG.space.debtLimit[0];
   assert.equal(checkGameOver(state), true);
 });
 
@@ -272,7 +292,7 @@ test("開著自動派遣放著跑 60 天不會壞掉，存檔讀回來一模一�
   for (let i = 0; i < 3; i++) state.samsarites.push(createSamsarite(state, "A")); // 開局 3 個 C 級戰力太低，自動派遣不會出門
   for (let i = 0; i < 600 && !state.gameOver; i++) {
     step(state);
-    assert.ok(state.points >= CONFIG.debtLimit);
+    assert.ok(state.points >= CONFIG.space.debtLimit[0]);
     assert.ok(Number.isInteger(state.points));
   }
   const total = Object.values(state.dungeonStats).reduce((n, d) => n + d.attempts, 0);
@@ -280,7 +300,19 @@ test("開著自動派遣放著跑 60 天不會壞掉，存檔讀回來一模一�
   assert.equal(serialize(deserialize(serialize(state))), serialize(state));
 });
 
-test("副本資料完整：每個副本都有 5 個房間", () => {
-  for (const d of DUNGEONS) assert.equal(d.rooms.length, CONFIG.dungeon.rooms);
+test("副本資料完整：五章各 4 關、第 4 關是尾王、房數等於該章設定、推薦戰力逐關上升", () => {
+  assert.equal(DUNGEONS.length, 20);
+  assert.equal(new Set(DUNGEONS.map((d) => d.id)).size, 20);
+  for (let ch = 1; ch <= 5; ch++) {
+    const list = DUNGEONS.filter((d) => d.chapter === ch);
+    assert.equal(list.length, 4, `第 ${ch} 章`);
+    assert.deepEqual(list.map((d) => d.boss), [false, false, false, true]);
+    for (let i = 1; i < 4; i++) assert.ok(list[i].recommendedPower > list[i - 1].recommendedPower);
+    for (const d of list) {
+      assert.equal(d.rooms.length, CONFIG.dungeon.chapters[ch - 1].rooms, d.id);
+      assert.ok(d.reward > 0 && d.genre && d.name, d.id);
+      for (const r of d.rooms) assert.ok(r.name && r.pass && r.fail.includes("{name}"), d.id);
+    }
+  }
   advanceTick(createNewGame(1));
 });
