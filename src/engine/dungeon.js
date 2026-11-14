@@ -541,6 +541,7 @@ function finishRun(state, run) {
     squadAfterClear(state, survivors); // 羈絆流：存活通關全隊理智 +4（4-E-2）
     if (dungeon.boss && !run.mandatory) for (const s of survivors) s.maxBossChapter = Math.max(s.maxBossChapter ?? 0, dungeon.chapter); // 遺物履歷（4-E-4）
     // 尾王守門：只算該章前 3 關（常規副本）的成功結算次數，含首通與重打
+    // 侵蝕通關（run.erosion > 0）刻意不計入守門次數：侵蝕只能打已首通的世界，不該拿來灌守門進度（#28：這是明訂規則，介面也有說明）
     if (!dungeon.boss && !run.mandatory && !run.erosion) {
       state.chapterClears ??= {};
       state.chapterClears[dungeon.chapter] = (state.chapterClears[dungeon.chapter] ?? 0) + 1;
@@ -548,6 +549,11 @@ function finishRun(state, run) {
   } else {
     // 失敗但活著回來：一定帶傷
     for (const s of survivors) if (s.injury === 0) setInjury(s, 1);
+    if (run.hidden?.passed) { // #29：隱藏房過了、卻被叛逃 Boss 翻盤整場失敗，隱藏奇物照發（只看隱藏房有沒有過）；失敗沒有積分，已擁有的重複奇物也不補積分
+      const hid = hiddenRelicOf(run.dungeonId);
+      const got = hid ? grantRelic(state, hid) : null;
+      if (got) relics.push({ name: hid.name, kind: "hidden", dup: got.dup });
+    }
   }
   let erosionCrystals = 0;
   if (success && run.erosion > 0) { // 位面侵蝕：成功通關 k★ 固定掉 k 顆侵蝕結晶（4-F-3）

@@ -44,7 +44,13 @@ export function currentDay(state) {
 
 // ───────── 建立新遊戲 ─────────
 
-export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
+let seedCounter = 0; // #30：同一毫秒連開兩局，靠行程內遞增計數器與高解析度計時錯開種子
+function freshSeed() {
+  const hi = typeof performance !== "undefined" ? Math.floor(performance.now() * 1000) : 0;
+  return (Date.now() ^ 0x5eed ^ Math.imul(hi, 2654435761) ^ Math.imul(++seedCounter, 0x9e3779b1)) | 0;
+}
+
+export function createNewGame(seed = freshSeed()) {
   const pauseOn = {};
   for (const [key, def] of Object.entries(PAUSE_EVENTS)) pauseOn[key] = def.default;
 

@@ -90,6 +90,7 @@ export function maybeWish(state, s) {
 export function checkAccept(state, w) {
   if (!w || w.status !== "pending") return { ok: false, reason: "這個許願已經處理過了" };
   if (w.mode === "pay" && !canAfford(state, w.params.cost)) return { ok: false, reason: "積分不夠（連主神高利貸都借不到）" };
+  if (w.mode === "rest" && getSamsarite(state, w.samsariteId)?.location !== "space") return { ok: false, reason: "他還在副本裡，回到主神空間才能放假" };
   return { ok: true };
 }
 
@@ -180,7 +181,7 @@ export function dailyWishes(state) {
     if (s.mood && --s.mood.daysLeft <= 0) s.mood = null;
   }
   for (const s of [...state.samsarites]) {
-    if (!isOnVacation(s)) continue;
+    if (!isOnVacation(s) || s.location !== "space") continue; // 假期只在主神空間裡倒數（#27）
     if (--s.vacationDays <= 0) {
       s.vacationDays = 0;
       const w = wishesOf(state, s.id).find((x) => x.mode === "rest" && x.status === "active");

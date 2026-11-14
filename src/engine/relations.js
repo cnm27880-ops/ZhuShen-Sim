@@ -210,6 +210,7 @@ export function socialWeight(state, ev, a, b) {
   if ((state.cooldowns?.[`${ev.id}:${pairKey(a, b)}`] ?? 0) > currentDay(state)) return 0;
   if (ev.needStatus === "lover" && status !== "lover" && status !== "soulmate") return 0;
   if (ev.noStatus && (status || partnerOf(state, a))) return 0;
+  if (ev.special === "confess" && partnerOf(state, b)) return 0; // #26：對方已有戀人，告白註定被拒，不要抽到
   if (ev.minLove !== undefined && rel.love < ev.minLove) return 0;
   if (ev.minHate !== undefined && rel.hate < ev.minHate) return 0;
   if (ev.maxHate !== undefined && rel.hate > ev.maxHate) return 0;
@@ -483,6 +484,6 @@ export function afterClash(state, clash) {
 export function findProtector(state, party, victim) {
   const guards = party.filter((o) => o.id !== victim.id && ["adore", "soulmate"].includes(pairLevel(state, o, victim)));
   if (guards.length === 0) return null;
-  const guard = guards[0];
-  return rand(state) < R().protectChance ? guard : null;
+  for (const guard of guards) if (rand(state) < R().protectChance) return guard; // #25：每位守護者各擲一次，第一位成功的出手
+  return null;
 }

@@ -202,3 +202,74 @@ test("#24：人死掉後，別人身上指向他的生死搭檔欄位被清掉",
   assert.equal(b.bondPartnerId, null);
   assert.ok(c.bondPartnerId == null);
 });
+
+import { setTaxRate } from "../src/engine/wallet.js";
+import { findProtector, runSocial, socialWeight } from "../src/engine/relations.js";
+import { SOCIAL_EVENTS } from "../src/data/relations.js";
+import { refreshStaleSlots, marketOf } from "../src/engine/market.js";
+import { buildRivalDungeon } from "../src/engine/rivals.js";
+import { checkAccept } from "../src/engine/wishes.js";
+
+test("#38：稅率傳入 NaN／非數字時不寫入，維持現行稅率", () => {
+  const { state } = setup(1);
+  setTaxRate(state, 0.5);
+  for (const bad of [NaN, Infinity, undefined, "abc"]) assert.equal(setTaxRate(state, bad), 0.5);
+  assert.equal(state.taxRate, 0.5);
+});
+
+test("#37：沒有待派洲際任務時 buildRivalDungeon 回 null、不拋錯", () => {
+  const { state } = setup(1);
+  assert.equal(buildRivalDungeon(state, []), null);
+});
+
+test("#35：舊存檔遷移時，已售罄的黑市格不會復活成新商品，鎖定保留", () => {
+  const { state } = setup(1);
+  const m = marketOf(state);
+  m.slots[0] = { index: 0, itemId: "legacy_old_item", sold: true, locked: false };
+  m.slots[1] = { index: 1, itemId: "legacy_old_item2", sold: false, locked: true };
+  refreshStaleSlots(state);
+  assert.equal(m.slots[0].sold, true);
+  assert.equal(m.slots[0].itemId, null, "已售格不復活");
+  assert.equal(m.slots[1].locked, true, "鎖定保留");
+  assert.equal(m.slots[1].sold, false);
+});
+
+test("#25：擋刀每位守護者各擲一次，不是只看第一位", () => {
+  const { state, people: [v, g1, g2] } = setup(3, 51);
+  for (const g of [g1, g2]) {
+    state.relations[`${g.id}>${v.id}`] = { love: 90, hate: 0 }; // 雙向好感 90 = 愛慕
+    state.relations[`${v.id}>${g.id}`] = { love: 90, hate: 0 };
+  }
+  let secondGuardSaved = 0;
+  for (let i = 0; i < 400; i++) {
+    const p = findProtector(state, [v, g1, g2], v);
+    if (p?.id === g2.id) secondGuardSaved += 1;
+  }
+  assert.ok(secondGuardSaved > 0, "第二位守護者也有機會出手");
+});
+
+test("#26：對方已有戀人時，告白事件權重為 0", () => {
+  const { state, people: [a, b, c] } = setup(3, 52);
+  const confess = SOCIAL_EVENTS.find((e) => e.special === "confess");
+  assert.ok(confess);
+  state.relations[`${a.id}>${b.id}`] = { love: 80, hate: 0 };
+  state.relations[`${b.id}>${c.id}`] = { love: 80, hate: 0, status: "lover" };
+  state.relations[`${c.id}>${b.id}`] = { love: 80, hate: 0, status: "lover" };
+  assert.equal(socialWeight(state, confess, a, b), 0, "b 已有戀人 c");
+  assert.ok(typeof runSocial === "function");
+});
+
+test("#27：休假許願要在主神空間才能答應", () => {
+  const { state, people: [a] } = setup(1, 53);
+  state.wishes = [{ id: 1, samsariteId: a.id, mode: "rest", status: "pending", params: { rest: 2 }, deadlineDay: 9 }];
+  a.location = "dungeon";
+  assert.equal(checkAccept(state, state.wishes[0]).ok, false);
+  a.location = "space";
+  assert.equal(checkAccept(state, state.wishes[0]).ok, true);
+});
+
+test("#30：連續建立兩局（即使同一毫秒）種子也不同", () => {
+  const seeds = new Set();
+  for (let i = 0; i < 50; i++) seeds.add(createNewGame().seed);
+  assert.equal(seeds.size, 50);
+});
