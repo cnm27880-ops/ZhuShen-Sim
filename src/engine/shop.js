@@ -7,6 +7,7 @@
 // 不論誰付錢，花費一律累加進 state.totalSpent（商店階層解鎖用）。
 // 來源（opts.source）："shop" 常駐制式商店只賣 standard 與 permanent 耗材；"market" 黑市由 engine/market.js 傳入（可買任何商品、可帶折扣價 opts.price）。
 
+import { noteContraband } from "./squad.js"; // 黑貨使用紀錄（4-E-3；循環引用只在執行時呼叫）
 import { CONFIG, INJURIES } from "../data/config.js";
 import { SHOP_ITEMS, SHOP_SLOT_LABELS, getShopItem } from "../data/shopItems.js";
 import { getSpecialReward } from "../data/dungeons.js";
@@ -81,6 +82,7 @@ export function buyItem(state, itemId, targetId, opts = {}) {
     s.soulbound ??= {};
     const old = getShopItem(s.gear[item.slot]);
     s.gear[item.slot] = item.id;
+    if (s.heirloomSlots) delete s.heirloomSlots[item.slot]; // 換掉裝備就不再是先人遺物（4-E-4）
     if (self) {
       delete s.soulbound[item.slot]; // 自己買的不綁定
       selfLog();
@@ -117,6 +119,7 @@ export function buyItem(state, itemId, targetId, opts = {}) {
 /** 狗血黑貨的效果（使用者 a、對象 b） */
 function applyContraband(state, item, a, b, price) {
   const e = item.effect;
+  noteContraband(state, a, b, item); // 留下紀錄，4-E-3 的「黑貨事發對質」會翻出來
   const vars = { A: a, B: b, item: item.name, cost: price };
   if (e.loveTo) {
     addLove(state, b, a, e.loveTo); // 單向：b 對 a 的好感（a 對 b 不變）

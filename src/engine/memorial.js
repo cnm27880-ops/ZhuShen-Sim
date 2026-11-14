@@ -6,6 +6,7 @@
 import { CONFIG } from "../data/config.js";
 import { emit, currentDay } from "./core.js"; // 循環引用：只在執行時呼叫，載入時不碰
 import { logText } from "./templates.js";
+import { squadSteleMult } from "./squad.js";
 
 /** 這個人死的時候夠不夠格入碑：基因鎖 ≥ 1 或生涯出戰 ≥ 15 場 */
 export function qualifiesForStele(s) {
@@ -31,7 +32,7 @@ export function enshrine(state, s, kind) {
   const list = (state.memorialStele ??= []);
   const before = steleBonusOf(state);
   const gene = Math.min(s.geneLock ?? 0, CONFIG.stele.bonusByGene.length - 1);
-  const entry = { name: s.name, rank: s.rank, geneLock: s.geneLock ?? 0, runs: s.runs ?? 0, day: currentDay(state), cause: kind === "purge" ? "被主神抹殺" : "副本戰死", kind, bonus: CONFIG.stele.bonusByGene[gene] };
+  const entry = { name: s.name, rank: s.rank, geneLock: s.geneLock ?? 0, runs: s.runs ?? 0, day: currentDay(state), cause: kind === "purge" ? "被主神抹殺" : "副本戰死", kind, bonus: Math.round(CONFIG.stele.bonusByGene[gene] * squadSteleMult(state) * 10000) / 10000 }; // 羈絆流 ×1.5（4-E-2）
   list.push(entry);
   list.sort((a, b) => b.bonus - a.bonus || a.day - b.day); // 穩定排序：同加成先入碑者在前
   if (list.length > CONFIG.stele.keep) list.length = CONFIG.stele.keep;
