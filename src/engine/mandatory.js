@@ -83,6 +83,11 @@ export function dailyMandatory(state) {
   const day = currentDay(state);
   if (m.pending) {
     if (day >= m.pending.deadlineDay) purge(state);
+    else if (day >= m.pending.deadlineDay - 1 && !m.pending.warned) {
+      // 倒數剩最後 1 天且還沒派遣：再提醒一次（事件類型 mandatory，「自動暫停」開著就會暫停，4-E-8）
+      m.pending.warned = true;
+      emit(state, "mandatory", logText(state, "mandatoryLast", {}));
+    }
     return;
   }
   if (day < nextMandatoryDay(state)) return;

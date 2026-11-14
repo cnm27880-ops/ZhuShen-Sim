@@ -380,3 +380,12 @@ table.stats td:first-child { color: var(--muted); width: 34%; }
 .log-squad { color: #ffd43b; font-weight: 700; border-left-color: #fab005; background: rgba(250, 176, 5, 0.08); }
 .log-drama { color: #f783ac; border-left-color: #f06595; }
 .modal-open #run-list { display: none !important; } /* 4-E-7：放大視窗開著時隱藏角落迷你小窗 */
+/* ── 4-E-8 UX：稅率提醒、詞條說明 ── */
+#tax-rate.tax-low { color: #0b7a56; background: #e6fcf5; border-radius: 8px; padding: 0 6px; }
+#tax-rate.tax-high { color: #fff; background: #e03131; border-radius: 8px; padding: 0 6px; }
+#auto-strategy { font-size: 12px; padding: 1px 4px; }
+.tag-chip[data-action] { cursor: pointer; }
+.tag-chip.picked { outline: 2px solid var(--accent); }
+.tag-panel { margin-top: 8px; padding: 8px 12px; border-radius: 10px; background: #f8f9fa; border: 1px solid var(--line); font-size: 13px; line-height: 1.7; }
+.style-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
+.style-table td { border-top: 1px solid var(--line); padding: 3px 6px; vertical-align: top; }

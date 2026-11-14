@@ -32,7 +32,7 @@ import { enhance, checkEnhance, breakGene, checkBreakGene } from "../src/engine/
 import { setTaxRate } from "../src/engine/wallet.js";
 import { marketOf, buyMarketSlot, checkMarketBuy, slotPrice } from "../src/engine/market.js";
 import { styleOf } from "../src/engine/squad.js";
-import { getShopItem } from "../src/data/shopItems.js";
+import { getShopItem, itemStat, GEAR_SLOTS } from "../src/data/shopItems.js";
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {
@@ -58,6 +58,8 @@ if (args.minClear) CONFIG.auto.minClearChance = args.minClear;
 if (args.mpower) CONFIG.forcedMission.powerMult = args.mpower;
 const TAX = args.tax ?? CONFIG.tax.default; // --tax=0.4：公庫稅率
 // Phase 4-E-6：--forceStyle=communal|bond|farming|elite|mercenary 強制所有隊長都開啟同一個小隊流派（測試單一流派的極端表現）；沒傳 = 依隊長性格自然演化
+// --autoStrategy=safe|balanced|aggressive：模擬時改用玩家版的自動派遣戰力門檻（預設 off = 維持既有基準曲線）
+const SIM_STRATEGY = process.argv.find((a) => a.startsWith("--autoStrategy="))?.split("=")[1] ?? "off";
 const FORCE_STYLE = process.argv.find((a) => a.startsWith("--forceStyle="))?.split("=")[1] ?? null;
 if (FORCE_STYLE) CONFIG.squad.forceStyle = FORCE_STYLE;
 const GROW_RESERVE_DAYS = args.growReserve ?? 8;
@@ -80,7 +82,7 @@ function canSpare(state, cost, days = RESERVE_DAYS) {
 }
 
 function gearPower(id) {
-  return SHOP_ITEMS.find((i) => i.id === id)?.effect?.power ?? 0;
+  return itemStat(getShopItem(id), "power");
 }
 
 const alive = (state) => state.samsarites.filter((s) => s.location !== "pod");
@@ -107,19 +109,19 @@ function botDay(state) {
   }
   // 2. 裝備（只幫在家的核心 4 人買）
   const home = core4(state).filter((s) => s.location === "space");
-  const gear = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard").sort((a, b) => (b.effect.power ?? 0) - (a.effect.power ?? 0));
+  const gear = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard").sort((a, b) => itemStat(b, "power") - itemStat(a, "power"));
   for (const s of home) {
-    for (const slot of ["weapon", "armor"]) {
+    for (const slot of GEAR_SLOTS) {
       const best = gear.find((i) => i.slot === slot && checkBuy(state, i, s).ok && canSpare(state, i.price));
       if (best && gearPower(best.id) > gearPower(s.gear?.[slot])) buyItem(state, best.id, s.id);
     }
   }
   // 2.5 黑市賞賜：公庫替核心 4 人買黑市的特產武防／血統（比身上的強才買；賞賜會綁定）
-  const slotValue = (item) => (item ? (item.slot === "bloodline" ? (item.effect.powerPct ?? 0) * 1000 : item.effect.power ?? 0) : -1);
+  const slotValue = (item) => (item ? itemStat(item, "power") : -1);
   for (const s of home) {
     marketOf(state).slots.forEach((slot, index) => {
       const item = getShopItem(slot.itemId);
-      if (!item || slot.sold || item.kind !== "gear") return;
+      if (!item || slot.sold || item.kind !== "gear" || item.category !== "specialty") return; // 公庫只賞賜世界特產（黑貨裝備有副作用，不送）
       if (slotValue(item) <= slotValue(getShopItem(s.gear?.[item.slot]))) return;
       if (checkMarketBuy(state, index, s.id).ok && canSpare(state, slotPrice(state, slot).price)) buyMarketSlot(state, index, s.id);
     });
@@ -153,6 +155,7 @@ function playOne(seed) {
   const state = createNewGame(seed);
   setTaxRate(state, TAX);
   state.settings.autoDispatch = true;
+  state.autoStrategy = SIM_STRATEGY;
   const botTick = CONFIG.auto.dispatchAtTick - 1; // 自動派遣前一個時段做決策
   let bankruptDay = null;
   let lowestPoints = state.points;
@@ -304,7 +307,7 @@ for (let ch = 1; ch <= 5; ch++) {
   const sum = (key) => results.reduce((n, r) => n + (r.counters[key] ?? 0), 0) / SEEDS;
   const totalDays = results.reduce((n, r) => n + Object.values(r.styleDays).reduce((a, b) => a + b, 0), 0) || 1;
   const dist = ["communal", "bond", "farming", "elite", "mercenary"].map((k) => `${k} ${Math.round((results.reduce((n, r) => n + (r.styleDays[k] ?? 0), 0) / totalDays) * 100)}%`).join("　");
-  console.log(`\n小隊（4-E${FORCE_STYLE ? `，強制流派 ${FORCE_STYLE}` : "，自然演化"}，每局平均）：隊長異動 ${avg(results.map((r) => r.captainChanges))} 次・政變 ${sum("coup").toFixed(1)}・空降不服 ${sum("snub").toFixed(1)}・叛逃 ${sum("defect").toFixed(2)}（${results.filter((r) => (r.counters.defect ?? 0) > 0).length}/${SEEDS} 局發生）・討伐叛徒 ${sum("slain").toFixed(2)}・子嗣 ${sum("birth").toFixed(1)}（期末二代以上 ${avg(results.map((r) => r.gen2))} 人、最高第 ${avg(results.map((r) => r.maxGen))} 代）・遺物 ${sum("heirloom").toFixed(1)}（期末庫存 ${avg(results.map((r) => r.heirloomsLeft))}）・人際事件 ${sum("drama").toFixed(1)}・互助金期末 ${avg(results.map((r) => r.fund))}`);
+  console.log(`\n小隊（4-E${FORCE_STYLE ? `，強制流派 ${FORCE_STYLE}` : "，自然演化"}，每局平均）：隊長異動 ${avg(results.map((r) => r.captainChanges))} 次・政變 ${sum("coup").toFixed(1)}・空降不服 ${sum("snub").toFixed(1)}・叛逃 ${sum("defect").toFixed(2)}（${results.filter((r) => (r.counters.defect ?? 0) > 0).length}/${SEEDS} 局發生）・討伐叛徒 ${sum("slain").toFixed(2)}・子嗣 ${sum("birth").toFixed(1)}（其中催生黑貨 ${sum("birthItem").toFixed(1)}）（期末二代以上 ${avg(results.map((r) => r.gen2))} 人、最高第 ${avg(results.map((r) => r.maxGen))} 代）・遺物 ${sum("heirloom").toFixed(1)}（期末庫存 ${avg(results.map((r) => r.heirloomsLeft))}）・人際事件 ${sum("drama").toFixed(1)}・互助金期末 ${avg(results.map((r) => r.fund))}`);
   console.log(`流派分佈（占有隊長的天數）：${dist}`);
 }
 console.log(`平均名冊階級：${["C", "B", "A", "S"].map((k) => `${k}×${avg(results.map((r) => r.ranks[k] ?? 0))}`).join("　")}\n`);

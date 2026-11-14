@@ -73,19 +73,19 @@ test("基礎換裝：缺武器防具就用私房錢買（不綁定），一天�
 test("絕不覆蓋綁定裝備：公庫賞賜的武器不會被自己換掉，改買另一格", () => {
   const state = setup(1);
   const [s] = state.samsarites;
-  buyItem(state, "weapon_club", s.id); // 賞賜 + 綁定
+  buyItem(state, "t1_01", s.id); // 賞賜 + 綁定
   state.totalSpent = 4000; // Tier 3
   s.wallet = 100000;
   clearMarket(state);
   dailyShopping(state);
-  assert.equal(s.gear.weapon, "weapon_club", "綁定武器還在");
+  assert.equal(s.gear.weapon, "t1_01", "綁定武器還在");
   assert.ok(s.gear.armor, "改買了防具");
 });
 
 test("自主強化：私房錢夠且花完仍留 20% → 強化；不夠 80% 就不買", () => {
   const state = setup(1);
   const [s] = state.samsarites;
-  s.gear = { weapon: "weapon_myth", armor: "armor_myth" }; // 裝備齊全、階層夠，才輪到強化
+  s.gear = { weapon: "weapon_myth", armor: "armor_myth", accessory: "t5_05", bloodline: "t5_07" }; // 裝備齊全、階層夠，才輪到強化
   state.totalSpent = 50000;
   clearMarket(state);
   s.wallet = 90; // 第 1 次強化 80 分，但 80 > 90 × 0.8 = 72
@@ -100,7 +100,7 @@ test("自主強化：私房錢夠且花完仍留 20% → 強化；不夠 80% 就
 test("自主開基因鎖：點滿當階強化、空間等級夠、私房錢夠 → 突破", () => {
   const state = setup(1);
   const [s] = state.samsarites;
-  s.gear = { weapon: "weapon_myth", armor: "armor_myth" };
+  s.gear = { weapon: "weapon_myth", armor: "armor_myth", accessory: "t5_05", bloodline: "t5_07" };
   state.totalSpent = 50000;
   state.spaceLevel = 2;
   clearMarket(state);
@@ -114,7 +114,7 @@ test("自主開基因鎖：點滿當階強化、空間等級夠、私房錢夠 �
 test("性格偏好：有閒錢會搶購黑市未售罄商品（不碰公庫）", () => {
   const state = setup(1);
   const [s] = state.samsarites;
-  s.gear = { weapon: "weapon_myth", armor: "armor_myth" };
+  s.gear = { weapon: "weapon_myth", armor: "armor_myth", accessory: "t5_05", bloodline: "t5_07" };
   s.enhanceCount = CONFIG.gene.tiers[0].enhanceCap; // 強化已點滿、突破條件不成立（空間 Lv.1）
   state.totalSpent = 50;
   s.wallet = 1000;
@@ -133,20 +133,20 @@ test("搞事：愛搞事的人有 5% 機率偷買黑貨對隊友使用（用獨�
     const state = setup(2, seed);
     const [a, b] = state.samsarites;
     a.tags = ["green_tea"];
-    a.gear = { weapon: "weapon_myth", armor: "armor_myth" };
+    a.gear = { weapon: "weapon_myth", armor: "armor_myth", accessory: "t5_05", bloodline: "t5_07" };
     a.enhanceCount = CONFIG.gene.tiers[0].enhanceCap;
     a.wallet = 100000;
     state.totalSpent = 50;
-    // 黑市最後一格換成黑貨：迷魂香，方便驗證
+    // 黑市最後一格換成黑貨耗材：贖罪苦酒（化解隊內仇恨），方便驗證
     const slot = marketOf(state).slots[7];
-    slot.itemId = "contra_love_t1";
+    slot.itemId = "t1_40";
     slot.sold = false;
     const main = state.rngState;
     dailyShopping(state);
     mainRngs.add(state.rngState === main);
     if (slot.sold) {
       dramas++;
-      assert.equal(getRel(state, b, a).love, 15, "對隊友下了迷魂香");
+      assert.ok(a.shopLog.some((l) => l.text.includes("贖罪苦酒")));
     }
   }
   assert.deepEqual([...mainRngs], [true], "不動主亂數");
@@ -185,11 +185,11 @@ test("搞事冷卻：買過黑貨後 10 天內不再偷買，第 10 天後恢復
     const state = setup(2, 9);
     const [a] = state.samsarites;
     a.tags = ["green_tea"];
-    a.gear = { weapon: "weapon_myth", armor: "armor_myth" };
+    a.gear = { weapon: "weapon_myth", armor: "armor_myth", accessory: "t5_05", bloodline: "t5_07" };
     a.enhanceCount = CONFIG.gene.tiers[0].enhanceCap;
     a.wallet = 100000;
     state.totalSpent = 50;
-    const put = () => Object.assign(marketOf(state).slots[7], { itemId: "contra_love_t1", sold: false });
+    const put = () => Object.assign(marketOf(state).slots[7], { itemId: "t1_40", sold: false });
     put();
     dailyShopping(state);
     assert.equal(marketOf(state).slots[7].sold, true, "第一次必買（機率 1）");

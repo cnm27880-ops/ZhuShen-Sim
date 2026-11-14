@@ -8,7 +8,8 @@
 // 亂數用獨立流 state.aiShopRngState（數字），不動主亂數。每人最近的自主購買紀錄存在 s.shopLog（最多 CONFIG.shopping.logKeep 筆）。
 
 import { CONFIG } from "../data/config.js";
-import { SHOP_ITEMS, getShopItem } from "../data/shopItems.js";
+import { SHOP_ITEMS, GEAR_SLOTS, AI_GROUP, getShopItem, itemStat } from "../data/shopItems.js";
+import { sanityHarm } from "./gearFx.js";
 import { rand, pick, weighted } from "./rng.js";
 import { currentDay, shopTier } from "./core.js";
 import { checkBuy, buyItem } from "./shop.js";
@@ -59,16 +60,28 @@ export function buyTagWeights(s, state = null) {
   return w;
 }
 
-/** 候選：{ src: "shop" | "market", item, price, index? }。只列這個人此刻買得起（私房錢）而且 checkBuy 通過的 */
+/**
+ * AI 防呆（4-E-8）：理智 < 50 不買會害理智的黑貨／耗材；重傷（injury >= 2）不買燃血類耗材；
+ * 已有替死符不重複買；九轉金丹滿 3 次後不再買；其餘（同階破鎖丹、情報全滿、沒有孕育對象…）由 checkBuy 的 useBlock 擋下。
+ */
+export function aiAllowed(state, s, item) {
+  if (s.stats.sanity < CONFIG.shopping.harmSanityBelow && sanityHarm(item)) return false;
+  if (s.injury >= 2 && (item.effect?.postRunInjury ?? 0) > 0) return false;
+  if (item.effect?.deathWard && (s.deathWard ?? 0) >= 1) return false;
+  if (item.effect?.permHp && (s.elixirUses ?? 0) >= (item.effect.maxUsesPerChar ?? 3)) return false;
+  return true;
+}
+
+/** 候選：{ src: "shop" | "market", item, price, index? }。只列這個人此刻買得起（私房錢）、checkBuy 通過、而且 AI 願意買的 */
 function offers(state, s, filter, extra = {}) {
   const out = [];
   for (const item of SHOP_ITEMS) {
-    if (!filter(item)) continue;
+    if (!filter(item) || !aiAllowed(state, s, item)) continue;
     if ((item.category === "standard" || item.permanent) && checkBuy(state, item, s, { payer: "wallet", ...extra }).ok) out.push({ src: "shop", item, price: item.price });
   }
   marketOf(state).slots.forEach((slot, index) => {
     const item = getShopItem(slot.itemId);
-    if (!item || slot.sold || !filter(item)) return;
+    if (!item || slot.sold || !filter(item) || !aiAllowed(state, s, item)) return;
     if (checkMarketBuy(state, index, s.id, { payer: "wallet", ...extra }).ok) out.push({ src: "market", item, price: slotPrice(state, slot).price, index });
   });
   return out;
@@ -89,13 +102,13 @@ function execute(state, s, offer, extra = {}) {
 
 function emergency(state, s) {
   if (s.injury >= 2) {
-    const heals = offers(state, s, (i) => i.kind === "potion" && i.effect.heal);
+    const heals = offers(state, s, (i) => i.category === "consumable" && i.effect.healInjury);
     // 能一次治到輕傷以下的優先，其次便宜的
-    heals.sort((a, b) => (b.item.effect.heal >= s.injury) - (a.item.effect.heal >= s.injury) || a.price - b.price);
+    heals.sort((a, b) => (b.item.effect.healInjury >= s.injury) - (a.item.effect.healInjury >= s.injury) || a.price - b.price);
     if (heals[0]) return execute(state, s, heals[0]);
   }
   if ((s.stats.sanity ?? 100) < CONFIG.shopping.calmBelow) {
-    const calms = offers(state, s, (i) => i.kind === "potion" && i.effect.sanity && !i.effect.heal);
+    const calms = offers(state, s, (i) => i.category === "consumable" && i.effect.sanity && !i.effect.healInjury && !i.effect.hateDelta);
     calms.sort((a, b) => a.price - b.price);
     if (calms[0]) return execute(state, s, calms[0]);
   }
@@ -104,12 +117,12 @@ function emergency(state, s) {
 
 function regear(state, s) {
   const tier = shopTier(state);
-  for (const slot of ["weapon", "armor"]) {
+  for (const slot of GEAR_SLOTS) {
     if (s.soulbound?.[slot]) continue; // 主管賞賜的綁定裝備絕不覆蓋
     const cur = getShopItem(s.gear?.[slot]);
     if (cur && cur.tier >= tier) continue;
-    const better = offers(state, s, (i) => i.kind === "gear" && i.slot === slot && (i.effect.power ?? 0) > (cur?.effect.power ?? -1)).filter((o) => o.item.category !== "contraband");
-    better.sort((a, b) => (b.item.effect.power ?? 0) - (a.item.effect.power ?? 0));
+    const better = offers(state, s, (i) => i.kind === "gear" && i.slot === slot && itemStat(i, "power") > (cur ? itemStat(cur, "power") : -1)).filter((o) => o.item.category !== "contraband");
+    better.sort((a, b) => itemStat(b.item, "power") - itemStat(a.item, "power"));
     if (better[0] && execute(state, s, better[0])) return true;
   }
   return false;
@@ -132,43 +145,28 @@ function selfGrow(state, s) {
   return false;
 }
 
-function victimFor(state, s, item, rng) {
-  const others = state.samsarites.filter((o) => o.id !== s.id && o.location === "space");
-  if (others.length === 0) return null;
-  const by = (f) => others.reduce((best, o) => (f(o) > f(best) ? o : best), others[0]);
-  if (item.effect.loveTo) return by((o) => getRel(state, s, o).love); // 對自己暗戀的人下手
-  if (item.effect.forget) return by((o) => getRel(state, s, o).hate + getRel(state, s, o).love);
-  return getRel(state, s, by((o) => getRel(state, s, o).hate)).hate > 0 ? by((o) => getRel(state, s, o).hate) : pick(rng, others);
-}
-
 function leisure(state, s, ctx) {
   const C = CONFIG.shopping;
   const rng = aiRng(state);
-  // 4a. 搞事：愛搞事的人 5% 機率偷買黑貨（近 10 天買過就不擲）
-  const cooling = s.lastDramaDay != null && currentDay(state) - s.lastDramaDay < C.dramaCooldownDays; // 近 10 天買過黑貨：不擲骰
+  // 4a. 搞事：愛搞事的人 5% 機率偷買黑貨耗材（近 10 天買過就不擲）。催生黑貨只在有雙向淨好感 >= 60 的對象且不在冷卻時才買（checkBuy 的 useBlock 把關）
+  const cooling = s.lastDramaDay != null && currentDay(state) - s.lastDramaDay < C.dramaCooldownDays;
   const roll = !ctx.dramaRolled && !cooling && isDramaProne(state, s); // 每人每天只擲一次搞事骰（不論當天有幾次動作）
   ctx.dramaRolled = true;
   if (roll && rand(rng) < C.dramaChance) {
-    const slots = marketOf(state).slots.map((slot, index) => ({ slot, index, item: getShopItem(slot.itemId) })).filter((x) => x.item?.kind === "contraband" && !x.slot.sold);
-    for (const x of slots) {
-      const victim = victimFor(state, s, x.item, rng);
-      if (!victim) continue;
-      const price = slotPrice(state, x.slot).price;
-      if (price > s.wallet * (1 - C.reservePct)) continue;
-      if (checkMarketBuy(state, x.index, s.id, { payer: "wallet", victimId: victim.id }).ok) {
-        const ok = execute(state, s, { src: "market", item: x.item, price, index: x.index }, { victimId: victim.id });
-        if (ok) {
-          s.lastDramaDay = currentDay(state);
-          return true;
-        }
+    const cands = offers(state, s, (i) => i.category === "contraband" && i.kind !== "gear").filter((o) => o.src === "market" && o.price <= s.wallet * (1 - C.reservePct));
+    if (cands.length > 0) {
+      const hit = cands[Math.floor(rand(rng) * cands.length)];
+      if (execute(state, s, hit)) {
+        s.lastDramaDay = currentDay(state);
+        return true;
       }
     }
   }
-  // 4b. 依性格偏好搶購黑市（非黑貨）：花完仍留備用金
+  // 4b. 依性格偏好搶購黑市（含黑貨裝備，但權重低）：花完仍留備用金
   const w = buyTagWeights(s, state);
-  const cands = offers(state, s, (i) => i.kind !== "contraband")
+  const cands = offers(state, s, (i) => i.category !== "contraband" || i.kind === "gear")
     .filter((o) => o.src === "market" && o.price <= s.wallet * (1 - C.reservePct))
-    .map((o) => ({ ...o, weight: w[o.item.aiBuyTag] ?? 1 }));
+    .map((o) => ({ ...o, weight: w[AI_GROUP[o.item.aiBuyTag] ?? o.item.aiBuyTag] ?? 1 }));
   if (cands.length === 0) return false;
   return execute(state, s, weighted(rng, cands));
 }
@@ -189,7 +187,7 @@ function isVeteranGear(state, s) {
 function communalNeed(state, s) {
   const tier = shopTier(state);
   if (s.injury >= 2) {
-    const heal = SHOP_ITEMS.filter((i) => i.kind === "potion" && i.effect.heal && (i.category === "standard" || i.permanent)).map((i) => i.price);
+    const heal = SHOP_ITEMS.filter((i) => i.category === "consumable" && i.effect.healInjury && i.permanent).map((i) => i.price);
     if (heal.length) return Math.min(...heal);
   }
   const rookie = !isVeteranGear(state, s);
@@ -198,7 +196,7 @@ function communalNeed(state, s) {
       if (s.soulbound?.[slot]) continue;
       const cur = getShopItem(s.gear?.[slot]);
       if (cur && cur.tier >= tier) continue;
-      const best = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard" && i.slot === slot && i.tier <= tier).sort((a, b) => b.tier - a.tier)[0];
+      const best = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard" && i.slot === slot && i.tier <= tier).sort((a, b) => b.tier - a.tier || a.price - b.price)[0];
       if (best) return best.price;
     }
   }

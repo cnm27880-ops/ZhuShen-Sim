@@ -73,9 +73,23 @@ function isBetterPlan(a, b) {
   return a.comfy ? a.power < b.power : a.chance > b.chance;
 }
 
+/**
+ * 自動派遣的「看戰力下菜」門檻（4-E-8）：隊伍總戰力 >= 關卡實際有效推薦戰力 × 倍率才出擊。
+ * state.autoStrategy：safe 1.20／balanced 1.00（空間 Lv.1 新手期放寬為 0.85）／aggressive 0.80／off 不檢查（sim 基準曲線用）。
+ */
+export function autoRatioGate(state) {
+  const A = CONFIG.auto.strategies;
+  const key = state.autoStrategy ?? CONFIG.auto.defaultStrategy;
+  if (key === "off") return 0;
+  if (key === "balanced" && (state.spaceLevel ?? 1) === 1) return A.balancedNewbie;
+  return A[key] ?? A.balanced;
+}
+let ratioBlocked = false; // 這一輪規劃：有沒有組合「通關率夠、但戰力比值不夠」被擋下（待機提示用）
+
 /** 在 candidates 的所有隊伍組合 × targets（autoTargets 的項目）裡挑最划算的；mustInclude 有值時，隊伍必須包含他 */
 function bestPlan(state, candidates, targets, mustInclude = null) {
   let best = null;
+  const gate = autoRatioGate(state);
   for (const party of subsets(candidates, CONFIG.partyMax)) {
     if (mustInclude && !party.includes(mustInclude)) continue;
     if (state.settings.protect.noEnemies && hasEnemyPair(state, party)) continue;
@@ -84,6 +98,10 @@ function bestPlan(state, candidates, targets, mustInclude = null) {
       const { dungeon } = target;
       const chance = clearChance(state, party, dungeon);
       if (chance < CONFIG.auto.minClearChance) continue;
+      if (gate > 0 && power < dungeon.recommendedPower * gate) { // 戰力不夠就不挑這個槽（不開放鎖定單一關卡，但會看戰力下菜）
+        ratioBlocked = true;
+        continue;
+      }
       const comfy = chance >= CONFIG.auto.targetClearChance;
       const plan = { dungeon, party, chance, power, comfy, reward: target.reward, slotId: target.slotId, mutation: target.mutation };
       if (!best || isBetterPlan(plan, best)) best = plan;
@@ -98,6 +116,7 @@ function bestPlan(state, candidates, targets, mustInclude = null) {
  * 找不到（他太弱、被鎖定…）才走一般邏輯，所以不會為了任務硬送人去死。
  */
 export function planAutoDispatch(state) {
+  ratioBlocked = false;
   let candidates = autoCandidates(state);
   const mission = CONFIG.auto.missionFirst ? activeMission(state) : null;
   const target = mission ? state.samsarites.find((s) => s.id === mission.samsariteId) : null;
@@ -124,7 +143,8 @@ export function autoMandatory(state) {
   const topAway = [...reservedForMandatory(state)].some((id) => state.samsarites.find((s) => s.id === id)?.location !== "space");
   const lastChance = currentDay(state) >= pending.deadlineDay - 1;
   if (CONFIG.auto.holdForMandatory && topAway && !lastChance) return 0;
-  const pool = state.samsarites.filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0) && !(s.podLockDays > 0));
+  // 4-E-8：強制任務徵召「無視」日常自動派遣鎖（🔒 只管日常掛機），一律按健康優先、戰力由高到低徵召，杜絕放主力看戲、抓菜鳥送死
+  const pool = state.samsarites.filter((s) => s.location === "space" && !(s.vacationDays > 0) && !(s.podLockDays > 0));
   const party = [...pool].sort((a, b) => (a.injury > 0) - (b.injury > 0) || effectivePower(b) - effectivePower(a)).slice(0, CONFIG.partyMax);
   if (party.length === 0) return 0;
   return startRun(state, MANDATORY_ID, party.map((s) => s.id)).ok ? 1 : 0;
@@ -142,7 +162,15 @@ export function tryAutoDispatch(state) {
     if (!result.ok) break;
     sent += 1;
   }
-  if (sent === 0) emit(state, "autoIdle", logText(state, "autoIdle"));
+  if (sent === 0) {
+    if (ratioBlocked) {
+      // 所有任務槽對手上的人都超出戰力門檻：當日待機休整，提示最多每 3 天一次（不洗版）
+      if (currentDay(state) - (state.autoRiskLogDay ?? -99) >= CONFIG.auto.riskLogEveryDays) {
+        state.autoRiskLogDay = currentDay(state);
+        emit(state, "autoRisk", logText(state, "autoRisk"));
+      }
+    } else emit(state, "autoIdle", logText(state, "autoIdle"));
+  }
   return sent;
 }
 

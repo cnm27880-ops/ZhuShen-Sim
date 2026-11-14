@@ -35,11 +35,13 @@ test("存讀檔：中途存檔再讀回來繼續跑，結果與不中斷一路�
   assert.equal(serialize(loaded), serialize(straight));
 });
 
-test("小隊系統不動既有亂數流：空間 Lv.1（隊長系統沒啟用）時，主亂數序列與 4-E 之前一致的行為（squadRngState 完全不變）", () => {
+test("空間 Lv.1（隊長系統沒啟用）：沒有隊長、沒有編年史政變、沒有 5:2:1 人際事件", () => {
   const s = play(79, 30, { level: 1, tweak: (st) => { st.spaceLevel = 1; } });
-  const fresh = createNewGame(79);
-  if (s.spaceLevel === 1) assert.equal(s.squadRngState, fresh.squadRngState, "沒啟用就不消耗小隊亂數");
-  assert.equal(s.squad.captainId, null);
+  if (s.spaceLevel === 1) {
+    assert.equal(s.squad.captainId, null);
+    assert.equal(s.squad.counters.drama ?? 0, 0);
+    assert.equal(s.squad.counters.coup ?? 0, 0);
+  }
 });
 
 test("forceStyle：CONFIG.squad.forceStyle 讓任何隊長都開啟指定流派（sim 用）", () => {

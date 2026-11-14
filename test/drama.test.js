@@ -125,7 +125,7 @@ test("菁英隊強者嘲諷弱者：只在戰力差 >= 30% 時發生，弱者理
 test("黑貨事發對質：翻出 12 天內的黑貨紀錄，被害者對使用者淨好感大跌，紀錄標記已揭發", () => {
   const state = setup(3);
   const [a, b] = state.samsarites;
-  noteContraband(state, a, b, getShopItem("drama_custom_doll"));
+  noteContraband(state, a, b, getShopItem("t3_38"));
   const opt = playable(state, "friction", state.samsarites, "day").find((o) => o.ev.id === "contraband_exposed");
   assert.ok(opt);
   applyEvent(state, ev("contraband_exposed"), opt.casts[0], state.samsarites);
@@ -135,7 +135,7 @@ test("黑貨事發對質：翻出 12 天內的黑貨紀錄，被害者對使用�
   assert.equal(playable(state, "friction", state.samsarites, "day").some((o) => o.ev.id === "contraband_exposed"), false, "已揭發的不會再演");
   // 超過 12 天的舊紀錄不翻
   const old = setup(3);
-  noteContraband(old, old.samsarites[0], old.samsarites[1], getShopItem("drama_custom_doll"));
+  noteContraband(old, old.samsarites[0], old.samsarites[1], getShopItem("t3_38"));
   old.tick += CONFIG.ticksPerDay * 20;
   assert.equal(playable(old, "friction", old.samsarites, "day").some((o) => o.ev.id === "contraband_exposed"), false);
 });
@@ -143,7 +143,7 @@ test("黑貨事發對質：翻出 12 天內的黑貨紀錄，被害者對使用�
 test("造人泥替身被本尊撞破：只有用過捏造人偶才演；使用者理智 -10、被害者對他仇恨 +20", () => {
   const state = setup(3);
   const [a, b] = state.samsarites;
-  noteContraband(state, a, b, getShopItem("drama_custom_doll"));
+  noteContraband(state, a, b, getShopItem("t3_38"));
   const opt = playable(state, "melee", state.samsarites, "day").find((o) => o.ev.id === "doll_exposed");
   assert.ok(opt);
   applyEvent(state, ev("doll_exposed"), opt.casts[0], state.samsarites);

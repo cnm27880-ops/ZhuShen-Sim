@@ -102,8 +102,8 @@ function communal(n = 4) {
 test("互助金：捐獻率 25%；互助金 >= 15000 × 空間等級 後老鳥暫停捐獻", () => {
   const state = communal(3);
   const [cap, vet] = state.samsarites;
-  for (const s of [cap, vet]) s.gear = { weapon: "weapon_club", armor: "armor_cloth" };
-  state.samsarites[2].gear = { weapon: "weapon_club", armor: "armor_cloth" };
+  for (const s of [cap, vet]) s.gear = { weapon: "t1_01", armor: "t1_03", accessory: "t1_05", bloodline: "t1_07" };
+  state.samsarites[2].gear = { weapon: "t1_01", armor: "t1_03", accessory: "t1_05", bloodline: "t1_07" };
   vet.wallet = 1000;
   dailyShopping(state);
   assert.ok(squadOf(state).communalFund > 0 && squadOf(state).communalFund <= 250 + 1, `捐了約 25%：${squadOf(state).communalFund}`);
@@ -119,7 +119,7 @@ test("互助金：捐獻率 25%；互助金 >= 15000 × 空間等級 後老鳥�
 test("互助金補貼：受重傷者治療費、低於隊長且 1 階的人衝 2 階基因鎖都有補", () => {
   const state = communal(3);
   const [cap, a, b] = state.samsarites;
-  for (const s of state.samsarites) s.gear = { weapon: "weapon_club", armor: "armor_cloth" };
+  for (const s of state.samsarites) s.gear = { weapon: "t1_01", armor: "t1_03", accessory: "t1_05", bloodline: "t1_07" };
   state.squad.communalFund = 5000;
   // 重傷：沒私房錢也買得到藥
   a.injury = 2;

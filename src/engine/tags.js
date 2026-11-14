@@ -3,7 +3,7 @@
 
 import { CONFIG } from "../data/config.js";
 import { TAGS, getTag } from "../data/tags.js";
-import { getShopItem } from "../data/shop.js";
+import { getShopItem, itemStat } from "../data/shopItems.js";
 import { rand, randInt, weighted } from "./rng.js";
 
 function tagsOf(s) {
@@ -36,7 +36,7 @@ export function rollTags(state) {
 const WHITE_KEYS = ["power", "hp", "defense", "speed", "luck"]; // 先人遺物（4-E-4）只加成白值
 export function shopBonus(s, key) {
   const heirPct = WHITE_KEYS.includes(key) ? CONFIG.lineage.heirloomPct : 0;
-  const gear = Object.entries(s.gear ?? {}).reduce((n, [slot, id]) => n + (getShopItem(id)?.effect?.[key] ?? 0) * (s.heirloomSlots?.[slot] ? 1 + heirPct : 1), 0);
+  const gear = Object.entries(s.gear ?? {}).reduce((n, [slot, id]) => n + itemStat(getShopItem(id), key) * (s.heirloomSlots?.[slot] ? 1 + heirPct : 1), 0);
   return gear + (s.runBuff?.[key] ?? 0); // 出征耗材的單場 buff（injuryShield／defense／speed；4-D-2）
 }
 

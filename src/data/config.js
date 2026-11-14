@@ -6,10 +6,10 @@
 export const CONFIG = {
   // ── 時間 ──
   ticksPerDay: 10, // 一天切成 10 個時段（tick）
-  tickMs: 2000, // 1x 速度下，每個時段的真實毫秒數（一天 = 20 秒）
-  roomMs: 2400, // 1x 速度下，副本每走一個房間的真實毫秒數
+  tickMs: 2500, // 1x 速度下，每個時段的真實毫秒數（一天 = 25 秒；4-E-8：由 2000 放慢 25%，後期人多時手操較從容）
+  roomMs: 3000, // （4-E-8：由 2400 放慢 25%） 1x 速度下，副本每走一個房間的真實毫秒數
   roomTicks: 2, // 每個房間 = 0.2 天 = 2 個時段（5 房 = 1 天、7 房 = 1.4 天…12 房 = 2.4 天；Phase 4-A 起副本長度跟房數走）
-  speeds: [1, 2, 5, 10],
+  speeds: [0.5, 1, 2, 5, 10], // 0.5x 是慢速微操檔；鍵盤 1～5 對應這五檔（4-E-8）
 
   // ── 開局（Phase 4-A：送 3 個 C 級 + 600 分，夠補 1~2 抽並留緩衝）──
   startingPoints: 600,
@@ -61,6 +61,7 @@ export const CONFIG = {
   shop: {
     consumableCap: 3, // 出征耗材緩衝區最多囤幾份（下次出征全部套用，單場）
     worldPassCap: 0.06, // 全隊「特產裝備綁定世界通過率加成」合計上限
+    demonTendencyChance: 0.05, // 穿著帶「入魔傾向」被動的裝備，每天獲得走火入魔詞條的機率（4-E-8；t5_36 必定入魔）
   },
   market: {
     refreshDays: 3, // 每幾天自動刷新一次 8 格黑市
@@ -92,6 +93,7 @@ export const CONFIG = {
   shopping: {
     maxActionsPerDay: 2, // 每人每天最多幾次購買／強化動作
     reservePct: 0.2, // 自主強化／敗家後，私房錢至少留這個比例當備用金
+    harmSanityBelow: 50, // 理智低於這個數字，AI 禁買會害理智的黑貨與耗材（4-E-8）
     calmBelow: 45, // 理智低於這個數字，優先買回理智耗材
     lowSanity: 45, // 理智低於這個數字算「低理智者」（愛搞事）
     dramaChance: 0.05, // 愛搞事的人，每天偷買 drama 黑貨對隊友使用的機率（4-D-7：露葵拍板由 15% 下修為 5%）
@@ -288,8 +290,14 @@ export const CONFIG = {
 
   // ── 跨代子嗣、先人遺物、叛逃野生 Boss（Phase 4-E-4；引擎在 engine/lineage.js）──
   lineage: {
+    pregnancyItemAffinity: 60, // 催生黑貨的對象：雙向淨好感 >= 60（4-E-8）
     pairAffinity: 75, // 雙向淨好感 >= 75（而且都不是重傷以上）才有機會孕育
-    birthChance: 0.02, // 符合條件的一對，每天孕育機率（4-E-7：5%→2%，目標自然演化每局子嗣 4～6）
+    birthChance: 0.01, // 符合條件的一對，每天自然孕育基礎機率（4-E-8 收尾：固定 1.0%/天，不再為了壓子嗣總數下調；每局生多少交給小隊生態自然演化，sim 只記錄）
+    bondBonus: 0.005, // 小隊流派是 bond（共生羈絆流）：每日孕育檢定 +0.5%
+    cozyBonus: 0.015, // 雙方當日都留守空間、沒重傷，且處於「社交助興」狀態：每日孕育檢定額外 +1.5%
+    cozyAffinity: 85, // 社交助興條件之二：雙向淨好感 >= 85 且雙方私房錢 >= cozyWallet（逛街的春宵小事件）
+    cozyWallet: 500,
+    cozyDays: 3, // 合道仙露（全隊好感耗材）的助興狀態持續幾天
     cooldownDays: 60, // 同一對孕育冷卻（4-E-7：30→60；3-F 戀人生子與孕育共用同一把雙親冷卻鎖）
     podDays: 7, // 培育期
     speedUpCostPerDay: 60, // 加速培育：每剩 1 天花公庫的積分 = 這個數字 × 空間等級
@@ -468,6 +476,9 @@ export const CONFIG = {
     maxCandidates: 14, // 最多拿戰力前幾名來排列組合（避免人太多時算太久）
     dispatchAtTick: 5, // 每天第幾個時段檢查一次自動派遣
     holdForMandatory: true, // 強制任務待派時，前 4 強留給任務、等他們回家再派（期限前最後一個時段才硬派；4-C-6）
+    defaultStrategy: "balanced", // 自動派遣風險策略預設（4-E-8）；sim 預設用 "off" 維持基準曲線
+    strategies: { safe: 1.2, balanced: 1.0, aggressive: 0.8, balancedNewbie: 0.85 }, // 隊伍總戰力 >= 關卡有效推薦戰力 × 倍率才出擊（balancedNewbie：空間 Lv.1 新手期的穩健檔）
+    riskLogEveryDays: 3, // 「任務風險過高，自動派遣暫緩出擊」最多每幾天提示一次
     missionFirst: true, // 有主神突襲任務時，自動派遣優先派任務目標去指定副本（通關率仍要達 minClearChance；Phase 3-E）
   },
 

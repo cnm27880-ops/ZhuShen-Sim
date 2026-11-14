@@ -17,7 +17,8 @@ import { dailySanity, newSanityState } from "./sanity.js"; // 同上（Phase 4-C
 import { newGrowthState } from "./growth.js"; // 同上（Phase 4-B 基因鎖／強化／頓悟；growth.js 也會 import 這個檔案）
 import { taxSanityDaily, forfeitWallet } from "./wallet.js"; // 同上（Phase 4-D-1 雙錢包）
 import { dailyShopping } from "./shopping.js"; // 同上（Phase 4-D-3 輪迴者自主逛街）
-import { newMarketState, refreshMarket, dailyMarket } from "./market.js"; // 同上（Phase 4-D-2 黑市）
+import { newMarketState, refreshMarket, dailyMarket, refreshStaleSlots } from "./market.js";
+import { gearDaily } from "./gearFx.js"; // 裝備被動日結（4-E-8） // 同上（Phase 4-D-2 黑市）
 import { newBoardState, fillBoard, dailyBoard } from "./board.js"; // 同上（Phase 4-D-4 動態任務榜）
 import { relicBonusOf, refreshRelicBonus } from "./relics.js"; // 同上（Phase 4-D-4 奇物圖鑑）
 import { leaveHeirloom, dailyLineage } from "./lineage.js"; // 同上（Phase 4-E-4 遺物、子嗣、叛逃）
@@ -72,6 +73,8 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
     market: newMarketState(seed), // 8 格分槽黑市（含獨立亂數流 market.rngState；見 engine/market.js）
     aiShopRngState: (seed ^ 0x5b0b) | 0, // 輪迴者自主逛街的獨立亂數流（見 engine/shopping.js）
+    autoStrategy: CONFIG.auto.defaultStrategy, // 自動派遣風險策略 safe／balanced／aggressive（4-E-8，見 engine/dispatch.js）
+    autoRiskLogDay: null, // 上次提示「任務風險過高」是第幾天（避免洗版）
     squad: newSquadState(), // 小隊隊長、流派、共產互助金（Phase 4-E，見 engine/squad.js）
     squadRngState: (seed ^ 0x5ad0) | 0, // 小隊獨立亂數流：政變、擋刀、狗血事件、子嗣、叛逃（4-E 全域設計原則）
     chronicles: [], // 《空間編年史》：[{ day, kind, text }]，最多 100 條（見 engine/lineage.js）
@@ -91,6 +94,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
       speed: 1,
       paused: false,
       autoDispatch: false,
+      autoPause: true, // 總開關：派遣／抽卡／許願／主神事件／指揮部彈窗開著時自動暫停計時（關掉就不強制暫停）
       guideSeen: false, // 新任主神上崗手冊讀過了沒（4-D-7，讀過就不再自動彈出）
       followId: null, // 視角鎖定的輪迴者 id（只給畫面用，引擎不讀）；null = 沒鎖定
       protect: { noInjured: true, noEnemies: true },
@@ -162,6 +166,11 @@ export function createSamsarite(state, rank, rng = state) {
     tempPowerPct: 0, // 單場臨時戰力加成（養殖流：肉豬陣亡的隊長；副本結算清掉）
     captainNo: null, // 他是第幾任隊長（遺物履歷用）
     maxBossChapter: 0, // 他參與討伐過的最高章節尾王（遺物履歷用）
+    cozyUntilDay: 0, // 社交助興狀態持續到第幾天（合道仙露，4-E-8 收尾：孕育檢定加成）
+    elixirUses: 0, // 九轉金丹永久強化已用幾次（單人上限 3，4-E-8）
+    deathWardFull: false, // 這張護符是否「全狀態恢復」型（高階）
+    deathWard: 0, // 替死護符層數（上限 1；致死判定時消耗，4-E-8）
+    geneBuff: null, // 基因鎖助推 Buff { target, costDiscount }（突破該階後消耗，4-E-8）
     talentPct: 0, // 子嗣天賦白值占基礎戰力的比例（4-E-4，總封頂 +25%；inheritPower = round(stats.power × talentPct)）
   };
 }
@@ -278,6 +287,7 @@ export function endOfDay(state) {
     cost += upkeepOf(s, state); // 先用「今天的傷勢」算錢，再結算休息
     s.stats.sanity = Math.min(100, s.stats.sanity + CONFIG.sanity.restRecover); // 人在空間（含帶傷休養）每日自然恢復理智（4-C-2）
     taxSanityDaily(state, s); // 稅率高壓／低稅的每日理智影響（4-D-1）
+    gearDaily(state, s); // 黑貨裝備被動：每日理智、入魔傾向（4-E-8）
     if (s.podLockDays > 0 && --s.podLockDays <= 0) s.lockedInPodBy = null; // 私人休眠艙倒數（4-D-2）
     if (s.injury > 0) {
       s.restDaysLeft -= 1;
@@ -574,6 +584,9 @@ export function deserialize(json) {
   state.squad.captainId ??= null;
   state.squad.style ??= null;
   state.squadRngState ??= (state.rngState ^ 0x5ad0) | 0;
+  state.autoStrategy ??= CONFIG.auto.defaultStrategy;
+  state.autoRiskLogDay ??= null;
+  state.settings.autoPause ??= true; // 設定頁「自動暫停」總開關：開窗自動暫停（4-E-8）
   state.chronicles ??= [];
   state.armoryHeirlooms ??= [];
   state.rogueBosses ??= [];
@@ -586,7 +599,13 @@ export function deserialize(json) {
     s.captainNo ??= null;
     s.maxBossChapter ??= 0;
     s.talentPct ??= 0;
+    s.elixirUses ??= 0;
+    s.cozyUntilDay ??= 0;
+    s.deathWard ??= 0;
+    s.deathWardFull ??= false;
+    s.geneBuff ??= null;
   }
+  refreshStaleSlots(state); // 4-E-8：黑市貨架含舊版失效商品的格子自動重抽
   refreshCaptainBonus(state);
   state.board ??= newBoardState(); // Phase 4-D-4 之前的存檔沒有任務榜與奇物圖鑑
   state.board.slots ??= [];

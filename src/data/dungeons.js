@@ -18,7 +18,7 @@
 // 全部是原創世界觀。
 
 import { CONFIG } from "./config.js";
-import { WORLD_LIST } from "./worlds.js";
+import { WORLD_LIST, WORLD_NAME_INTRO } from "./worlds.js";
 
 // 佔位房間：n 間通用文字，最後一間是首領房
 function placeholderRooms(n) {
@@ -59,6 +59,22 @@ const CHAPTER_ANCHOR = {
 };
 const spread = ([lo, hi], i) => Math.round(lo * (hi / lo) ** (i / 4));
 
+// 4-E-8 校正：200 件商店總表（每人 4 個穿戴欄的白值）讓全隊戰力約為 4-D 的 2 倍，所以各章推薦戰力 R（一般關與尾王、含前 3 個真實世界）再乘這組倍率。
+// 實測（npm run sim -- --seeds=100 --days=900）：未校正時尾王首通中位數 Day 21／59／119／198／250（-30%～-44%），乘上 ×1.4／1.5／1.5／1.65／2.2 後回到 ±25% 內。
+/** 第 1 章第 2 關（喪屍危城）原本是佔位房間，這裡補上正式房間文字 */
+const WORLD_ROOMS = {
+  ch1_02: {
+    icon: "🧟",
+    rooms: [
+      { name: "封鎖街區", pass: "小隊貼著牆根溜過警戒線，屍群剛好被另一頭的警報吸走。", fail: "{name}踢翻了路障，幾十雙灰白的眼睛同時轉了過來，被撲倒時手臂已經見血。" },
+      { name: "超市廢墟", pass: "貨架間安靜得出奇，小隊拿到補給後原路摸了出來。", fail: "{name}伸手去拿罐頭，貨架後面的東西更早伸出手，咬住了他的小腿。" },
+      { name: "地下停車場", pass: "引擎聲引開屍潮的瞬間，小隊從另一側出口衝了出去。", fail: "警報器突然尖叫，{name}被蜂擁而來的屍群逼到牆角，肩膀被撕下一塊肉。" },
+      { name: "醫院頂樓", pass: "封死樓梯間的鐵門，小隊在屋頂喘了一口真正的氣。", fail: "鐵門被撞開了，{name}斷後時被屍群壓倒，好不容易才掙脫。" },
+      { name: "病毒源頭", pass: "找到零號病患的實驗室，毀掉了培養槽，遠處的嘶吼聲一時低了下去。", fail: "培養槽爆裂，{name}被噴了一身帶病毒的液體，高燒當場襲來。" },
+    ],
+  },
+};
+const E8_R_MULT = [1.4, 1.5, 1.5, 1.65, 2.2];
 const REAL_WORLDS = [
   {
     id: "ghost_village",
@@ -66,21 +82,21 @@ const REAL_WORLDS = [
     chapter: 1,
     boss: false,
     genre: "靈異",
-    icon: "🏚️",
+    icon: "⚙️",
     recommendedPower: 90,
     reward: 95,
     specialRewards: [
-      { id: "ghost_talisman", name: "鬼道術法・引魂符", desc: "靈異副本通過率 +8%。", effect: { genreBonus: { 靈異: 0.08 } } },
-      { id: "ghost_seal", name: "鬼道術法・封煞咒", desc: "全員受傷時多 10% 機率少受一級。", effect: { injuryShield: 0.1 } },
-      { id: "yin_yang_eye", name: "陰陽眼", desc: "所有副本通過率 +3%。", effect: { passBonus: 0.03 } },
+      { id: "ghost_talisman", name: "破局者手札", desc: "靈異副本通過率 +8%。", effect: { genreBonus: { 靈異: 0.08 } } },
+      { id: "ghost_seal", name: "防爆機關護具", desc: "全員受傷時多 10% 機率少受一級。", effect: { injuryShield: 0.1 } },
+      { id: "yin_yang_eye", name: "洞悉死門之眼", desc: "所有副本通過率 +3%。", effect: { passBonus: 0.03 } },
     ],
     intro: "終年不散的霧、沒有人上香的祖祠、門口排排站的紙紮人。",
     rooms: [
-      { name: "村口牌坊", pass: "小隊屏住呼吸，從紙紮人的隊伍中間穿了過去。", fail: "紙紮人的頭齊刷刷轉了過來，{name}被紙手抓出一道血痕。" },
-      { name: "無人曬穀場", pass: "石磨自己在轉，沒有人多看一眼，安全通過。", fail: "{name}多看了石磨一眼，磨盤裡伸出一隻手。" },
-      { name: "祖先祠堂", pass: "牌位上的名字一個個亮起，小隊恭敬上香，全身而退。", fail: "{name}發現牌位上寫著自己的名字，當場吐了一口黑血。" },
-      { name: "枯井", pass: "井底傳來哭聲，小隊果斷繞路。", fail: "{name}被井繩纏住腳踝拖行了十幾公尺。" },
-      { name: "餓鬼宴席", pass: "滿桌酒菜沒有人動筷子，餓鬼們悻悻然散去。", fail: "{name}被餓鬼按在桌上咬了好幾口。" },
+      { name: "齒輪走廊", pass: "小隊踩著齒輪的節拍一步步通過，連一片衣角都沒被捲進去。", fail: "{name}慢了半拍，被齒輪咬掉一塊衣料連帶一塊皮。" },
+      { name: "雷射網格", pass: "彎腰、翻滾、屏息，小隊像一串柔軟的影子穿過了紅光。", fail: "{name}的鞋跟蹭到雷射，警報大作，一道灼線劃過手臂。" },
+      { name: "毒氣暗房", pass: "找到通風閥門，在毒氣漫上來之前關死了源頭。", fail: "{name}吸進一口淡綠的氣體，眼前發黑，被拖出房間時嘴唇已經發紫。" },
+      { name: "謎題石室", pass: "三個數字對上的瞬間，石門緩緩升起，小隊一語不發地走了過去。", fail: "{name}按錯了機關，天花板開始往下壓，勉強滾出來時肋骨斷了兩根。" },
+      { name: "殺陣核心", pass: "拆掉最後一組連動機關，整座迷宮的運轉聲戛然而止。", fail: "核心的連鎖陷阱同時啟動，{name}被一排鋼釘擦過，血濺了一地。" },
     ],
   },
   {
@@ -89,21 +105,21 @@ const REAL_WORLDS = [
     chapter: 1,
     boss: false,
     genre: "科幻",
-    icon: "🚀",
+    icon: "👻",
     recommendedPower: 130,
     reward: 125,
     specialRewards: [
-      { id: "ark_accelerator", name: "科技改造・神經加速器", desc: "所有副本通過率 +4%。", effect: { passBonus: 0.04 } },
-      { id: "ark_prosthetic", name: "義體・強化義肢", desc: "全員受傷時多 15% 機率少受一級。", effect: { injuryShield: 0.15 } },
-      { id: "ark_cutter", name: "外星武器・脈衝切割器", desc: "科幻副本通過率 +10%。", effect: { genreBonus: { 科幻: 0.1 } } },
+      { id: "ark_accelerator", name: "夜巡者的警覺", desc: "所有副本通過率 +4%。", effect: { passBonus: 0.04 } },
+      { id: "ark_prosthetic", name: "辟邪護身符", desc: "全員受傷時多 15% 機率少受一級。", effect: { injuryShield: 0.15 } },
+      { id: "ark_cutter", name: "桃木驅鬼釘", desc: "科幻副本通過率 +10%。", effect: { genreBonus: { 科幻: 0.1 } } },
     ],
     intro: "失去動力的殖民船，走廊只剩緊急照明，通風管裡有東西在爬。",
     rooms: [
-      { name: "氣閘艙", pass: "手動開啟氣閘，氧氣存量還夠。", fail: "氣閘失壓，{name}被甩到艙壁上。" },
-      { name: "冷凍艙", pass: "冷凍艙裡的東西還沒醒，小隊躡手躡腳通過。", fail: "一個冷凍艙從裡面被打開了，{name}首當其衝。" },
-      { name: "黑暗主走廊", pass: "靠著緊急照明摸黑前進，沒有驚動任何東西。", fail: "天花板滴下黏液，{name}抬頭的瞬間被拖進通風管又掉了出來。" },
-      { name: "反應爐室", pass: "成功重啟一組輔助電源。", fail: "冷卻液外洩，{name}被大面積灼傷。" },
-      { name: "艦橋", pass: "鎖死艦橋艙門，把那東西關在了外面。", fail: "那東西早就在艦橋等著了，{name}被利爪貫穿肩膀。" },
+      { name: "宿舍大門", pass: "小隊在門禁鈴響之前簽完了名，沒人回頭看值班室的窗戶。", fail: "{name}回頭看了一眼值班室，窗後的人臉沒有五官，冷汗瞬間濕透背脊。" },
+      { name: "午夜走廊", pass: "腳步聲在身後響起時，小隊集體停步、不回頭，等它自己遠去。", fail: "{name}忍不住回頭，走廊盡頭站著一道白影，一陣陰風把他整個人掀翻。" },
+      { name: "公共浴室", pass: "水龍頭自己滴了三聲，小隊安靜地數完，水聲才停。", fail: "{name}聽見有人叫自己的名字，鏡子裡伸出一隻濕漉漉的手把他拽了進去又吐了出來。" },
+      { name: "舍監室", pass: "翻出舊名冊，把該燒的那一頁燒了，滿屋怨氣散去大半。", fail: "{name}翻開名冊，發現最後一頁寫著自己的死期，當場吐出一口寒氣。" },
+      { name: "第十三寢室", pass: "小隊在床底下找到那具遺骨，替她唸完名字，怨靈終於安靜下來。", fail: "怨靈撲面而來，{name}被冰冷的頭髮纏住喉嚨，掙脫時臉色鐵青。" },
     ],
   },
   {
@@ -134,12 +150,19 @@ const REAL_WORLDS = [
 // 依 WORLD_LIST 順序組成最終的 30 張：有真實內容的（第 1 章前 3 個世界）直接用，其餘產生佔位資料
 const REAL = new Map(REAL_WORLDS.map((d) => [d.id, d]));
 export const DUNGEONS = WORLD_LIST.map((w) => {
+  const base = buildWorld(w);
+  const t = WORLD_NAME_INTRO[w.id]; // 4-E-8：30 世界正式名稱與題材描述（房間文字與首通特殊獎勵沿用原內容）
+  const named = t ? { ...base, name: t.name, intro: t.intro } : base;
+  const extra = WORLD_ROOMS[w.id] ?? {}; // 前 3 個世界的房間文字對齊新世界觀（4-E-8 收尾）
+  return { ...named, ...extra, recommendedPower: Math.round(base.recommendedPower * E8_R_MULT[w.chapter - 1]) }; // 200 件商店總表上線後的 R 校正
+});
+function buildWorld(w) {
   if (REAL.has(w.id)) return REAL.get(w.id);
   const a = CHAPTER_ANCHOR[w.chapter];
   if (w.boss) return placeholder(w.id, w.chapter, 0, a.boss[0], a.boss[1]);
   const slot = WORLD_LIST.filter((x) => x.chapter === w.chapter && !x.boss).findIndex((x) => x.id === w.id); // 0~4
   return placeholder(w.id, w.chapter, slot + 1, spread(a.r, slot), spread(a.reward, slot));
-});
+}
 
 export function getDungeon(id) {
   return DUNGEONS.find((d) => d.id === id);

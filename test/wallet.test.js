@@ -104,7 +104,7 @@ test("賞賜：公庫買裝備給角色 → 綁定、理智 +5；累積花費照
   const [s] = state.samsarites;
   s.stats.sanity = 60;
   const spent = state.totalSpent;
-  assert.equal(buyItem(state, "weapon_club", s.id).ok, true);
+  assert.equal(buyItem(state, "t1_01", s.id).ok, true);
   assert.equal(s.soulbound.weapon, true);
   assert.equal(s.stats.sanity, 65);
   assert.ok(state.totalSpent > spent);

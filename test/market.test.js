@@ -26,21 +26,25 @@ function setup(n = 2, seed = 4) {
 }
 const kindOf = (item) => (item.category === "specialty" ? (item.slot === "bloodline" ? "bloodline" : "gear") : item.category);
 
-test("商品資料表：id 唯一、五階 × 四分類齊全、特產綁定存在的世界、aiBuyTag 合法", () => {
-  assert.equal(new Set(SHOP_ITEMS.map((i) => i.id)).size, SHOP_ITEMS.length);
+test("商品資料表（4-E-8）：200 件、五階各 40 件（8 常駐 + 18 特產 + 6 耗材 + 8 黑貨）、每世界 3 件特產、aiBuyTag 合法", () => {
+  assert.equal(SHOP_ITEMS.length, 200);
+  assert.equal(new Set(SHOP_ITEMS.map((i) => i.id)).size, 200);
   for (const t of [1, 2, 3, 4, 5]) {
-    for (const cat of ["standard", "specialty", "consumable", "contraband"]) {
-      assert.ok(SHOP_ITEMS.some((i) => i.tier === t && i.category === cat), `Tier ${t} 缺 ${cat}`);
-    }
-    assert.ok(SHOP_ITEMS.filter((i) => i.tier === t && i.category === "specialty" && i.slot === "bloodline").length >= 2);
+    const items = SHOP_ITEMS.filter((i) => i.tier === t);
+    assert.equal(items.length, 40);
+    const count = (cat) => items.filter((i) => i.category === cat).length;
+    assert.deepEqual([count("standard"), count("specialty"), count("consumable"), count("contraband")], [8, 18, 6, 8], `Tier ${t}`);
   }
+  const valid = ["dps", "tank", "speed", "balanced", "luck", "heal", "sanity", "support", "taboo"];
   for (const i of SHOP_ITEMS) {
-    assert.ok(["survival", "aggro", "communal", "drama"].includes(i.aiBuyTag), i.id);
-    assert.ok(i.price > 0 && i.name.length >= 2 && i.name.length <= 7, i.id);
+    assert.ok(valid.includes(i.aiBuyTag), i.id);
+    assert.ok(i.price > 0 && i.name.length >= 2 && i.desc.length > 5, i.id);
+    assert.ok(["weapon", "armor", "accessory", "bloodline", "consumable"].includes(i.slot), i.id);
     if (i.category === "specialty") assert.ok(WORLD_IDS.includes(i.worldId), `${i.id} 綁定的世界不存在`);
+    for (const v of Object.values(i.stats)) assert.ok(Number.isFinite(v));
   }
   assert.equal(WORLD_IDS.length, 30);
-  assert.equal(SHOP_ITEMS.filter((i) => i.category === "specialty" && i.slot === "bloodline").length, 30, "每個世界 1 個特產血統");
+  for (const w of WORLD_IDS) assert.equal(SHOP_ITEMS.filter((i) => i.worldId === w).length, 3, `${w} 要有 3 件特產`);
 });
 
 test("黑市：開局 8 格，嚴格分槽 3 特產武防 + 2 特產血統 + 2 耗材 + 1 黑貨，只抽目前階與前一階", () => {
@@ -143,99 +147,88 @@ test("買裝備：公庫買 = 綁定 + 理智 +5；私房錢買 = 不綁定、�
   const state = setup();
   const [a, b] = state.samsarites;
   a.stats.sanity = 50;
-  assert.equal(buyItem(state, "weapon_club", a.id).ok, true);
+  assert.equal(buyItem(state, "t1_01", a.id).ok, true);
   assert.equal(a.soulbound.weapon, true);
   assert.equal(a.stats.sanity, 55);
   state.totalSpent = 700;
   a.wallet = 5000;
-  const r = checkBuy(state, getShopItem("weapon_steel"), a, { payer: "wallet" });
+  const r = checkBuy(state, getShopItem("t2_01"), a, { payer: "wallet" });
   assert.equal(r.ok, false);
   assert.match(r.reason, /綁定/);
   b.wallet = 500;
   const spent = state.totalSpent;
-  assert.equal(buyItem(state, "weapon_steel", b.id, { payer: "wallet" }).ok, true);
+  assert.equal(buyItem(state, "t2_01", b.id, { payer: "wallet" }).ok, true);
   assert.equal(b.soulbound.weapon, undefined, "自己買的不綁定");
-  assert.equal(b.wallet, 500 - 380);
-  assert.equal(state.totalSpent, spent + 380);
+  assert.equal(b.wallet, 500 - 450);
+  assert.equal(state.totalSpent, spent + 450);
   assert.equal(b.stats.sanity, 100);
 });
 
-test("血統槽：每人限 1，覆蓋舊血統；有效戰力吃 powerPct，特產武防只在綁定世界加通過率", () => {
+test("血統槽：每人限 1，覆蓋舊血統；血統是白值，不是百分比；飾品是第 3 個裝備欄", () => {
   const state = setup(1);
   const [s] = state.samsarites;
   state.totalSpent = 700;
-  const bloods = SHOP_ITEMS.filter((i) => i.slot === "bloodline" && i.tier === 1);
   const base = effectivePower(s);
-  assert.equal(buyItem(state, bloods[0].id, s.id, { source: "market" }).ok, true);
-  assert.equal(effectivePower(s), Math.round(s.stats.power * (1 + bloods[0].effect.powerPct)));
-  assert.ok(effectivePower(s) > base);
-  assert.equal(buyItem(state, bloods[1].id, s.id, { source: "market" }).ok, true);
-  assert.equal(s.gear.bloodline, bloods[1].id, "新血統覆蓋舊血統");
-  assert.equal(buyItem(state, bloods[1].id, s.id, { source: "market" }).ok, false, "不能重買同一個");
+  assert.equal(buyItem(state, "t1_07", s.id).ok, true, "常駐血統");
+  assert.equal(effectivePower(s), base + 19);
+  assert.equal(buyItem(state, "t1_08", s.id).ok, true);
+  assert.equal(s.gear.bloodline, "t1_08", "新血統覆蓋舊血統");
+  assert.equal(buyItem(state, "t1_08", s.id).ok, false, "不能重買同一個");
+  assert.equal(buyItem(state, "t1_05", s.id).ok, true, "飾品欄");
+  assert.equal(s.gear.accessory, "t1_05");
+  assert.equal(effectivePower(s), base + 18 + 15);
 });
 
-test("常駐商店只賣制式與常備耗材；特產／黑貨只能走黑市", () => {
+test("常駐商店只賣常駐裝備與常備耗材；特產／黑貨只能走黑市", () => {
   const state = setup(1);
   const [s] = state.samsarites;
-  assert.equal(buyItem(state, "spec_ghost_village_weapon", s.id).ok, false);
-  assert.equal(buyItem(state, "contra_love_t1", s.id).ok, false);
-  assert.equal(buyItem(state, "weapon_club", s.id).ok, true);
+  assert.equal(buyItem(state, "t1_09", s.id).ok, false, "世界特產");
+  assert.equal(buyItem(state, "t1_33", s.id).ok, false, "黑貨");
+  assert.equal(buyItem(state, "t1_31", s.id).ok, false, "情報手札不是常備耗材");
+  assert.equal(buyItem(state, "t1_01", s.id).ok, true);
+  assert.equal(buyItem(state, "t1_09", s.id, { source: "market" }).ok, true, "黑市可買");
+  s.stats.sanity = 50;
+  assert.equal(buyItem(state, "t1_28", s.id).ok, true, "鎮定劑常駐");
 });
 
-test("出征耗材：進緩衝區（上限 3）、出發時套成單場 buff、回家清空", () => {
+test("出征耗材：進緩衝區（上限 3）、出發時合成單場 buff、回家清空；個人爆發戰力 +15%、戰後傷勢 +1", () => {
   const state = setup(1);
   const [s] = state.samsarites;
   s.stats.power = 3000;
-  const item = getShopItem("cons_tactic_t1");
-  const shield = getShopItem("cons_shield_t1");
-  for (let i = 0; i < CONFIG.shop.consumableCap; i++) assert.equal(buyItem(state, item.id, s.id, { source: "market" }).ok, true);
-  assert.equal(buyItem(state, item.id, s.id, { source: "market" }).ok, false, "囤滿了");
+  for (let i = 0; i < CONFIG.shop.consumableCap; i++) assert.equal(buyItem(state, "t1_32", s.id, { source: "market" }).ok, true);
+  assert.equal(buyItem(state, "t1_32", s.id, { source: "market" }).ok, false, "囤滿了");
   assert.equal(s.consumables.length, 3);
-  const def = subStat(s, "defense");
+  s.consumables = ["t1_37"];
+  const base = effectivePower(s);
   assert.equal(startRun(state, "ghost_village", [s.id]).ok, true);
   assert.deepEqual(s.consumables, []);
-  assert.equal(s.runBuff.defense, 12);
-  assert.equal(subStat(s, "defense"), def + 12);
-  assert.equal(buyItem(state, shield.id, s.id, { source: "market" }).ok, false, "副本中不能買");
+  assert.equal(s.runBuff.powerPct, 0.15);
+  assert.equal(effectivePower(s), Math.round(3000 * 1.15));
+  assert.ok(effectivePower(s) > base);
+  assert.equal(buyItem(state, "t1_32", s.id, { source: "market" }).ok, false, "副本中不能買");
   let guard = 0;
   while (state.runs.length && guard++ < 100) step(state);
   const back = state.samsarites.find((x) => x.id === s.id);
   if (back) {
     assert.equal(back.runBuff, null);
-    assert.equal(subStat(back, "defense"), def);
+    assert.ok(back.injury >= 1, "燃血類耗材：戰後傷勢 +1");
+    assert.equal(effectivePower(back) <= Math.round(3000 * 1.0) + 1, true);
   }
 });
 
-test("強制任務延期耗材：+2 天；沒有待派任務不能買", () => {
+test("即用耗材：傷藥降傷勢、沒受傷不能買；鎮定劑加理智、理智滿不能買", () => {
   const state = setup(1);
   const [s] = state.samsarites;
-  const item = getShopItem("cons_extend_t1");
-  assert.equal(checkBuy(state, item, s, { source: "market" }).ok, false);
-  state.mandatory.pending = { deadlineDay: 10 };
-  assert.equal(buyItem(state, item.id, s.id, { source: "market" }).ok, true);
-  assert.equal(state.mandatory.pending.deadlineDay, 12);
-});
-
-test("狗血黑貨：單向加好感／忘情水／捏造人偶／鎖私人休眠艙", () => {
-  const state = setup(3);
-  const [a, b, c] = state.samsarites;
-  assert.equal(checkBuy(state, getShopItem("contra_love_t1"), a, { source: "market" }).ok, false, "沒選對象");
-  assert.equal(checkBuy(state, getShopItem("contra_love_t1"), a, { source: "market", victimId: a.id }).ok, false, "對象不能是自己");
-  buyItem(state, "contra_love_t1", a.id, { source: "market", victimId: b.id });
-  assert.equal(getRel(state, b, a).love, 15, "b 對 a 好感 +15");
-  assert.equal(getRel(state, a, b).love, 0, "單向");
-  buyItem(state, "contra_forget_t1", a.id, { source: "market", victimId: b.id });
-  assert.equal(getRel(state, b, a).love, 0);
-  buyItem(state, "drama_custom_doll", a.id, { source: "market", victimId: b.id });
-  assert.equal(getRel(state, c, b).love, 0, "好感下限 0，仇恨上升");
-  assert.equal(getRel(state, c, b).hate, 5);
-  assert.equal(getRel(state, a, b).hate, 5);
-  buyItem(state, "contra_pod_t1", a.id, { source: "market", victimId: c.id });
-  assert.equal(c.podLockDays, 3);
-  assert.equal(startRun(state, "ghost_village", [c.id]).ok, false, "被鎖休眠艙不能派遣");
-  for (let i = 0; i < 3 * CONFIG.ticksPerDay; i++) advanceTick(state);
-  assert.equal(c.podLockDays, 0);
-  assert.equal(c.lockedInPodBy, null);
+  assert.equal(checkBuy(state, getShopItem("t1_27"), s).ok, false, "沒受傷");
+  s.injury = 2;
+  assert.equal(buyItem(state, "t1_27", s.id).ok, true);
+  assert.equal(s.injury, 1, "傷勢 -1");
+  assert.equal(buyItem(state, "t1_29", s.id).ok, true);
+  assert.equal(s.injury, 0, "急救針 -2 至痊癒");
+  assert.equal(checkBuy(state, getShopItem("t1_28"), s).ok, false, "理智滿了");
+  s.stats.sanity = 40;
+  buyItem(state, "t1_28", s.id);
+  assert.equal(s.stats.sanity, 60);
 });
 
 test("存檔：黑市與逛街亂數流往返；舊存檔補預設並上貨", () => {

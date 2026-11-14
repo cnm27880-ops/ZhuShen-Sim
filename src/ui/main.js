@@ -50,7 +50,7 @@ import { pairSummary, moodOf, partyRelationBonus } from "../engine/relations.js"
 import { parentNames } from "../engine/children.js";
 import { squadUnlocked, captainOf, styleOf, candidateStyle, replacePreview, checkReplace, appointCaptain, replaceCaptain, squadMembers } from "../engine/squad.js";
 import { bestowHeirloom, heirloomHeirs, speedUpPod, speedUpCost, rogueDungeon } from "../engine/lineage.js";
-import { SQUAD_STYLES } from "../data/squadStyles.js";
+import { SQUAD_STYLES, TAG_STYLE } from "../data/squadStyles.js";
 import { LEVEL_LABELS, STATUS_LABELS } from "../data/relations.js";
 
 const SAVE_KEY = "zhushen-sim-save-v1";
@@ -177,7 +177,13 @@ function renderTopbar() {
     .map((v) => `<button data-action="set-speed" data-value="${v}" class="${v === state.settings.speed ? "active" : ""}">${v}x</button>`)
     .join("");
   document.body.style.setProperty("--speed", state.settings.speed); // 讓小人滑動速度跟著遊戲速度變快
-  $("btn-pause").textContent = state.settings.paused ? "▶ 繼續" : "⏸ 暫停";
+  $("btn-pause").textContent = state.settings.paused ? "▶ 繼續 [Space]" : "⏸ 暫停 [Space]";
+  $("auto-strategy").value = state.autoStrategy ?? "balanced";
+  const taxPct = Math.round(taxRateOf(state) * 100);
+  $("tax-rate").classList.toggle("tax-low", taxPct <= 30); // 安撫減稅／高壓徵稅的顯眼提醒，免得調完忘記改回（4-E-8）
+  $("tax-rate").classList.toggle("tax-high", taxPct >= 60);
+  $("tax-rate").title = taxPct <= 30 ? "低稅安撫：在空間的人每日理智 +1，但公庫變瘦" : taxPct >= 60 ? "高壓徵稅：在空間的人每日理智下降（≥60% -2、≥80% -4）" : "";
+  $("tax-rate").textContent = `${taxPct}%${taxPct <= 30 ? " 安撫" : taxPct >= 60 ? " 高壓" : ""}`;
   $("btn-pause").classList.toggle("active", state.settings.paused);
 
   $("banner").style.display = state.settings.paused && bannerText ? "block" : "none";
@@ -450,12 +456,43 @@ function rankBadge(rank) {
   return `<span class="rank rank-${rank}">${rank}</span>`;
 }
 
-function tagChips(s) {
+/** 詞條的具體效果（由資料表欄位自動產生）：戰力／通過率／積分／傷勢減免／閃避／好感，以及任命為隊長會激活的流派（4-E-8） */
+function describeTag(t) {
+  const pct = (v) => `${v >= 0 ? "+" : ""}${Math.round(v * 1000) / 10}%`;
+  const parts = [];
+  if (t.powerPct) parts.push(`個人戰力 ${pct(t.powerPct)}`);
+  if (t.passBonus) parts.push(`全隊單房通過率 ${pct(t.passBonus)}（每位成員各算一次，合計上限 ±${CONFIG.tags.tagBonusCap * 100}%）`);
+  for (const [g, v] of Object.entries(t.genreBonus ?? {})) parts.push(`${g}類副本通過率 ${pct(v)}`);
+  for (const [e, v] of Object.entries(t.envBonus ?? {})) parts.push(`遇到「${getEnvTag(e)?.name ?? e}」環境時通過率 ${pct(v)}`);
+  if (t.rewardPct) parts.push(`通關積分 ${pct(t.rewardPct)}`);
+  if (t.injuryShield) parts.push(t.injuryShield > 0 ? `受傷時 ${Math.round(t.injuryShield * 100)}% 機率少受一級` : `受傷時 ${Math.round(-t.injuryShield * 100)}% 機率多受一級`);
+  if (t.dodge) parts.push(`被點名受傷時 ${Math.round(t.dodge * 100)}% 直接閃過`);
+  if (t.swing) parts.push(`每個房間通過率隨機浮動 ±${Math.round(t.swing * 100)}%`);
+  if (t.loveGainMult) parts.push(`自己對別人的好感獲取 ×${t.loveGainMult}`);
+  const styles = Object.entries(TAG_STYLE[t.id] ?? {}).map(([k, v]) => `【${SQUAD_STYLES[k].name}】（+${v} 分）`);
+  const lead = styles.length ? `若任命為隊長將傾向激活：${styles.join("、")}` : "中性詞條：任命為隊長不影響流派（沒有其他可對應詞條時預設【共生羈絆流】）";
+  return { effects: parts.length ? parts.join("；") : "沒有直接數值加成（以事件／關係表現為主）", lead };
+}
+const tagTitle = (t) => {
+  const d = describeTag(t);
+  return `${t.desc}\n效果：${d.effects}\n${d.lead}`;
+};
+
+/** 詞條小標籤。clickable = true（視窗內）可點擊展開完整說明（行動端沒有滑鼠懸浮也看得到） */
+function tagChips(s, clickable = false) {
   return (s.tags ?? [])
     .map(getTag)
     .filter(Boolean)
-    .map((t) => `<span class="tag-chip tag-${t.rarity}" title="${t.desc}">${t.name}</span>`)
+    .map((t) => `<span class="tag-chip tag-${t.rarity} ${clickable && modal?.tagId === t.id ? "picked" : ""}" ${clickable ? `data-action="show-tag" data-id="${t.id}"` : ""} title="${tagTitle(t).replace(/"/g, "&quot;")}">${t.name}</span>`)
     .join("");
+}
+
+/** 點開的詞條說明面板（modal.tagId） */
+function tagPanel() {
+  const t = modal?.tagId ? getTag(modal.tagId) : null;
+  if (!t) return `<small class="muted">點一下詞條可以看完整效果與流派提示（滑鼠懸浮也行）。</small>`;
+  const d = describeTag(t);
+  return `<div class="tag-panel"><b>${t.name}</b>（${t.rarity}）${t.desc}<br />效果：${d.effects}<br />${d.lead}</div>`;
 }
 
 function renderRoster() {
@@ -496,7 +533,7 @@ const AUTO_PAUSE_MODALS = new Set(["dispatch", "gacha", "wish", "godEvent", "squ
 let autoPause = null; // { wasPaused, speed }：開窗前的狀態；開窗前就是手動暫停的，關窗後維持暫停
 
 function syncAutoPause() {
-  const want = Boolean(modal && AUTO_PAUSE_MODALS.has(modal.name));
+  const want = Boolean(modal && AUTO_PAUSE_MODALS.has(modal.name)) && state.settings.autoPause !== false; // 設定頁「自動暫停」總開關關掉就不強制暫停（4-E-8）
   if (want && !autoPause) {
     autoPause = { wasPaused: state.settings.paused, speed: state.settings.speed };
     state.settings.paused = true;
@@ -747,6 +784,15 @@ function shop() {
     <div class="modal-actions">${closeButton}</div>`;
 }
 
+const STAT_LABEL = { power: "戰力", hp: "生命", defense: "防禦", speed: "速度", luck: "氣運" };
+const PASSIVE_LABEL = { dailySanity: (v) => `每日理智 ${v}`, runSanity: (v) => `每次出戰理智 ${v}`, partyRunSanity: (v) => `出戰隨機扣隊友理智 ${-v}`, demonTendency: (v) => (v === "sure" ? "必帶入魔傾向" : "附入魔傾向"), captainHateMult: (v) => `對隊長仇恨增長 ×${v}`, captainLoveMult: (v) => `對隊長好感獲取 ×${v}`, coupPowerBonus: (v) => `政變奪權戰力 +${Math.round(v * 100)}%` };
+/** 商品的白值與被動一行摘要（商店／黑市顯示用） */
+function itemFx(item) {
+  const stats = Object.entries(item.stats ?? {}).map(([k, v]) => `${STAT_LABEL[k]}${v >= 0 ? "+" : ""}${v}`).join("　");
+  const passive = Object.entries(item.passive ?? {}).map(([k, v]) => PASSIVE_LABEL[k]?.(v)).filter(Boolean).join("、");
+  return `${stats ? `<br /><small class="good">${stats}</small>` : ""}${passive ? `<br /><small class="warn">⚠️ ${passive}</small>` : ""}`;
+}
+
 function shopStandardTab(tier, target) {
   const itemRow = (item) => {
     const locked = item.tier > tier;
@@ -755,7 +801,7 @@ function shopStandardTab(tier, target) {
     const why = !locked && !check.ok ? `<br /><small class="bad">${check.reason}</small>` : "";
     return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
       <span class="option-icon">${item.icon}</span>
-      <span class="grow"><b>${item.name}</b> <small>${SHOP_CATEGORY_LABELS[item.category]}・${SHOP_KIND_LABELS[item.kind]}${slot}</small><br /><small>${item.desc}</small>${why}</span>
+      <span class="grow"><b>${item.name}</b> <small>${SHOP_CATEGORY_LABELS[item.category]}・${SHOP_KIND_LABELS[item.kind]}${slot}</small><br /><small>${item.desc}</small>${itemFx(item)}${why}</span>
       <button class="primary" data-action="buy" data-id="${item.id}" ${check.ok ? "" : "disabled"}>${locked ? "🔒" : item.price + " 分"}</button>
     </div>`;
   };
@@ -801,7 +847,7 @@ function shopMarketTab(home, target) {
       const priceHtml = slot.discounted ? `<s>${item.price}</s> <b class="good">${slot.price}</b> 分` : `${slot.price} 分`;
       return `<div class="slot ${slot.sold ? "sold" : ""} ${slot.locked ? "locked-slot" : ""}">
         <div class="slot-head"><span class="option-icon">${item.icon}</span><span class="grow"><b>${item.name}</b><br /><small>${SHOP_CATEGORY_LABELS[item.category]}・T${item.tier}${item.kind === "gear" ? "・" + SHOP_SLOT_LABELS[item.slot] : ""}</small></span>${slot.locked ? "🔒" : ""}</div>
-        <small>${item.desc}</small>${world}
+        <small>${item.desc}</small>${itemFx(item)}${world}
         ${!slot.sold && !check.ok ? `<small class="bad">${check.reason}</small>` : ""}
         <div class="slot-actions">
           <button data-action="market-lock" data-id="${slot.index}" ${slot.sold ? "disabled" : ""}>${slot.locked ? "🔓 解除鎖定" : "🔒 鎖定"}</button>
@@ -861,7 +907,7 @@ function detail() {
       <tr><td>標籤</td><td>${(s.tags ?? [])
         .map(getTag)
         .filter(Boolean)
-        .map((t) => `<div><span class="tag-chip tag-${t.rarity}">${t.rarity}・${t.name}</span> <small>${t.desc}${t.pending ? `<br /><i>（${t.pending}）</i>` : ""}</small></div>`)
+        .map((t) => `<div><span class="tag-chip tag-${t.rarity}">${t.rarity}・${t.name}</span> <small>${t.desc}${t.pending ? `<br /><i>（${t.pending}）</i>` : ""}<br />效果：${describeTag(t).effects}<br />${describeTag(t).lead}</small></div>`)
         .join("")}</td></tr>
     </table>
     <h3 style="margin-top:12px">💞 人際關係</h3>
@@ -968,6 +1014,16 @@ function squad() {
   return `<h3>👑 小隊指揮部</h3><div class="tabs">${tabs}</div>${body}<div class="modal-actions">${closeButton}</div>`;
 }
 
+/** 五大流派完整效果對照表（指揮部頂部與上崗手冊共用） */
+function styleTable() {
+  return `<table class="style-table">${Object.values(SQUAD_STYLES)
+    .map((st) => {
+      const tags = Object.entries(TAG_STYLE).filter(([, m]) => m[st.id]).map(([id]) => getTag(id)?.name).filter(Boolean);
+      return `<tr><td><b>${st.icon} ${st.name}</b></td><td>${st.desc}<br /><small class="muted">對應詞條：${tags.join("、") || "（無）"}</small></td></tr>`;
+    })
+    .join("")}</table>`;
+}
+
 function squadCommand() {
   if (!squadUnlocked(state)) return `<div class="empty">首通<b>第 1 章尾王</b>（空間升到 Lv.${CONFIG.squad.unlockSpaceLevel}）後，才能冊封小隊隊長、啟用五大流派。</div>`;
   const cap = captainOf(state);
@@ -995,7 +1051,7 @@ function squadCommand() {
         : "";
       return `<div class="option ${isCap ? "selected" : ""}" style="flex-wrap: wrap">${rankBadge(s.rank)}<span class="grow">${s.name}
           <small>⚔️ ${effectivePower(s)}・🧠 ${s.stats.sanity}・${injuryLabel(s)}</small><br />
-          <span class="style-chip">任命此人將開啟：【${cs.icon} ${cs.name}】</span>${snub}</span>${action}</div>`;
+          <span class="style-chip">任命此人將開啟：【${cs.icon} ${cs.name}】</span><br /><span class="tags">${tagChips(s, true)}</span>${snub}</span>${action}</div>`;
     })
     .join("");
   const babies = state.samsarites.filter((s) => s.location === "pod");
@@ -1008,8 +1064,9 @@ function squadCommand() {
         })
         .join("")
     : "";
+  const duties = `<div class="summary"><b>隊長職責</b>：個人戰力 +${Math.round(CONFIG.squad.captainPowerPct * 100)}%；在隊出征時全隊單房失敗理智損耗 -${CONFIG.squad.captainFailSanityCut}；依<b>性格詞條</b>決定小隊流派（全隊分潤規則與專屬效果）。流派不能直接切換，選人就是選流派。${styleTable()}</div>`;
   const sw = `<p><small>撤換令：花公庫 ${CONFIG.squad.replaceBaseCost} × 空間等級 分＋${CONFIG.squad.replaceCrystal} 顆因果結晶。隊長陣亡時依原流派順延；戰力前兩名差距 &lt; ${Math.round(CONFIG.squad.coupGapPct * 100)}% 且（互相討厭或流派不同）會爆發隊長印記爭奪戰。</small></p>`;
-  return `${head}<div class="option-list">${rows}</div>${sw}${pods}`;
+  return `${head}${duties}<div class="option-list">${rows}</div>${tagPanel()}${sw}${pods}`;
 }
 
 function squadArmory() {
@@ -1076,6 +1133,8 @@ function settings() {
     ? state.graveyard.map((g) => `<div>第 ${g.day} 天・${rankBadge(g.rank)} ${g.name}・${g.cause}${g.killer ? `（兇手：${g.killer}）` : ""}</div>`).join("")
     : "（還沒有人死）";
   return `<h3>⚙️ 設定</h3>
+    <label class="option"><input type="checkbox" data-setting-key="autoPause" ${state.settings.autoPause !== false ? "checked" : ""} />
+      <span class="grow"><b>自動暫停（總開關）</b><br /><small>開著：派遣頁、抽卡、許願、主神事件、小隊指揮部彈窗開著時，時間自動暫停、關窗恢復原本的播放狀態與倍速。</small></span></label>
     <p>遇到下列事件時自動暫停：</p>
     <div class="option-list">${toggles}</div>
     <h3 style="margin-top:14px">🪦 死亡名單</h3>
@@ -1178,17 +1237,33 @@ function godEvent() {
     </div>`;
 }
 
-/** 新任主神上崗手冊（4-D-7）：5 張規則卡片 */
+/** 新任主神上崗手冊：雙分頁（🌱 新手上崗教學〔預設〕／💼 進階社畜手冊），文字保持精簡直白（4-E-8 收尾） */
+const GUIDE_PAGES = {
+  newbie: [
+    ["1. 🌌 你是誰？怎麼贏？", "你是「主神空間」的新任主管！目標是**招募輪迴者、派去幻想世界闖關賺積分**，培養神級強者擊敗各章尾王升級空間，順便吃瓜看他們談戀愛或內鬥。"],
+    ["2. ⚔️ 第一步：派人打工", "點擊**【任務派遣】**，挑一個推薦戰力與隊伍相當的世界，勾選健康隊員送進去，他們就會自動戰鬥並帶回積分與戰利品。"],
+    ["3. 💰 第二步：收稅與逛街", "獎金會按稅率分給**「主神公庫」與「隊員私房錢」**。隊員每晚會自己花私房錢買藥換裝；公庫則用來**許願抽新人、付維持費，或買神裝賞賜愛將**。"],
+    ["4. 🧬 第三步：開鎖推尾王", "隊員換上好裝、解開**「基因鎖」**戰力暴漲後，即可挑戰章節**【尾王關卡】**！首通尾王就能升級主神空間，解鎖新章節、黑市與小隊隊長。"],
+    ["5. ⏯️ 第四步：控場與掛機", "按鍵盤 **`Space`（空白鍵）可隨時暫停／繼續**；右上角能調倍速或開**【自動派遣】**掛機，你只需在主神事件或定期強制大考時出手決策！"],
+  ],
+  advanced: [
+    ["🛡️ 保護心血愛將不暴斃", "點進角色頁勾選**「🔒 不參與日常自動派遣」**就不會亂跑送頭；公庫賞賜裝備自帶靈魂綁定（加理智且不被亂換），商店還能買**替死符**保命。"],
+    ["🩸 應對血腥／強制大考", "看到強制任務倒數時，**先把主力鎖起來養傷補狀態**，在倒數歸零前手動派最強 4 人輾壓；千萬別拖到超時讓系統硬抓人上陣。"],
+    ["⚖️ 稅率微操與赤字抵債", "全隊快發瘋時**調低稅率（`<=30%`）每日回理智**，記得之後調回來！若公庫不幸負債，系統結算會臨時抽 75% 稅優先幫你還債。"],
+    ["👑 隊長五大流派（Lv.2）", "任命隊長會依其性格決定全隊分錢與作戰畫風（共產互助、羈絆擋刀、養殖吸血、菁英強攻、傭兵發財）；隊長死後若雙強不合還會爆發**奪權政變**！"],
+    ["🍉 黑市、生娃與叛逃", "黑市每 3 天刷新禁忌猛貨；高好感伴侶會孕育**高天賦二代子嗣**；但若把隊員壓榨到恨透隊長且精神崩潰，小心他**叛逃變成副本野生 Boss**！"],
+  ],
+};
+const md = (t) => t.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`(.+?)`/g, "<code>$1</code>");
+
 function guide() {
-  const cards = [
-    ["🎯 核心目標", `你是被主神壓榨的主神空間主管：每天要從<b>主神公庫</b>扣「維持費」（在空間裡的人才扣，副本中不扣）。積分可以向主神借，最多借到破產線；頂到線全員被電擊、理智大跌；人全死光時主神會空投新人救援。穩住收支，推進並擊敗<b>五章尾王</b>（首通尾王讓空間升級、解鎖下一章）。`],
-    ["⚔️ 派遣與傷亡紅線", `派遣前看<b>推薦戰力</b>與任務的<b>突變詞綴</b>（例如血月狂躁 R ×1.15）。角色受傷（尤其重傷、致命傷）或理智過低（< 30）時，請留在空間休養、吃藥，<b>硬派出去極易戰死、名字刻上英靈碑</b>。彈窗和派遣畫面會用紅字警告。`],
-    ["💰 雙錢包與稅率", `副本獎金依<b>稅率</b>（頂欄可調 20%～80%）分流：一部分進「主神公庫」，其餘由存活隊員平分成「私房錢」。隊員每天日結會自己逛街買藥、換裝、強化、突破；你用公庫賞賜的裝備會🔒綁定，不會被他們自己換掉。稅率太高（≥60%）每天掉理智，太低（≤30%）會加理智但公庫變瘦。`],
-    ["🕶️ 情報、黑市與奇物", `同一個副本刷越多次，<b>情報</b>越高（滿格 +9%）：滿格後解鎖黑市「特產 85 折」與派遣時的<b>貪婪探索</b>（通關後有機率打開隱藏房，掉隱藏奇物）。每章<b>常規副本累計通關 8 次</b>才開放該章尾王。奇物永久收集（最多 +25% 全隊戰力），首通必得首通奇物。`],
-    ["🧬 基因鎖與因果結晶", `強化點滿後才能<b>突破基因鎖</b>（戰力乘區大幅提升，上限看階級 C／B／A／S）。高階副本與尾王會掉<b>因果結晶</b>🔮，是抽「神級池」的必要材料（每抽 1 顆）。想變強：招募高階角色、突破基因鎖、搭配裝備與血統。`],
-  ];
+  const tab = modal?.tab ?? "newbie";
+  const tabs = [["newbie", "🌱 新手上崗教學"], ["advanced", "💼 進階社畜手冊"]]
+    .map(([id, label]) => `<button data-action="guide-tab" data-id="${id}" class="${tab === id ? "active" : ""}">${label}</button>`)
+    .join("");
   return `<h3>❓ 新任主神上崗手冊</h3>
-    ${cards.map(([title, body]) => `<div class="guide-card"><h4>${title}</h4>${body}</div>`).join("")}
+    <div class="tabs">${tabs}</div>
+    ${GUIDE_PAGES[tab].map(([title, body]) => `<div class="guide-card"><h4>${title}</h4>${md(body)}</div>`).join("")}
     <div class="modal-actions"><button class="primary" data-action="close-modal">我知道了，開始上班</button></div>`;
 }
 
@@ -1281,6 +1356,12 @@ const actions = {
   },
   "open-stele"() {
     modal = { name: "stele" };
+  },
+  "guide-tab"(el) {
+    modal.tab = el.dataset.id;
+  },
+  "show-tag"(el) {
+    modal.tagId = modal.tagId === el.dataset.id ? null : el.dataset.id; // 再點一次收起
   },
   "open-squad"() {
     modal = { name: "squad", tab: "command" };
@@ -1438,12 +1519,33 @@ document.addEventListener("change", (event) => {
   else if (el.id === "protect-injured") state.settings.protect.noInjured = el.checked;
   else if (el.id === "protect-enemies") state.settings.protect.noEnemies = el.checked;
   else if (el.dataset.pauseKey) state.settings.pauseOn[el.dataset.pauseKey] = el.checked;
+  else if (el.dataset.settingKey) {
+    state.settings[el.dataset.settingKey] = el.checked;
+    if (el.dataset.settingKey === "autoPause") syncAutoPause(); // 關掉總開關時，若目前正因彈窗暫停就立刻恢復
+  } else if (el.id === "auto-strategy") state.autoStrategy = el.value;
   else if ("greedy" in el.dataset) {
     dispatchPick.greedy = el.checked;
     render();
     return;
   } else return;
   saveGame();
+});
+
+// 鍵盤快捷鍵（4-E-8）：空白鍵 = 暫停／繼續；數字鍵 1～5 = 倍速（0.5x／1x／2x／5x／10x）
+document.addEventListener("keydown", (e) => {
+  const el = document.activeElement;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable)) return; // 輸入中不攔截
+  if (modal) return; // 彈窗開著（自動暫停中）不切換，免得和關窗恢復打架
+  if (e.code === "Space") {
+    e.preventDefault(); // 防止空白鍵同時觸發已聚焦按鈕的 click
+    if (el && el !== document.body && typeof el.blur === "function") el.blur();
+    actions["toggle-pause"]();
+    afterChange();
+  } else if (/^[1-5]$/.test(e.key) && CONFIG.speeds[Number(e.key) - 1] !== undefined) {
+    state.settings.speed = CONFIG.speeds[Number(e.key) - 1];
+    afterChange();
+  }
 });
 
 // 給除錯與自動化測試用：在瀏覽器主控台輸入 zhushen.state 可以看到整個遊戲狀態

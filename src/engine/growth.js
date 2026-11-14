@@ -102,6 +102,12 @@ export function enhance(state, id, opts = null) {
 
 // ───────── 突破基因鎖 ─────────
 
+/** 破鎖費用：持有對應階級的基因鎖助推 Buff（破鎖丹等耗材）時打折（4-E-8；破鎖沒有失敗判定，所以只有花費折扣） */
+export function geneCostOf(s, next, base) {
+  const b = s.geneBuff;
+  return b && b.target === next ? Math.round(base * (1 - (b.costDiscount ?? 0))) : base;
+}
+
 /** 現在能不能突破到下一階。回傳 { ok, reason, cost, next }（next = 突破後的階數） */
 export function checkBreakGene(state, id, opts = null) {
   const s = getSamsarite(state, id);
@@ -115,10 +121,11 @@ export function checkBreakGene(state, id, opts = null) {
     return { ok: false, reason: `要先點滿目前階段的強化次數（${s.enhanceCount ?? 0}/${enhanceCapOf(s)}）`, next };
   }
   if ((state.spaceLevel ?? 1) < tier.spaceLevel) {
-    return { ok: false, reason: `需要空間等級 Lv.${tier.spaceLevel}`, next, cost: tier.cost };
+    return { ok: false, reason: `需要空間等級 Lv.${tier.spaceLevel}`, next, cost: geneCostOf(s, next, tier.cost) };
   }
-  if (!canPay(state, s, tier.cost, opts)) return { ok: false, reason: payFail(opts), next, cost: tier.cost };
-  return { ok: true, cost: tier.cost, next };
+  const cost = geneCostOf(s, next, tier.cost);
+  if (!canPay(state, s, cost, opts)) return { ok: false, reason: payFail(opts), next, cost };
+  return { ok: true, cost, next };
 }
 
 export function breakGene(state, id, opts = null) {
@@ -128,6 +135,7 @@ export function breakGene(state, id, opts = null) {
   if (walletPay(opts)) spendWallet(state, s, check.cost);
   else spend(state, check.cost);
   s.geneLock = check.next;
+  if (s.geneBuff?.target === check.next) s.geneBuff = null; // 助推 Buff 突破後消耗（4-E-8）
   const tier = CONFIG.gene.tiers[s.geneLock];
   emit(
     state,

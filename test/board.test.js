@@ -133,7 +133,7 @@ test("突變：血月狂躁 R ×1.15 + 積分 +20%；分贓誘惑 +25%；斷電 
     const r = startRun(state, "ghost_village", ids(state), { slotId: 500 });
     const run = r.run;
     const dungeon = getDungeon("ghost_village");
-    assert.equal(dungeonOfRun(run).recommendedPower, mut === "blood_moon" ? Math.round(90 * 1.15) : 90);
+    assert.equal(dungeonOfRun(run).recommendedPower, mut === "blood_moon" ? Math.round(126 * 1.15) : 126);
     const env = getEnvTag(run.envId);
     const pct = getMutation(mut).rewardPct ?? 0;
     const expected = Math.round(dungeon.reward * rewardMultiplier(state, dungeon, party, env) * (1 + pct)) + Math.round(dungeon.reward * 0.5);
@@ -151,7 +151,7 @@ test("突變：血月狂躁的 R 倍率只影響這一場，資料表不動", ()
   const eff = applyMutation(d, "blood_moon");
   assert.equal(eff.recommendedPower, Math.round(d.recommendedPower * 1.15));
   assert.equal(d.recommendedPower, getDungeon("ch2_03").recommendedPower);
-  assert.equal(d.recommendedPower, Math.round(543 * (1087 / 543) ** 0.5));
+  assert.equal(d.recommendedPower, Math.round(Math.round(543 * (1087 / 543) ** 0.5) * 1.5)); // 4-E-8：第 2 章 R ×1.5
   assert.equal(applyMutation(d, "calm_wind"), d);
   assert.equal(boardTargets(createNewGame(1)).length, 3);
 });
