@@ -28,7 +28,7 @@ export function autoCandidates(state) {
   const reserved = reservedForMandatory(state);
   return state.samsarites
     .filter((s) => !reserved.has(s.id))
-    .filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0))
+      .filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0) && !(s.podLockDays > 0))
     .filter((s) => !(state.settings.protect.noInjured && s.injury > 0))
     .sort((a, b) => effectivePower(b) - effectivePower(a))
     .slice(0, CONFIG.auto.maxCandidates);
@@ -109,7 +109,7 @@ export function autoMandatory(state) {
   const topAway = [...reservedForMandatory(state)].some((id) => state.samsarites.find((s) => s.id === id)?.location !== "space");
   const lastChance = currentDay(state) >= pending.deadlineDay - 1;
   if (CONFIG.auto.holdForMandatory && topAway && !lastChance) return 0;
-  const pool = state.samsarites.filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0));
+  const pool = state.samsarites.filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0) && !(s.podLockDays > 0));
   const party = [...pool].sort((a, b) => (a.injury > 0) - (b.injury > 0) || effectivePower(b) - effectivePower(a)).slice(0, CONFIG.partyMax);
   if (party.length === 0) return 0;
   return startRun(state, MANDATORY_ID, party.map((s) => s.id)).ok ? 1 : 0;

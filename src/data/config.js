@@ -55,6 +55,22 @@ export const CONFIG = {
     deathForfeitPct: 0.5, // 戰死／被抹殺：私房錢這個比例充公回公庫，其餘消散（主動回收則 100% 歸公庫）
   },
 
+  // ── 商店與黑市（Phase 4-D-2）──
+  shop: {
+    consumableCap: 3, // 出征耗材緩衝區最多囤幾份（下次出征全部套用，單場）
+    worldPassCap: 0.06, // 全隊「特產裝備綁定世界通過率加成」合計上限
+  },
+  market: {
+    refreshDays: 3, // 每幾天自動刷新一次 8 格黑市
+    // 分槽保底（順序 = 格子編號）：3 格特產武防 + 2 格特產血統 + 2 格耗材 + 1 格黑貨
+    slotPlan: ["gear", "gear", "gear", "bloodline", "bloodline", "consumable", "consumable", "contraband"],
+    curTierWeight: 2, // 抽樣：目前解鎖最高階的商品權重
+    prevTierWeight: 1, // 抽樣：前一階的商品權重
+    manualBase: [50, 150, 450, 1200, 3000], // 手動刷新基礎價（公庫付），索引 = 空間等級 - 1；同日第 n 次刷新 = 基礎價 × n
+    lockLimit: 1, // 最多免費鎖定幾格（刷新不會洗掉）
+    intelDiscount: 0.85, // 特產綁定的世界情報滿格 → 85 折
+  },
+
   // ── 副本 ──
   partyMax: 4, // 一隊最多幾人（計畫未定）
   dungeon: {

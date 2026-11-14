@@ -34,7 +34,20 @@ export function rollTags(state) {
 
 /** 商店裝備加在某個數值（power 白值 / injuryShield / dodge）上的總和（Phase 4-B 起舊商店強化已移除） */
 export function shopBonus(s, key) {
-  return Object.values(s.gear ?? {}).reduce((n, id) => n + (getShopItem(id)?.effect?.[key] ?? 0), 0);
+  const gear = Object.values(s.gear ?? {}).reduce((n, id) => n + (getShopItem(id)?.effect?.[key] ?? 0), 0);
+  return gear + (s.runBuff?.[key] ?? 0); // 出征耗材的單場 buff（injuryShield／defense／speed；4-D-2）
+}
+
+/** 全隊特產裝備在「綁定世界」的單房通過率加成（加總後套用上限 CONFIG.shop.worldPassCap；4-D-2） */
+export function worldPassBonus(party, dungeon) {
+  let sum = 0;
+  for (const s of party) {
+    for (const id of Object.values(s.gear ?? {})) {
+      const it = getShopItem(id);
+      if (it?.worldId && it.worldId === dungeon.id) sum += it.effect?.worldPass ?? 0;
+    }
+  }
+  return Math.min(CONFIG.shop.worldPassCap, sum);
 }
 
 /** 副屬性總值（Phase 4-C-1）：hp／defense／speed／luck = stats（初始＋強化＋頓悟）＋裝備白值；不吃基因鎖乘區 */
@@ -110,7 +123,7 @@ export function genePowerMult(s) {
  * 基礎戰力 stats.power 不會被這個函式改動。
  */
 export function effectivePower(s) {
-  const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0) + moodPowerPct(s) + injuryPowerPct(s) + sanityPowerPct(s) + (s.steleBonus ?? 0);
+  const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0) + moodPowerPct(s) + injuryPowerPct(s) + sanityPowerPct(s) + (s.steleBonus ?? 0) + shopBonus(s, "powerPct"); // 血統 powerPct（4-D-2）
   return Math.max(1, Math.round((bodyPower(s) * genePowerMult(s) + shopBonus(s, "power")) * (1 + pct)));
 }
 

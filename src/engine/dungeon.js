@@ -11,11 +11,11 @@ import { rand, pick, weighted } from "./rng.js";
 import { wishesAfterRun } from "./wishes.js";
 import { godAfterRun } from "./godEvents.js";
 import { rollInsights, rollKarmaDrop } from "./growth.js";
-import { effectivePower, moodPassBonus, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf, defenseChance, speedSaveChance, luckRewardPct } from "./tags.js";
+import { effectivePower, worldPassBonus, moodPassBonus, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf, defenseChance, speedSaveChance, luckRewardPct } from "./tags.js";
 import { partyRelationBonus, pickClash, clashText, afterClash, afterDeath, findProtector } from "./relations.js";
 import { logText } from "./templates.js";
 import { emit, setInjury, killSamsarite, checkGameOver, currentDay } from "./core.js";
-import { collectionEffects, collectionPassBonus } from "./shop.js";
+import { collectionEffects, collectionPassBonus, consumeRunBuffs } from "./shop.js";
 import { MANDATORY_ID, buildMandatoryDungeon } from "./mandatory.js";
 import { distributeLoot } from "./wallet.js";
 
@@ -26,7 +26,7 @@ export function relationBonus(state, party) {
 
 /** 標籤與環境相性：標籤加成（含類型、環境相性）+ 環境本身的修正 + 副本特殊獎勵（收藏）的加成 */
 export function tagBonus(state, party, dungeon, env = null) {
-  return tagPassBonus(party, dungeon, env) + (env?.passMod ?? 0) + collectionPassBonus(state, dungeon);
+  return tagPassBonus(party, dungeon, env) + (env?.passMod ?? 0) + collectionPassBonus(state, dungeon) + worldPassBonus(party, dungeon);
 }
 
 /** 這個副本有沒有通關過（沒通關過 = 首次開荒：傷勢表較重；首通在結算時判定） */
@@ -152,9 +152,12 @@ export function startRun(state, dungeonId, partyIds) {
   if (party.some((s) => !s || s.location !== "space")) return { ok: false, reason: "有隊員不在主神空間" };
   const resting = party.find((s) => (s.vacationDays ?? 0) > 0);
   if (resting) return { ok: false, reason: `${resting.name} 正在放假（還要 ${resting.vacationDays} 天）` };
+  const lockedIn = party.find((s) => (s.podLockDays ?? 0) > 0);
+  if (lockedIn) return { ok: false, reason: `${lockedIn.name} 被鎖在私人休眠艙裡（還要 ${lockedIn.podLockDays} 天）` };
 
   const enteredInjury = {};
   for (const s of party) {
+    consumeRunBuffs(s); // 出征耗材套用成單場 buff（4-D-2）
     s.location = "dungeon";
     s.runs += 1;
     enteredInjury[s.id] = s.injury; // 記住「帶傷出征」的等級，用來算死亡率加成
@@ -356,6 +359,7 @@ function finishRun(state, run) {
   }
   for (const s of survivors) {
     s.location = "space";
+    s.runBuff = null; // 單場 buff 用完即止（4-D-2）
     s.sabotaged = false; // 沒被打中就沒用到，動過手腳的裝備回家後已被檢查
   }
 

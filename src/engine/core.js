@@ -15,6 +15,7 @@ import { dailyMandatory, newMandatoryState } from "./mandatory.js"; // 同上（
 import { dailySanity, newSanityState } from "./sanity.js"; // 同上（Phase 4-C-2 理智暴走）
 import { newGrowthState } from "./growth.js"; // 同上（Phase 4-B 基因鎖／強化／頓悟；growth.js 也會 import 這個檔案）
 import { taxSanityDaily, forfeitWallet } from "./wallet.js"; // 同上（Phase 4-D-1 雙錢包）
+import { newMarketState, refreshMarket, dailyMarket } from "./market.js"; // 同上（Phase 4-D-2 黑市）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
 // ───────── 事件與日誌 ─────────
@@ -62,6 +63,8 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     airdrop: newAirdropState(seed), // 絕境空投：連續天數與獨立亂數流（見下方 dailyAirdrop）
     sanity: newSanityState(seed), // 理智暴走：獨立亂數流（見 engine/sanity.js）
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
+    market: newMarketState(seed), // 8 格分槽黑市（含獨立亂數流 market.rngState；見 engine/market.js）
+    aiShopRngState: (seed ^ 0x5b0b) | 0, // 輪迴者自主逛街的獨立亂數流（見 engine/shopping.js）
     cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
     dungeonStats: {}, // { 副本id: { attempts, clears } }；clears > 0 代表已有該副本情報
     collection: [], // 副本特殊獎勵 id（定義在 data/dungeons.js），永久生效，效果見 engine/shop.js collectionEffects
@@ -85,6 +88,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
   for (let i = 0; i < CONFIG.startingSamsarites; i++) {
     state.samsarites.push(createSamsarite(state, CONFIG.startingRank));
   }
+  refreshMarket(state, { silent: true }); // 開局先上一批貨（不寫日誌）
   emit(state, "system", logText(state, "start", { n: CONFIG.startingSamsarites }));
   return state;
 }
@@ -126,6 +130,10 @@ export function createSamsarite(state, rank, rng = state) {
     vacationDays: 0, // 許願放假：剩幾天不能派遣
     sabotaged: false, // 裝備被人動了手腳（借刀殺人），下次出征會倒楣
     wallet: 0, // 私房錢（4-D-1）：副本分潤進來，輪迴者自己逛街、強化用（見 engine/shopping.js）；戰死 50% 充公，回收 100% 歸公庫
+    consumables: [], // 出征耗材緩衝區：商品 id 陣列，下次出發時全部套用成單場 runBuff（4-D-2）
+    runBuff: null, // 單場 buff { injuryShield, defense, speed }，出征時由 consumables 轉成、回家清空
+    lockedInPodBy: null, // 被誰鎖進私人休眠艙（0 = 主管）；podLockDays 倒數，期間不能派遣、不能逛街（4-D-2 狗血黑貨）
+    podLockDays: 0,
     soulbound: {}, // 公庫賞賜的裝備綁定 { weapon: true, … }：輪迴者自己逛街時不會覆蓋（4-D-1）
   };
 }
@@ -241,6 +249,7 @@ export function endOfDay(state) {
     cost += upkeepOf(s, state); // 先用「今天的傷勢」算錢，再結算休息
     s.stats.sanity = Math.min(100, s.stats.sanity + CONFIG.sanity.restRecover); // 人在空間（含帶傷休養）每日自然恢復理智（4-C-2）
     taxSanityDaily(state, s); // 稅率高壓／低稅的每日理智影響（4-D-1）
+    if (s.podLockDays > 0 && --s.podLockDays <= 0) s.lockedInPodBy = null; // 私人休眠艙倒數（4-D-2）
     if (s.injury > 0) {
       s.restDaysLeft -= 1;
       if (s.restDaysLeft <= 0) {
@@ -411,6 +420,7 @@ export function advanceTick(state) {
     dailySanity(state); // 理智歸零的人暴走（要在 endOfDay 補理智之前，Phase 4-C-2）
     endOfDay(state);
     dailyWishes(state); // 心情／休假倒數、許願超時（Phase 3-B）
+    dailyMarket(state); // 黑市到期換貨（4-D-2，獨立亂數流）
     dailyMandatory(state); // 主神強制血腥任務：發布／逾時抹殺（Phase 4-C-4，獨立亂數流）
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
@@ -498,10 +508,18 @@ export function deserialize(json) {
   state.nextWishId ??= 1 + Math.max(0, ...state.wishes.map((w) => w.id));
   state.relations ??= {};
   state.cooldowns ??= {};
+  state.market ??= newMarketState(state.rngState); // Phase 4-D-2 之前的存檔沒有黑市／逛街亂數流
+  state.market.slots ??= [];
+  state.aiShopRngState ??= (state.rngState ^ 0x5b0b) | 0;
+  if (state.market.slots.length === 0) refreshMarket(state, { silent: true });
   state.taxRate ??= CONFIG.tax.default; // Phase 4-D-1 之前的存檔沒有稅率與私房錢
   for (const s of state.samsarites) {
     s.wallet ??= 0;
     s.soulbound ??= {};
+    s.consumables ??= [];
+    s.runBuff ??= null;
+    s.lockedInPodBy ??= null;
+    s.podLockDays ??= 0;
   }
   state.settings.followId ??= null; // 舊存檔沒有視角鎖定欄位，當沒鎖定
   // 之後新增的暫停事件種類，舊存檔沒有就補上預設值

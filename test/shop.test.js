@@ -43,13 +43,13 @@ test("商品資料表：id 不重複、階層 1~5、種類合法、有價格與�
     assert.ok([1, 2, 3, 4, 5].includes(i.tier), i.id);
     assert.ok(i.kind in SHOP_KIND_LABELS, i.id);
     assert.ok(i.price > 0 && Object.keys(i.effect).length > 0, i.id);
-    if (i.kind === "gear") assert.ok(["weapon", "armor"].includes(i.slot), i.id);
+    if (i.kind === "gear") assert.ok(["weapon", "armor", "bloodline"].includes(i.slot), i.id);
   }
   assert.ok(SHOP_ITEMS.every((i) => i.kind !== "enhance"), "Phase 4-B 起商店不再賣強化");
   for (const t of [1, 2, 3, 4, 5]) assert.ok(SHOP_ITEMS.some((i) => i.tier === t), `Tier ${t} 沒有商品`);
   const anchors = [16, 60, 220, 900, 3500];
   anchors.forEach((want, i) => {
-    const gearPower = SHOP_ITEMS.filter((x) => x.tier === i + 1 && x.kind === "gear").reduce((n, x) => n + (x.effect.power ?? 0), 0);
+    const gearPower = SHOP_ITEMS.filter((x) => x.tier === i + 1 && x.kind === "gear" && x.category === "standard").reduce((n, x) => n + (x.effect.power ?? 0), 0);
     assert.equal(gearPower, want, `Tier ${i + 1} 武器＋防具白值`);
   });
 });

@@ -67,6 +67,14 @@ function setPairStatus(state, a, b, status) {
   ensureRel(state, b, a).status = status;
 }
 
+/** 忘情水（4-D-2）：兩人雙向的好感、仇恨歸零，戀人／靈魂伴侶／死敵狀態與復仇標記一併解除 */
+export function resetPair(state, a, b) {
+  for (const [x, y] of [[a, b], [b, a]]) {
+    const r = state.relations?.[`${x.id}>${y.id}`];
+    if (r) Object.assign(r, { love: 0, hate: 0, status: undefined, revenge: false });
+  }
+}
+
 /** 兩人的關係等級：soulmate / adore / like / neutral / dislike / hate / nemesis */
 export function pairLevel(state, a, b) {
   const status = pairStatus(state, a, b);
