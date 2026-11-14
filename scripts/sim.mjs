@@ -304,7 +304,7 @@ for (let ch = 1; ch <= 5; ch++) {
   const sum = (key) => results.reduce((n, r) => n + (r.counters[key] ?? 0), 0) / SEEDS;
   const totalDays = results.reduce((n, r) => n + Object.values(r.styleDays).reduce((a, b) => a + b, 0), 0) || 1;
   const dist = ["communal", "bond", "farming", "elite", "mercenary"].map((k) => `${k} ${Math.round((results.reduce((n, r) => n + (r.styleDays[k] ?? 0), 0) / totalDays) * 100)}%`).join("　");
-  console.log(`\n小隊（4-E${FORCE_STYLE ? `，強制流派 ${FORCE_STYLE}` : "，自然演化"}，每局平均）：隊長異動 ${avg(results.map((r) => r.captainChanges))} 次・政變 ${sum("coup").toFixed(1)}・空降不服 ${sum("snub").toFixed(1)}・叛逃 ${sum("defect").toFixed(1)}・討伐叛徒 ${sum("slain").toFixed(1)}・子嗣 ${sum("birth").toFixed(1)}（期末二代以上 ${avg(results.map((r) => r.gen2))} 人、最高第 ${avg(results.map((r) => r.maxGen))} 代）・遺物 ${sum("heirloom").toFixed(1)}（期末庫存 ${avg(results.map((r) => r.heirloomsLeft))}）・人際事件 ${sum("drama").toFixed(1)}・互助金期末 ${avg(results.map((r) => r.fund))}`);
+  console.log(`\n小隊（4-E${FORCE_STYLE ? `，強制流派 ${FORCE_STYLE}` : "，自然演化"}，每局平均）：隊長異動 ${avg(results.map((r) => r.captainChanges))} 次・政變 ${sum("coup").toFixed(1)}・空降不服 ${sum("snub").toFixed(1)}・叛逃 ${sum("defect").toFixed(2)}（${results.filter((r) => (r.counters.defect ?? 0) > 0).length}/${SEEDS} 局發生）・討伐叛徒 ${sum("slain").toFixed(2)}・子嗣 ${sum("birth").toFixed(1)}（期末二代以上 ${avg(results.map((r) => r.gen2))} 人、最高第 ${avg(results.map((r) => r.maxGen))} 代）・遺物 ${sum("heirloom").toFixed(1)}（期末庫存 ${avg(results.map((r) => r.heirloomsLeft))}）・人際事件 ${sum("drama").toFixed(1)}・互助金期末 ${avg(results.map((r) => r.fund))}`);
   console.log(`流派分佈（占有隊長的天數）：${dist}`);
 }
 console.log(`平均名冊階級：${["C", "B", "A", "S"].map((k) => `${k}×${avg(results.map((r) => r.ranks[k] ?? 0))}`).join("　")}\n`);

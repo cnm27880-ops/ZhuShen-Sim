@@ -289,7 +289,7 @@ export const CONFIG = {
   // ── 跨代子嗣、先人遺物、叛逃野生 Boss（Phase 4-E-4；引擎在 engine/lineage.js）──
   lineage: {
     pairAffinity: 75, // 雙向淨好感 >= 75（而且都不是重傷以上）才有機會孕育
-    birthChance: 0.05, // 符合條件的一對，每天孕育機率
+    birthChance: 0.02, // 符合條件的一對，每天孕育機率（4-E-7：5%→2%，目標自然演化每局子嗣 4～6）
     cooldownDays: 60, // 同一對孕育冷卻（4-E-7：30→60；3-F 戀人生子與孕育共用同一把雙親冷卻鎖）
     podDays: 7, // 培育期
     speedUpCostPerDay: 60, // 加速培育：每剩 1 天花公庫的積分 = 這個數字 × 空間等級
