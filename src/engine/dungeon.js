@@ -16,6 +16,7 @@ import { partyRelationBonus, pickClash, clashText, afterClash, afterDeath, findP
 import { logText } from "./templates.js";
 import { emit, setInjury, killSamsarite, checkGameOver, currentDay } from "./core.js";
 import { collectionEffects, collectionPassBonus } from "./shop.js";
+import { MANDATORY_ID, buildMandatoryDungeon } from "./mandatory.js";
 
 /** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
 export function relationBonus(state, party) {
@@ -44,7 +45,11 @@ export function roomCount(dungeon) {
   return dungeon.rooms.length;
 }
 export function roomsToClear(dungeon) {
-  return chapterOf(dungeon).toClear;
+  return dungeon.toClear ?? chapterOf(dungeon).toClear; // 強制任務等動態副本自帶 toClear
+}
+/** 這場副本的定義：強制任務是開場快照（run.dungeonDef），一般副本查資料表 */
+export function dungeonOfRun(run) {
+  return run.dungeonDef ?? getDungeon(run.dungeonId);
 }
 /** 這個副本是全域第幾關（1~20；DUNGEONS 陣列順序就是關卡編號） */
 export function dungeonNumber(dungeon) {
@@ -101,7 +106,7 @@ export function roomPassRate(state, party, dungeon, env = null, swing = 0, intel
     moodPassBonus(party) +
     intel +
     swing;
-  return Math.min(CONFIG.dungeon.maxPassRate, Math.max(CONFIG.dungeon.minPassRate, raw));
+  return Math.min(dungeon.passCap ?? CONFIG.dungeon.maxPassRate, Math.max(CONFIG.dungeon.minPassRate, raw));
 }
 
 /** 「n 個房間至少通過 k 個」的機率（二項分布） */
@@ -128,12 +133,16 @@ function partyOf(state, run) {
 
 /** 出發。回傳 { ok, reason } */
 export function startRun(state, dungeonId, partyIds) {
-  const dungeon = getDungeon(dungeonId);
+  const mandatory = dungeonId === MANDATORY_ID; // 主神強制任務（4-C-4）：動態副本，不看章節解鎖、守門、情報條
+  if (mandatory && !state.mandatory?.pending) return { ok: false, reason: "目前沒有主神強制任務" };
+  const dungeon = mandatory ? buildMandatoryDungeon(state) : getDungeon(dungeonId); // 要在隊員離開主神空間前算（R 看名冊戰力）
   if (!dungeon) return { ok: false, reason: "找不到這個副本" };
-  if (dungeon.chapter > (state.spaceLevel ?? 1)) return { ok: false, reason: `第 ${dungeon.chapter} 章還沒解鎖（空間 Lv.${dungeon.chapter} 才能進）` };
-  const gate = bossGateInfo(state, dungeon);
-  if (!gate.open) {
-    return { ok: false, reason: `尾王還沒開放：要先在第 ${dungeon.chapter} 章前 3 關合計通關滿 ${gate.need} 次（目前 ${gate.have}/${gate.need}）` };
+  if (!mandatory) {
+    if (dungeon.chapter > (state.spaceLevel ?? 1)) return { ok: false, reason: `第 ${dungeon.chapter} 章還沒解鎖（空間 Lv.${dungeon.chapter} 才能進）` };
+    const gate = bossGateInfo(state, dungeon);
+    if (!gate.open) {
+      return { ok: false, reason: `尾王還沒開放：要先在第 ${dungeon.chapter} 章前 3 關合計通關滿 ${gate.need} 次（目前 ${gate.have}/${gate.need}）` };
+    }
   }
   if (partyIds.length < 1 || partyIds.length > CONFIG.partyMax) {
     return { ok: false, reason: `一隊要 1~${CONFIG.partyMax} 人` };
@@ -149,13 +158,21 @@ export function startRun(state, dungeonId, partyIds) {
     s.runs += 1;
     enteredInjury[s.id] = s.injury; // 記住「帶傷出征」的等級，用來算死亡率加成
   }
-  const intel = intelBonus(state, dungeon); // 開場鎖定，結算才加情報
-  const stats = (state.dungeonStats[dungeonId] ??= { attempts: 0, clears: 0, intel });
-  stats.attempts += 1;
+  const intel = mandatory ? 0 : intelBonus(state, dungeon); // 開場鎖定，結算才加情報
+  if (!mandatory) {
+    const stats = (state.dungeonStats[dungeonId] ??= { attempts: 0, clears: 0, intel });
+    stats.attempts += 1;
+  }
 
-  const env = pick(state, ENV_TAGS); // 每次進副本隨機抽一個環境標籤
-  const firstTime = !hasIntel(state, dungeon);
-  const run = { id: state.nextRunId++, startTick: state.tick, dungeonId, envId: env.id, firstTime, intel, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
+  const env = mandatory ? null : pick(state, ENV_TAGS); // 每次進副本隨機抽一個環境標籤（強制任務沒有）
+  const firstTime = mandatory ? false : !hasIntel(state, dungeon);
+  const run = { id: state.nextRunId++, startTick: state.tick, dungeonId, envId: env?.id ?? null, firstTime, intel, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
+  if (mandatory) {
+    run.mandatory = true;
+    run.dungeonDef = dungeon; // 開場快照：R 與獎勵不隨之後名冊變動
+    run.extraInjury = dungeon.failInjuryExtra;
+    state.mandatory.pending = null; // 派出去了，任務不再逾時
+  }
   state.runs.push(run);
   emit(
     state,
@@ -167,7 +184,7 @@ export function startRun(state, dungeonId, partyIds) {
       rec: dungeon.recommendedPower,
     })
   );
-  emit(state, "env", logText(state, "env", { env: env.name, desc: env.desc }));
+  if (env) emit(state, "env", logText(state, "env", { env: env.name, desc: env.desc }));
   if (firstTime) emit(state, "intel", logText(state, "intel"));
   if (state.runs.length > 1) emit(state, "runParallel", logText(state, "runParallel", { n: state.runs.length, dungeon: dungeon.name }));
   return { ok: true, run };
@@ -175,13 +192,13 @@ export function startRun(state, dungeonId, partyIds) {
 
 /** 這場副本此刻該不該走下一個房間（每 roomTicks 個時段走一間，所有副本共用同一個時間） */
 export function roomDue(state, run) {
-  return run.roomIndex < roomCount(getDungeon(run.dungeonId)) && state.tick >= run.startTick + run.roomIndex * CONFIG.roomTicks;
+  return run.roomIndex < roomCount(dungeonOfRun(run)) && state.tick >= run.startTick + run.roomIndex * CONFIG.roomTicks;
 }
 
 /** 走一個房間（= 0.2 天）。只結算房間，不推進時間；時間由 dispatch.js 的 step() 統一推進。 */
 export function stepRun(state, run = state.runs[0]) {
   if (!run) return;
-  const dungeon = getDungeon(run.dungeonId);
+  const dungeon = dungeonOfRun(run);
   const room = dungeon.rooms[run.roomIndex];
   const party = partyOf(state, run);
   const env = getEnvTag(run.envId) ?? null;
@@ -212,7 +229,7 @@ function loseSanityOf(s, amount) {
 
 /** 這場副本是否結束：時間到（房數 × roomTicks；全滅的也要等時間過完才結算，剩下的房間不用走） */
 export function runIsOver(state, run) {
-  return state.tick >= run.startTick + roomCount(getDungeon(run.dungeonId)) * CONFIG.roomTicks;
+  return state.tick >= run.startTick + roomCount(dungeonOfRun(run)) * CONFIG.roomTicks;
 }
 
 /** 依開場順序，讓所有「該走房間」的副本各走一間（順序固定，亂數才可重現） */
@@ -247,7 +264,7 @@ export function hurt(state, run, victim, dungeon, attacker = null) {
     return;
   }
   const table = run.firstTime ? CONFIG.dungeon.firstClearInjuryRoll : CONFIG.dungeon.injuryRoll;
-  let gained = weighted(state, table).levels;
+  let gained = weighted(state, table).levels + (run.extraInjury ?? 0); // 強制任務：單房失敗傷勢額外 +1
   const cap = CONFIG.tags.injuryShieldMax;
   const shield = Math.min(cap, injuryShieldOf(victim) + collectionEffects(state).injuryShield); // 個人（標籤＋裝備）＋收藏的全員減免
   if (shield > 0 && rand(state) < shield) gained = Math.max(1, gained - 1);
@@ -285,7 +302,7 @@ export function hurt(state, run, victim, dungeon, attacker = null) {
 }
 
 function finishRun(state, run) {
-  const dungeon = getDungeon(run.dungeonId);
+  const dungeon = dungeonOfRun(run);
   const survivors = partyOf(state, run);
   const passedCount = run.results.filter(Boolean).length;
   const success = survivors.length > 0 && passedCount >= roomsToClear(dungeon);
@@ -294,15 +311,19 @@ function finishRun(state, run) {
   let dropDesc = "";
   let levelUp = null;
   // 情報條：不論成敗，每結算一場就累積（同副本多場依結算順序各加一次）
-  const stats = state.dungeonStats[run.dungeonId];
+  const stats = run.mandatory ? null : state.dungeonStats[run.dungeonId]; // 強制任務沒有情報條與通關統計
   const ic = CONFIG.dungeon.intel;
-  stats.intel = Math.min(ic.max, (stats.intel ?? ic.start) + ic.perRun);
+  if (stats) stats.intel = Math.min(ic.max, (stats.intel ?? ic.start) + ic.perRun);
 
   // 首通在「結算時」才判定：同副本同時開多場，先結算的吃首通，後結算的視為重打
-  const firstClear = success && !hasIntel(state, dungeon);
+  const firstClear = success && !run.mandatory && !hasIntel(state, dungeon);
   if (success) {
     const env = getEnvTag(run.envId) ?? null;
-    reward = Math.round(dungeon.reward * rewardMultiplier(state, dungeon, survivors, env));
+    if (run.mandatory) {
+      // 血腥撫卹：每戰死 1 名隊友，存活者總積分 +25%（加算）；標籤／收藏／氣運加成照常，沒有獎勵遞減
+      const bonus = 1 + run.deaths.length * CONFIG.forcedMission.deathRewardPct;
+      reward = Math.round(dungeon.reward * bonus * (1 + tagRewardPct(survivors) + collectionEffects(state).rewardPct) * (1 + luckRewardPct(survivors)));
+    } else reward = Math.round(dungeon.reward * rewardMultiplier(state, dungeon, survivors, env));
     if (firstClear) {
       reward += Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct);
       if (dungeon.specialRewards?.length) {
@@ -321,9 +342,9 @@ function finishRun(state, run) {
       }
     }
     state.points += reward;
-    stats.clears += 1;
+    if (stats) stats.clears += 1;
     // 尾王守門：只算該章前 3 關（常規副本）的成功結算次數，含首通與重打
-    if (!dungeon.boss) {
+    if (!dungeon.boss && !run.mandatory) {
       state.chapterClears ??= {};
       state.chapterClears[dungeon.chapter] = (state.chapterClears[dungeon.chapter] ?? 0) + 1;
     }
@@ -338,6 +359,7 @@ function finishRun(state, run) {
 
   const report = {
     runId: run.id,
+    mandatory: !!run.mandatory,
     dungeonId: run.dungeonId,
     dungeonName: dungeon.name,
     success,
@@ -372,7 +394,7 @@ function finishRun(state, run) {
   }
   emit(state, "runEnd", text);
   if (success) {
-    report.karma = rollKarmaDrop(state, dungeon, dungeonNumber(dungeon), firstClear); // 因果結晶（獨立亂數流）
+    if (!run.mandatory) report.karma = rollKarmaDrop(state, dungeon, dungeonNumber(dungeon), firstClear); // 因果結晶（獨立亂數流；強制任務不掉）
     report.insights = rollInsights(state, survivors); // 存活隊員各自擲頓悟（獨立亂數流）
   }
   wishesAfterRun(state, run.dungeonId, success, partyIds, survivors.map((s) => s.id)); // 想去這個副本的許願結算

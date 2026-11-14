@@ -10,6 +10,7 @@ import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
 import { dailyGod, cancelGodOf, newGodState } from "./godEvents.js"; // 同上（Phase 3-E 主神搞事）
 import { dailyNursery, newNurseryState, podCost } from "./children.js"; // 同上（Phase 3-F 生小孩）
+import { dailyMandatory, newMandatoryState } from "./mandatory.js"; // 同上（Phase 4-C-4 主神強制任務）
 import { dailySanity, newSanityState } from "./sanity.js"; // 同上（Phase 4-C-2 理智暴走）
 import { newGrowthState } from "./growth.js"; // 同上（Phase 4-B 基因鎖／強化／頓悟；growth.js 也會 import 這個檔案）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
@@ -53,6 +54,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     wishes: [], // 進行中的許願（見 engine/wishes.js）
     nextWishId: 1,
     nursery: newNurseryState(seed), // 生小孩：獨立亂數流（見 engine/children.js）
+    mandatory: newMandatoryState(seed), // 主神強制血腥任務：計時與待派任務（見 engine/mandatory.js）
     airdrop: newAirdropState(seed), // 絕境空投：連續天數與獨立亂數流（見下方 dailyAirdrop）
     sanity: newSanityState(seed), // 理智暴走：獨立亂數流（見 engine/sanity.js）
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
@@ -385,6 +387,7 @@ export function advanceTick(state) {
     dailySanity(state); // 理智歸零的人暴走（要在 endOfDay 補理智之前，Phase 4-C-2）
     endOfDay(state);
     dailyWishes(state); // 心情／休假倒數、許願超時（Phase 3-B）
+    dailyMandatory(state); // 主神強制血腥任務：發布／逾時抹殺（Phase 4-C-4，獨立亂數流）
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
     dailyNursery(state); // 催熟倒數、戀人懷孕（Phase 3-F；放在關係事件之後，剛升級的靈魂伴侶今天就有機會）
@@ -440,6 +443,7 @@ export function deserialize(json) {
   delete state.run;
   for (const r of state.runs) r.id ??= state.nextRunId++;
   state.nextRunId = Math.max(state.nextRunId, 1 + Math.max(0, ...state.runs.map((r) => r.id)));
+  state.mandatory ??= newMandatoryState(state.rngState); // 舊存檔沒有強制任務欄位（Phase 4-C-4）
   state.airdrop ??= newAirdropState(state.rngState); // 舊存檔沒有絕境空投欄位（Phase 4-C-3）
   state.sanity ??= newSanityState(state.rngState); // 舊存檔沒有理智暴走欄位（Phase 4-C-2）
   state.god ??= newGodState(state.rngState); // 舊存檔沒有主神搞事欄位（Phase 3-E）

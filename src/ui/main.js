@@ -17,7 +17,8 @@ import {
   serialize,
   deserialize,
 } from "../engine/core.js";
-import { roomPassRate, clearChance, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, bossGateInfo, roomCount, roomsToClear } from "../engine/dungeon.js";
+import { roomPassRate, clearChance, chanceAtLeast, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, bossGateInfo, roomCount, roomsToClear, dungeonOfRun } from "../engine/dungeon.js";
+import { MANDATORY_ID, pendingMandatory, buildMandatoryDungeon } from "../engine/mandatory.js";
 import {
   enhance as enhanceSamsarite,
   breakGene as breakSamsariteGene,
@@ -167,6 +168,9 @@ function renderTopbar() {
 
   const godWaiting = Boolean(pendingGodEvent(state));
   $("btn-god").style.display = godWaiting || activeMission(state) ? "" : "none";
+  const mand = pendingMandatory(state);
+  $("btn-mandatory").style.display = mand ? "" : "none";
+  if (mand) $("btn-mandatory").textContent = `☠️ 強制任務（第 ${mand.deadlineDay} 天前）`;
   $("btn-god").textContent = godWaiting ? "👁 主神搞事 (1)" : "🚨 突襲任務";
 
   $("auto-dispatch").checked = state.settings.autoDispatch;
@@ -227,7 +231,7 @@ function renderStage() {
 /** 副本路線圖：骨架每場只建一次（這樣小隊的 CSS 滑動才不會被重建打斷），之後只更新節點、位置、隊員 */
 function renderDungeonView(run) {
   const view = $("dungeon-view");
-  const dungeon = getDungeon(run.dungeonId);
+  const dungeon = dungeonOfRun(run);
   const n = dungeon.rooms.length;
   const px = (i) => 10 + (i / (n - 1)) * 80; // 節點橫向位置（%）
   if (view.dataset.runId !== String(run.id)) {
@@ -338,7 +342,7 @@ function renderRunList(viewing = null) {
   box.style.display = state.runs.length ? "flex" : "none";
   box.innerHTML = state.runs
     .map((run) => {
-      const dungeon = getDungeon(run.dungeonId);
+      const dungeon = dungeonOfRun(run);
       const party = run.partyIds.map((id) => getSamsarite(state, id)).filter(Boolean);
       const env = getEnvTag(run.envId);
       const nodes = dungeon.rooms
@@ -450,8 +454,15 @@ function renderModal() {
 
 const closeButton = `<button data-action="close-modal">關閉</button>`;
 
+/** 派遣用的副本定義：強制任務是動態副本（依當下名冊算 R），其他查資料表 */
+function dungeonById(id) {
+  return id === MANDATORY_ID ? buildMandatoryDungeon(state) : getDungeon(id);
+}
+
 function dispatch() {
-  const dungeon = getDungeon(dispatchPick.dungeonId);
+  if (dispatchPick.dungeonId === MANDATORY_ID && !pendingMandatory(state)) dispatchPick.dungeonId = DUNGEONS[0].id; // 任務沒了（已派出或已逾時）
+  const dungeon = dungeonById(dispatchPick.dungeonId);
+  const isMand = Boolean(dungeon.mandatory);
   const home = state.samsarites.filter((s) => s.location === "space");
   for (const id of [...dispatchPick.party]) if (!home.some((s) => s.id === id)) dispatchPick.party.delete(id);
   const party = home.filter((s) => dispatchPick.party.has(s.id));
@@ -465,6 +476,13 @@ function dispatch() {
       ? `<br /><small class="bad">🔒 尾王未開放：本章前 3 關合計通關 ${gate.have}/${gate.need} 次</small>`
       : "";
   };
+  const mandatoryOption = pendingMandatory(state)
+    ? `<h4 class="chapter-head">☠️ 主神強制任務（限時，不能化解）</h4><div class="option ${isMand ? "selected" : ""}" data-action="pick-dungeon" data-id="${MANDATORY_ID}">
+      <span class="option-icon">${dungeonById(MANDATORY_ID).icon}</span>
+      <span class="grow"><b>${dungeonById(MANDATORY_ID).name}</b> <small class="bad">第 ${pendingMandatory(state).deadlineDay} 天前要派隊，逾時主神隨機抹殺 ${CONFIG.forcedMission.purgeMin}～${CONFIG.forcedMission.purgeMax} 人、全員理智 -${CONFIG.forcedMission.purgeSanityLoss}</small><br /><small>${dungeonById(MANDATORY_ID).intro}</small></span>
+      <small>推薦戰力 ${dungeonById(MANDATORY_ID).recommendedPower}<br />獎勵 ${dungeonById(MANDATORY_ID).reward} 分（每戰死 1 人 +${Math.round(CONFIG.forcedMission.deathRewardPct * 100)}%）<br />${roomCount(dungeonById(MANDATORY_ID))} 房過 ${roomsToClear(dungeonById(MANDATORY_ID))}・單房上限 ${Math.round(CONFIG.forcedMission.passCap * 100)}%</small>
+    </div>`
+    : "";
   // 只列出已解鎖的章節＋下一章（鎖住、預告用），其餘不顯示
   const dungeonOptions = DUNGEONS.filter((d) => d.chapter <= state.spaceLevel + 1).map((d) => {
     const st = state.dungeonStats[d.id] ?? { attempts: 0, clears: 0 };
@@ -490,11 +508,11 @@ function dispatch() {
 
   let summary = "請至少選一個人。";
   if (party.length > 0) {
-    const rate = Math.round(roomPassRate(state, party, dungeon) * 100);
-    const chance = Math.round(clearChance(state, party, dungeon) * 100);
+    const rate = Math.round(roomPassRate(state, party, dungeon, null, 0, isMand ? 0 : null) * 100);
+    const chance = Math.round((isMand ? chanceAtLeast(roomCount(dungeon), roomsToClear(dungeon), roomPassRate(state, party, dungeon, null, 0, 0)) : clearChance(state, party, dungeon)) * 100);
     const cls = chance >= 75 ? "good" : chance >= 50 ? "warn" : "bad";
     summary = `小隊總戰力 <b>${partyPower(party)}</b> / 推薦 ${dungeon.recommendedPower}<br />
-      每個房間通過率 <b>${rate}%</b>（含情報 ${pct(intelBonus(state, dungeon))}），${roomCount(dungeon)} 個房間通過 ${roomsToClear(dungeon)} 個以上才算通關（約 ${(roomCount(dungeon) * CONFIG.roomTicks) / CONFIG.ticksPerDay} 天）<br />
+      每個房間通過率 <b>${rate}%</b>（${isMand ? "不吃情報加成" : "含情報 " + pct(intelBonus(state, dungeon))}），${roomCount(dungeon)} 個房間通過 ${roomsToClear(dungeon)} 個以上才算通關（約 ${(roomCount(dungeon) * CONFIG.roomTicks) / CONFIG.ticksPerDay} 天）<br />
       預估通關率 <b class="${cls}">${chance}%</b>（進副本時才會抽環境標籤，實際會再浮動）`;
     const relBonus = Math.round(partyRelationBonus(state, party) * 100);
     if (relBonus !== 0) {
@@ -507,7 +525,7 @@ function dispatch() {
     if (enemyPairs.length > 0) {
       summary += `<br /><span class="bad">⚔️ 隊內有仇人：${enemyPairs.join("、")}（每個房間有機率先打起來）</span>`;
     }
-    if (!hasIntel(state, dungeon)) {
+    if (!isMand && !hasIntel(state, dungeon)) {
       summary += `<br /><span class="warn">❓ 首次開荒：傷勢更重；首通有額外 ${Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct)} 分${dungeon.specialRewards?.length ? "與特殊獎勵" : ""}${dungeon.boss ? (dungeon.chapter >= CONFIG.space.maxLevel ? "，並完成主線" : "，並讓主神空間升級、解鎖下一章") : ""}。</span>`;
     }
     if (injured.length > 0) {
@@ -518,7 +536,7 @@ function dispatch() {
   }
 
   return `<h3>🚪 派遣</h3>
-    <div class="option-list">${dungeonOptions}</div>
+    <div class="option-list">${mandatoryOption}${dungeonOptions}</div>
     <h3 style="margin-top:14px">選擇隊員（最多 ${CONFIG.partyMax} 人，已選 ${party.length}）</h3>
     <div class="option-list">${memberOptions}</div>
     <div class="summary">${summary}</div>
@@ -856,6 +874,10 @@ const actions = {
   "open-dispatch"() {
     modal = { name: "dispatch" };
   },
+  "open-mandatory"() {
+    dispatchPick.dungeonId = MANDATORY_ID; // 直接跳到強制任務的派遣畫面
+    modal = { name: "dispatch" };
+  },
   "open-gacha"() {
     modal = { name: "gacha" };
   },
@@ -916,7 +938,7 @@ const actions = {
     modal = null; // afterChange 會自動接著彈下一場
   },
   "pick-dungeon"(el) {
-    if (!isUnlocked(state, getDungeon(el.dataset.id))) return; // 還沒解鎖的章節只能看不能選
+    if (el.dataset.id !== MANDATORY_ID && !isUnlocked(state, getDungeon(el.dataset.id))) return; // 還沒解鎖的章節只能看不能選
     dispatchPick.dungeonId = el.dataset.id;
   },
   "toggle-member"(el) {

@@ -76,7 +76,7 @@ export const CONFIG = {
     ],
   },
 
-  // ── 主神強制血腥任務（Phase 4-D 才會用到，4-A 先記錄拍板數字）──
+  // ── 主神強制血腥任務（Phase 4-C-4：4-A 拍板的數字，4-C 起正式啟用；文字在 src/data/mandatory.js）──
   forcedMission: {
     powerMult: 0.55, // R = max(本章基準, 前 4 強總戰力 × 0.55)，派最強 4 人約 77% 通關
     rooms: 5,
@@ -84,6 +84,18 @@ export const CONFIG = {
     passCap: 0.8, // 單房通過率上限；不吃情報加成
     baseR: [220, 850, 3600, 15000, 60000], // 各空間等級的基準 R（待 sim 驗證）
     reward: [260, 900, 3000, 9500, 30000],
+    topN: 4, // 名冊前幾強的有效戰力總和拿來算 R
+    startDay: 15, // 保護期：這天之後才開始計時（第一次觸發 = startDay + intervalDays）
+    intervalDays: 12, // 兩次強制任務的間隔
+    overPopIntervalDays: 6, // 人口超過軟上限時縮短成這個間隔
+    popBase: 6, // 人口軟上限 = popBase + 空間等級 × popPerLevel（不含催熟艙嬰兒）
+    popPerLevel: 2,
+    deadlineDays: 2, // 觸發後幾天內必須派隊，否則抹殺
+    purgeMin: 1, // 逾時抹殺人數 purgeMin～purgeMax（在主神空間內的人才會被抹殺）
+    purgeMax: 2,
+    purgeSanityLoss: 25, // 逾時抹殺後，全體存活者理智 -25
+    failInjuryExtra: 1, // 單房失敗時受傷等級額外 +1
+    deathRewardPct: 0.25, // 本場每戰死 1 名隊友，存活者結算總積分額外 +25%（加算）
   },
 
   // ── 戰鬥副屬性（Phase 4-C-1）：hp／defense／speed／luck 取總值 = stats（初始＋強化＋頓悟）＋裝備白值，不吃基因鎖乘區 ──
@@ -346,6 +358,7 @@ export const PAUSE_EVENTS = {
   autoIdle: { label: "自動派遣找不到合適隊伍", default: false },
   wish: { label: "輪迴者許願（彈窗讓你答應或拒絕）", default: true },
   godEvent: { label: "主神搞事（彈窗讓你照辦或花積分化解）", default: true },
+  mandatory: { label: "主神強制血腥任務（限時派隊，逾時抹殺）", default: true },
   birth: { label: "有小孩出生（進催熟艙）", default: true },
   hatch: { label: "催熟完成（小孩長成輪迴者）", default: true },
 };

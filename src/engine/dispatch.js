@@ -7,6 +7,7 @@ import { emit, advanceTick, checkGameOver } from "./core.js";
 import { logText } from "./templates.js";
 import { areEnemies as pairEnemies } from "./relations.js";
 import { activeMission } from "./godEvents.js";
+import { MANDATORY_ID, pendingMandatory } from "./mandatory.js";
 import { effectivePower } from "./tags.js";
 import { clearChance, partyPower, startRun, stepDueRooms, settleRuns, unlockedDungeons, isUnlocked } from "./dungeon.js";
 
@@ -87,9 +88,21 @@ export function planAutoDispatch(state) {
   return bestPlan(state, candidates, unlockedDungeons(state));
 }
 
+/**
+ * 主神強制任務（Phase 4-C-4）：自動派遣開著時優先處理。不設通關率門檻（不派就是被抹殺），
+ * 派名冊在家、沒鎖定、沒放假的人裡「沒受傷優先、其次戰力高」的最多 4 人。回傳派出幾隊（0 或 1）
+ */
+export function autoMandatory(state) {
+  if (!pendingMandatory(state)) return 0;
+  const pool = state.samsarites.filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0));
+  const party = [...pool].sort((a, b) => (a.injury > 0) - (b.injury > 0) || effectivePower(b) - effectivePower(a)).slice(0, CONFIG.partyMax);
+  if (party.length === 0) return 0;
+  return startRun(state, MANDATORY_ID, party.map((s) => s.id)).ok ? 1 : 0;
+}
+
 /** 一次排出多隊：每輪挑最划算的一隊，剩下的人再組下一隊，直到沒有達標的組合（人手用完）。回傳派出幾隊 */
 export function tryAutoDispatch(state) {
-  let sent = 0;
+  let sent = autoMandatory(state);
   for (;;) {
     const plan = planAutoDispatch(state);
     if (!plan) break;

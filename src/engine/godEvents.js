@@ -89,6 +89,7 @@ export function dailyGod(state) {
   }
 
   if (g.pending || day < g.cooldownUntilDay) return;
+  if (state.mandatory?.pending) return; // 強制任務待派時，主神搞事不擲新事件（避免同時兩個任務，4-C-4）
   if (rand(g) >= G().chance) return;
   const choices = possibleEvents(state);
   if (choices.length === 0) return; // 沒人在家（全在副本）、或沒有可發生的種類：這天不擲
