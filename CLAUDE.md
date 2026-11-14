@@ -87,6 +87,7 @@
 | `src/ui/main.js` | 畫面層，DOM 操作、CSS transition 滑動；**房間家具已改 CSS 形狀**（`ROOMS.decor` = `[類型, x%, y%, 選用 CSS 變數]`，樣式在 `styles.css` 的 `.f-類型`，用 `cqw/cqh` 容器單位）；小人頭頂狀態泡泡 `bubbleOf`（CSS 圖形、依房間顯示活動與姿勢 `data-act`）、劇情事件在小人身上跳提示 `popOnMinis`、名冊卡「最近」`recentOf`、暫停時的今日摘要 `renderDaySummary`（`#day-summary`）、人物傳記卡 `bioCard` 改白底粉彩頭；各面板的說明文字已精簡、集中到上崗手冊的「系統說明」頁（`GUIDE_PAGES.rules`，數字讀 CONFIG）；次要功能收進操作列的「更多」選單；名冊卡只顯示戰力／理智／狀態／最近事件，標籤改稀有度小圓點 `tagDots`；頂欄分資源／時間／功能三組、操作列分主要／次要／待辦三組（2026-11 美化，依 DESIGN.md：膠囊按鈕、主要＝黑底白字）；含商店面板、主神搞事彈窗（`godEvent()`、`#btn-god`）、視角鎖定（`viewedRun`／`renderDungeonView`／`toggle-follow`／`peek-run`）；`styles.css` 放所有樣式（`#dungeon-view`、`.route-*`、`.run-card`） |
 | `test/` | 測試檔案（Node.js）：Phase 4-F 新增 `facilities`（基建造價／結晶／共產補貼／開鎖折扣封頂／各設施效果／自動建設／侵蝕倍率與結晶／自動挑戰侵蝕）、`rivals`（Lv.1 零觸發、35～45 天節奏、自動徵召、inferno 硬鎖、戰敗保護、私奔免疫鐵律、反拐、肉豬策反、春風一度、勝利特色）、`gossip`（頭條／關係圖／碑文／種子碼）；`engine`、`relations`、`templates`、`shop`、`wishes`、`parallel`（並行副本）、`godEvents`（主神搞事）、`children`（生小孩）、`chapters`（空間等級／章節）；Phase 4-B 新增 `growth`（基因鎖／強化／頓悟／effectivePower 公式）、`gacha`（四卡池、保底、漲價、結晶）、`gate`（尾王守門、結晶掉落、頓悟結算）；Phase 4-C 新增 `combat`（副屬性）、`sanity`（理智）、`economy`（維持費／回收／空投）、`mandatory`（強制任務）、`memorial`（英靈碑）；Phase 4-D 新增 `wallet`（雙錢包、稅率、遺產）、`market`（商品表、黑市分槽／鎖格／85 折、耗材、黑貨）、`shopping`（逛街 AI）、`board`（30 世界、任務榜、突變、奇物、貪婪探索）|
 | `scripts/sim.mjs` | 平衡模擬器（4-E-8：`--autoStrategy=safe|balanced|aggressive` 可模擬玩家版自動派遣戰力門檻，預設 off 維持基準曲線；`--forceStyle=` 強制小隊流派；報表有政變／叛逃／子嗣／遺物／流派分佈）（`npm run sim -- --seeds=100 --days=120`）：模擬玩家自動補人、買裝備、自動派遣，統計各章尾王首通天數（對照目標 Day 30/80/165/300/450）、死亡、破產；Phase 4-B 升級：機器人會選最高可用卡池、強化、突破基因鎖、買裝備；Phase 4-C-6：人口超過軟上限時回收最弱的非核心冗員、統計強制任務／被抹殺／英靈碑、`--mpower` 覆寫 `forcedMission.powerMult`；可用 `--rmult`／`--bossr`／`--reward`／`--minClear`／`--roster`／`--reserve`／`--growReserve` 在執行時覆寫數字（不動資料檔）、`--json=1` 機器可讀、`--trace=種子`（加 `--events=1`）逐日除錯、`--perseed=1` 看每組種子；Phase 4-D-6：接通雙錢包（`--tax=0.4`）、任務榜選關（走引擎自動派遣）、輪迴者自主逛街、機器人公庫賞賜黑市特產；報表多了公庫期末均值、輪迴者總消費、公庫總支出、奇物收集數；Phase 4-F：機器人預設開自動建設與自動挑戰侵蝕（`--facilities=0`／`--erosion=0` 關閉），報表多了基建期末等級、侵蝕出征／結晶、洲際碰撞勝率與私奔／反拐／混血子嗣／策反次數（跑 100 組種子 × 900 天約 12 分鐘）；**注意** `--rmult`／`--bossr` 是疊乘在 `dungeons.js` 現值（已含 `F_R_MULT`）之上 |
+| `worker/` | 雲端後端（Cloudflare Worker + D1，只處理 `/api/*`）：`app.js` 路由、`auth.js` Google 登入（OIDC 伺服器流程、server-side session）、`board.js` 排行榜（只增不減、名次、每日快照算升降）、`limits.js` 後端上限、`schema.sql` 資料表；測試 `test/cloud.test.js`（用 `node:sqlite` 假 D1）；設定步驟見 `docs/CLOUD_SETUP.md`。**密鑰只放 Cloudflare 後台，不進 git** |
 | `README.md` | 專案說明 + 待確認的設計問題 |
 | `docs/GAME_DESIGN_PLAN.md` | 完整遊戲設計計畫 |
 | `server.mjs` | 本機預覽用迷你伺服器（`npm start` → http://localhost:5173） |
@@ -181,12 +182,12 @@
 npm test
 ```
 
-420 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
+430 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
 
 ## 不可違反的規則
 
 1. 這是獨立專案，與舊 AI-TRPG 專案無關；舊專案的規則（六維十技能、Prompt 快取契約等）不適用。
-2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，420 項都要通過。
+2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，430 項都要通過。
 3. 所有可調數字都要放在 `src/data/config.js`，不要寫死在引擎裡。
 4. 引擎不要碰 DOM，畫面邏輯不要寫進引擎。
 5. 機密（Token、金鑰）永遠不能進 git。
@@ -196,7 +197,7 @@ npm test
 - 推上 `main` ＝ 自動部署到 Cloudflare Pages，合併前先確認測試都過。
 - 儲存庫：`ZhuShen-Sim`，子網域待定。
 - Cloudflare Pages 設定：Framework preset 選 None、Build command 留空、Build output directory 填 `/`。
-- 部署前確認 `npm test` 420 項全過。
+- 部署前確認 `npm test` 430 項全過。
 
 ## 開發階段（現在不要做，除非我明確要求）
 
