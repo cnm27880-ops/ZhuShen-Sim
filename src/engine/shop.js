@@ -51,6 +51,9 @@ export function buyItem(state, itemId, targetId) {
     s.gear ??= {};
     const old = getShopItem(s.gear[item.slot]);
     s.gear[item.slot] = item.id;
+    s.soulbound ??= {};
+    s.soulbound[item.slot] = true; // 公庫賞賜：綁定，輪迴者自己逛街不會覆蓋（4-D-1）
+    s.stats.sanity = Math.min(100, s.stats.sanity + CONFIG.wallet.giftSanity);
     const key = old ? "shopGearSwap" : "shopGear";
     emit(state, "shop", logText(state, key, { ...vars, slot: SHOP_SLOT_LABELS[item.slot], old: old?.name ?? "" }), { samsariteId: s.id });
     wishesAfterBuy(state, s, item); // 他許的就是這件裝備：許願完成

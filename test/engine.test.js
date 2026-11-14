@@ -208,7 +208,7 @@ test("一場副本剛好過 1 天，而且出征的人不扣維持費", () => {
   while (state.runs.length && guard++ < 30) step(state);
   assert.equal(state.tick, CONFIG.ticksPerDay);
   assert.equal(state.runs.length, 0);
-  assert.equal(state.points, before - upkeepOf(stay) + state.lastRun.reward);
+  assert.equal(state.points, before - upkeepOf(stay) + state.lastRun.tax);
   assert.ok(state.samsarites.every((s) => s.location === "space"));
 });
 

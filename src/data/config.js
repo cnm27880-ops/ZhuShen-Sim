@@ -35,6 +35,26 @@ export const CONFIG = {
   shopTierUnlock: [0, 600, 3000, 12000, 45000],
   shopDodgeMax: 0.9, // 閃避機率上限（標籤 + 商店加成加起來）
 
+  // ── 雙錢包活體經濟（Phase 4-D-1）──
+  // state.points = 主神公庫（維持費、抽卡、賞賜裝備、公庫補助強化／突破、黑市手動刷新）；每位輪迴者另有私房錢 s.wallet。
+  // 副本結算總積分先抽 taxRate 入公庫，剩下由當場存活隊員平分進私房錢（全滅則全歸公庫）。
+  tax: {
+    default: 0.4,
+    min: 0.2,
+    max: 0.8,
+    step: 0.1,
+    lowAt: 0.3, // taxRate <= lowAt：在空間成員每日理智 +lowSanity
+    lowSanity: 1,
+    highAt: 0.6, // taxRate >= highAt（且 < crushAt）：每日理智 -highSanity
+    highSanity: 2,
+    crushAt: 0.8, // taxRate >= crushAt：每日理智 -crushSanity
+    crushSanity: 4,
+  },
+  wallet: {
+    giftSanity: 5, // 公庫買裝備賞賜給角色：該角色理智 +5（並標記綁定）
+    deathForfeitPct: 0.5, // 戰死／被抹殺：私房錢這個比例充公回公庫，其餘消散（主動回收則 100% 歸公庫）
+  },
+
   // ── 副本 ──
   partyMax: 4, // 一隊最多幾人（計畫未定）
   dungeon: {

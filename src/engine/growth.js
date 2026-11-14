@@ -12,7 +12,7 @@
 import { CONFIG, RANKS } from "../data/config.js";
 import { rand, pick } from "./rng.js";
 import { logText } from "./templates.js";
-import { canAfford, emit, getSamsarite, spend } from "./core.js";
+import { canAfford, emit, getSamsarite, spend, spendWallet } from "./core.js";
 
 /** 頓悟的獨立亂數流（跟主神搞事、生小孩同樣的做法） */
 export function newGrowthState(seed = 0) {
@@ -60,7 +60,14 @@ const inHome = (s) => s.location === "space";
 // ───────── 強化 ─────────
 
 /** 現在能不能強化。回傳 { ok, reason, cost }；reason 是給畫面看的繁體中文 */
-export function checkEnhance(state, id) {
+/** 付費來源（4-D-1）：預設公庫補助 state.points；opts.payer === "wallet" 時由輪迴者自己的私房錢付（不能欠債） */
+const walletPay = (opts) => opts?.payer === "wallet";
+function canPay(state, s, cost, opts) {
+  return walletPay(opts) ? (s.wallet ?? 0) >= cost : canAfford(state, cost);
+}
+const payFail = (opts) => (walletPay(opts) ? "私房錢不夠" : "積分不夠（已達高利貸上限）");
+
+export function checkEnhance(state, id, opts = null) {
   const s = getSamsarite(state, id);
   if (!s) return { ok: false, reason: "找不到這個人" };
   if (!inHome(s)) return { ok: false, reason: "只有待在主神空間才能強化" };
@@ -71,15 +78,16 @@ export function checkEnhance(state, id) {
   }
   const cost = enhanceCostFor(n);
   if (cost === null) return { ok: false, reason: "強化次數已達上限" };
-  if (!canAfford(state, cost)) return { ok: false, reason: "積分不夠（已達高利貸上限）", cost };
+  if (!canPay(state, s, cost, opts)) return { ok: false, reason: payFail(opts), cost };
   return { ok: true, cost };
 }
 
-export function enhance(state, id) {
-  const check = checkEnhance(state, id);
+export function enhance(state, id, opts = null) {
+  const check = checkEnhance(state, id, opts);
   if (!check.ok) return check;
   const s = getSamsarite(state, id);
-  spend(state, check.cost);
+  if (walletPay(opts)) spendWallet(state, s, check.cost);
+  else spend(state, check.cost);
   const gain = enhanceGain(s);
   for (const [key, v] of Object.entries(gain)) s.stats[key] += v;
   s.enhanceCount = (s.enhanceCount ?? 0) + 1;
@@ -95,7 +103,7 @@ export function enhance(state, id) {
 // ───────── 突破基因鎖 ─────────
 
 /** 現在能不能突破到下一階。回傳 { ok, reason, cost, next }（next = 突破後的階數） */
-export function checkBreakGene(state, id) {
+export function checkBreakGene(state, id, opts = null) {
   const s = getSamsarite(state, id);
   if (!s) return { ok: false, reason: "找不到這個人" };
   if (!inHome(s)) return { ok: false, reason: "只有待在主神空間才能突破基因鎖" };
@@ -109,15 +117,16 @@ export function checkBreakGene(state, id) {
   if ((state.spaceLevel ?? 1) < tier.spaceLevel) {
     return { ok: false, reason: `需要空間等級 Lv.${tier.spaceLevel}`, next, cost: tier.cost };
   }
-  if (!canAfford(state, tier.cost)) return { ok: false, reason: "積分不夠（已達高利貸上限）", next, cost: tier.cost };
+  if (!canPay(state, s, tier.cost, opts)) return { ok: false, reason: payFail(opts), next, cost: tier.cost };
   return { ok: true, cost: tier.cost, next };
 }
 
-export function breakGene(state, id) {
-  const check = checkBreakGene(state, id);
+export function breakGene(state, id, opts = null) {
+  const check = checkBreakGene(state, id, opts);
   if (!check.ok) return check;
   const s = getSamsarite(state, id);
-  spend(state, check.cost);
+  if (walletPay(opts)) spendWallet(state, s, check.cost);
+  else spend(state, check.cost);
   s.geneLock = check.next;
   const tier = CONFIG.gene.tiers[s.geneLock];
   emit(

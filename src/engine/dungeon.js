@@ -17,6 +17,7 @@ import { logText } from "./templates.js";
 import { emit, setInjury, killSamsarite, checkGameOver, currentDay } from "./core.js";
 import { collectionEffects, collectionPassBonus } from "./shop.js";
 import { MANDATORY_ID, buildMandatoryDungeon } from "./mandatory.js";
+import { distributeLoot } from "./wallet.js";
 
 /** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
 export function relationBonus(state, party) {
@@ -310,6 +311,7 @@ function finishRun(state, run) {
   let specialReward = null;
   let dropDesc = "";
   let levelUp = null;
+  let loot = { tax: 0, share: 0, members: 0 }; // 結算分潤：入公庫多少、每人私房錢分到多少（4-D-1）
   // 情報條：不論成敗，每結算一場就累積（同副本多場依結算順序各加一次）
   const stats = run.mandatory ? null : state.dungeonStats[run.dungeonId]; // 強制任務沒有情報條與通關統計
   const ic = CONFIG.dungeon.intel;
@@ -341,7 +343,7 @@ function finishRun(state, run) {
         }
       }
     }
-    state.points += reward;
+    loot = distributeLoot(state, survivors, reward); // 先抽稅入公庫，其餘由存活隊員平分進私房錢（4-D-1）
     if (stats) stats.clears += 1;
     // 尾王守門：只算該章前 3 關（常規副本）的成功結算次數，含首通與重打
     if (!dungeon.boss && !run.mandatory) {
@@ -364,6 +366,8 @@ function finishRun(state, run) {
     dungeonName: dungeon.name,
     success,
     reward,
+    tax: loot.tax,
+    share: loot.share,
     firstClear,
     specialReward,
     envName: getEnvTag(run.envId)?.name ?? null,

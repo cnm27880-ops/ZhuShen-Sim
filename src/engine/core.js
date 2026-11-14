@@ -14,6 +14,7 @@ import { enshrine, refreshSteleBonus, steleBonusOf } from "./memorial.js"; // �
 import { dailyMandatory, newMandatoryState } from "./mandatory.js"; // 同上（Phase 4-C-4 主神強制任務）
 import { dailySanity, newSanityState } from "./sanity.js"; // 同上（Phase 4-C-2 理智暴走）
 import { newGrowthState } from "./growth.js"; // 同上（Phase 4-B 基因鎖／強化／頓悟；growth.js 也會 import 這個檔案）
+import { taxSanityDaily, forfeitWallet } from "./wallet.js"; // 同上（Phase 4-D-1 雙錢包）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
 // ───────── 事件與日誌 ─────────
@@ -41,7 +42,8 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     rngState: seed | 0,
     tick: 0,
     points: CONFIG.startingPoints,
-    totalSpent: 0, // 累積花費（Phase 3 商店階級解鎖會用到）
+    totalSpent: 0, // 累積花費（商店階級解鎖用；公庫與輪迴者私房錢在商店／黑市／強化的消費一律累加，4-D-1）
+    taxRate: CONFIG.tax.default, // 公庫稅率：副本結算總積分先抽這個比例入公庫，其餘由存活隊員平分（4-D-1）
     spaceLevel: 1, // 空間等級 Lv.1~5（Phase 4-A）：每首通一章尾王 +1，決定維持費、破產線、解鎖到第幾章
     chapterClearDay: {}, // { 章節: 首通尾王是第幾天 }（npm run sim 統計用）
     chapterClears: {}, // { 章節: 該章前 3 關合計成功結算幾次 }，尾王守門用（CONFIG.bossGate，見 engine/dungeon.js）
@@ -123,6 +125,8 @@ export function createSamsarite(state, rank, rng = state) {
     mood: null, // 心情狀態 { kind: "happy"|"upset", daysLeft }（見 engine/wishes.js）
     vacationDays: 0, // 許願放假：剩幾天不能派遣
     sabotaged: false, // 裝備被人動了手腳（借刀殺人），下次出征會倒楣
+    wallet: 0, // 私房錢（4-D-1）：副本分潤進來，輪迴者自己逛街、強化用（見 engine/shopping.js）；戰死 50% 充公，回收 100% 歸公庫
+    soulbound: {}, // 公庫賞賜的裝備綁定 { weapon: true, … }：輪迴者自己逛街時不會覆蓋（4-D-1）
   };
 }
 
@@ -156,6 +160,7 @@ export function killSamsarite(state, s, cause, killer = null, stele = null) {
   cancelWishesOf(state, s.id);
   cancelGodOf(state, s.id);
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null });
+  forfeitWallet(state, s, CONFIG.wallet.deathForfeitPct); // 私房錢 50% 充公、50% 消散（4-D-1）
   if (stele) enshrine(state, s, stele); // 副本戰死／主神抹殺才入碑（4-C-5）
   emit(state, "death", logText(state, "death", { A: s, rank: s.rank, cause }), { samsariteId: s.id, killerId: killer?.id ?? null });
 }
@@ -193,17 +198,30 @@ export function shopTier(state) {
   return tier;
 }
 
-export function spend(state, cost) {
-  if (!canAfford(state, cost)) return false;
-  const wasInDebt = state.points < 0;
+/** 累加累積花費（公庫與私房錢的消費都走這裡），跨過商店階層門檻就宣布解鎖 */
+export function addSpent(state, cost) {
   const tierBefore = shopTier(state);
-  state.points -= cost;
   state.totalSpent += cost;
-  announceDebtIfNew(state, wasInDebt);
   const tierAfter = shopTier(state);
   if (tierAfter > tierBefore) {
     emit(state, "shopTier", logText(state, "shopTier", { tier: tierAfter, spent: state.totalSpent }), { tier: tierAfter });
   }
+}
+
+export function spend(state, cost) {
+  if (!canAfford(state, cost)) return false;
+  const wasInDebt = state.points < 0;
+  state.points -= cost;
+  announceDebtIfNew(state, wasInDebt);
+  addSpent(state, cost);
+  return true;
+}
+
+/** 輪迴者用私房錢付帳：不能欠債，花費同樣累加進 totalSpent */
+export function spendWallet(state, s, cost) {
+  if ((s.wallet ?? 0) < cost) return false;
+  s.wallet -= cost;
+  addSpent(state, cost);
   return true;
 }
 
@@ -222,6 +240,7 @@ export function endOfDay(state) {
   for (const s of atHome) {
     cost += upkeepOf(s, state); // 先用「今天的傷勢」算錢，再結算休息
     s.stats.sanity = Math.min(100, s.stats.sanity + CONFIG.sanity.restRecover); // 人在空間（含帶傷休養）每日自然恢復理智（4-C-2）
+    taxSanityDaily(state, s); // 稅率高壓／低稅的每日理智影響（4-D-1）
     if (s.injury > 0) {
       s.restDaysLeft -= 1;
       if (s.restDaysLeft <= 0) {
@@ -297,6 +316,7 @@ export function recycle(state, id) {
   cancelWishesOf(state, id);
   cancelGodOf(state, id);
   const refund = RANKS[s.rank].recycleRefund; // 依階級返還（C 30／B 80／A 250／S 800）
+  forfeitWallet(state, s, 1); // 主動回收：私房錢 100% 歸公庫（4-D-1）
   state.points += refund;
   for (const other of state.samsarites) loseSanity(other, CONFIG.recycle.sanityLoss);
   emit(
@@ -478,6 +498,11 @@ export function deserialize(json) {
   state.nextWishId ??= 1 + Math.max(0, ...state.wishes.map((w) => w.id));
   state.relations ??= {};
   state.cooldowns ??= {};
+  state.taxRate ??= CONFIG.tax.default; // Phase 4-D-1 之前的存檔沒有稅率與私房錢
+  for (const s of state.samsarites) {
+    s.wallet ??= 0;
+    s.soulbound ??= {};
+  }
   state.settings.followId ??= null; // 舊存檔沒有視角鎖定欄位，當沒鎖定
   // 之後新增的暫停事件種類，舊存檔沒有就補上預設值
   for (const [key, def] of Object.entries(PAUSE_EVENTS)) {
