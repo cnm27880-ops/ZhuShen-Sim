@@ -162,7 +162,7 @@ function draftAndGo(state) {
   return { ok: false };
 }
 function startRivalRun(state, ids) {
-  return startRun(state, RIVAL_ID, ids); // 循環引用只在執行時呼叫，沒問題（同 core.js 的作法）
+  return startRun(state, RIVAL_ID, ids, { ignoreLock: true }); // 循環引用只在執行時呼叫，沒問題（同 core.js 的作法）
 }
 
 // ───────── 出發／結算掛鉤（由 dungeon.js 呼叫）─────────

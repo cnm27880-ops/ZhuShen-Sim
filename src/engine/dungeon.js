@@ -192,8 +192,11 @@ export function startRun(state, dungeonId, partyIds, opts = {}) {
   if (partyIds.length < 1 || partyIds.length > CONFIG.partyMax) {
     return { ok: false, reason: `一隊要 1~${CONFIG.partyMax} 人` };
   }
+  if (new Set(partyIds).size !== partyIds.length) return { ok: false, reason: "同一個人不能在隊伍裡出現兩次" }; // 嚴重 Bug 1：重複成員
   const party = partyIds.map((id) => state.samsarites.find((s) => s.id === id));
   if (party.some((s) => !s || s.location !== "space")) return { ok: false, reason: "有隊員不在主神空間" };
+  const locked = opts.ignoreLock ? null : party.find((s) => s.locked); // 嚴重 Bug 2：🔒 鎖定的人不能派（只有引擎的強制徵召可帶 ignoreLock，之後第二部分問題 3 會再收緊）
+  if (locked) return { ok: false, reason: `${locked.name} 已鎖定（🔒），不能派遣` };
   const resting = party.find((s) => (s.vacationDays ?? 0) > 0);
   if (resting) return { ok: false, reason: `${resting.name} 正在放假（還要 ${resting.vacationDays} 天）` };
   const lockedIn = party.find((s) => (s.podLockDays ?? 0) > 0);

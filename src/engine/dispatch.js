@@ -186,7 +186,7 @@ export function autoMandatory(state) {
   const pool = state.samsarites.filter((s) => s.location === "space" && !(s.vacationDays > 0) && !(s.podLockDays > 0));
   const party = [...pool].sort((a, b) => (a.injury > 0) - (b.injury > 0) || effectivePower(b) - effectivePower(a)).slice(0, CONFIG.partyMax);
   if (party.length === 0) return 0;
-  return startRun(state, MANDATORY_ID, party.map((s) => s.id)).ok ? 1 : 0;
+  return startRun(state, MANDATORY_ID, party.map((s) => s.id), { ignoreLock: true }).ok ? 1 : 0;
 }
 
 /** 一次排出多隊：每輪挑最划算的一隊，剩下的人再組下一隊，直到沒有達標的組合（人手用完）。回傳派出幾隊 */
