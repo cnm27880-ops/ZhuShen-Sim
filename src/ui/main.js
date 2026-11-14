@@ -45,6 +45,8 @@ let modal = null; // 目前開著的彈出視窗：{ name, ...參數 }
 let bannerText = "";
 const minis = new Map(); // 輪迴者 id → { el, room }
 const dispatchPick = { dungeonId: DUNGEONS[0].id, party: new Set() };
+let peekRunId = null; // 玩家點右側卡片、手動想看的那一場副本 id（只給畫面用，不存檔）
+let lastFollowRunId = null; // 上一次鎖定對象所在的副本 id，用來偵測他進／出副本
 
 // ───────── 存檔 ─────────
 
@@ -79,6 +81,11 @@ function schedule() {
 
 /** 引擎動過之後一律呼叫：處理事件（自動暫停、結算視窗）、重畫、排下一步 */
 function afterChange() {
+  // 鎖定的人死了、被回收（不在名單裡了）：自動解除視角鎖定
+  if (state.settings.followId != null && !getSamsarite(state, state.settings.followId)) {
+    state.settings.followId = null;
+    saveGame();
+  }
   for (const ev of state.events.splice(0)) {
     if (ev.type === "dayEnd") saveGame();
     if (ev.type === "gameOver") modal = { name: "gameOver" };
@@ -156,12 +163,91 @@ function pickRoom(s) {
   return ids[Math.floor(Math.random() * ids.length)];
 }
 
+/** 視角鎖定的人目前所在的那一場副本（沒鎖定或他在家就是 null） */
+function followedRun() {
+  const id = state.settings.followId;
+  return id == null ? null : state.runs.find((r) => r.partyIds.includes(id)) ?? null;
+}
+
+/**
+ * 主畫面現在要看哪一場副本（null = 主神空間）。
+ * 優先順序：玩家點卡片手動看的那場 > 鎖定對象所在的那場。鎖定對象進／出副本時，手動選擇會被清掉，畫面自動跟上。
+ */
+function viewedRun() {
+  const follow = followedRun();
+  const followRunId = follow?.id ?? null;
+  if (followRunId !== lastFollowRunId) {
+    lastFollowRunId = followRunId;
+    peekRunId = null;
+  }
+  const peek = state.runs.find((r) => r.id === peekRunId);
+  if (!peek) peekRunId = null;
+  return peek ?? follow;
+}
+
 function renderStage() {
-  // 主神空間永遠是主畫面；進行中的副本用旁邊的卡片清單顯示（並行副本）
-  $("space-map").style.display = "block";
-  $("dungeon-view").style.display = "none";
+  // 預設是主神空間；鎖定的人在副本裡、或玩家點了右側卡片時，改顯示那一場副本的路線圖
+  const run = viewedRun();
+  $("space-map").style.display = run ? "none" : "block";
+  $("dungeon-view").style.display = run ? "flex" : "none";
   renderSpace();
-  renderRunList();
+  if (run) renderDungeonView(run);
+  renderRunList(run);
+}
+
+/** 副本路線圖：骨架每場只建一次（這樣小隊的 CSS 滑動才不會被重建打斷），之後只更新節點、位置、隊員 */
+function renderDungeonView(run) {
+  const view = $("dungeon-view");
+  const dungeon = getDungeon(run.dungeonId);
+  const n = dungeon.rooms.length;
+  const px = (i) => 10 + (i / (n - 1)) * 80; // 節點橫向位置（%）
+  if (view.dataset.runId !== String(run.id)) {
+    view.dataset.runId = String(run.id);
+    view.className = `theme-${dungeon.id}`;
+    view.innerHTML = `<h3>${dungeon.icon} ${dungeon.name} <small></small></h3>
+      <div class="dungeon-intro">${dungeon.intro ?? ""}</div>
+      <div class="route">
+        <div class="route-line"></div><div class="route-progress"></div>
+        ${dungeon.rooms
+          .map((r, i) => `<div class="route-node" style="left:${px(i)}%">${i + 1}</div><div class="route-node-label" style="left:${px(i)}%;transform:translateX(-50%)">${r.name}</div>`)
+          .join("")}
+        <div class="route-party"></div>
+      </div>
+      <div class="dungeon-status"></div>
+      <div class="dungeon-back"></div>`;
+    view.dataset.party = "";
+  }
+  const party = run.partyIds.map((id) => getSamsarite(state, id)).filter(Boolean);
+  const env = getEnvTag(run.envId);
+  view.querySelector("h3 small").textContent = env ? `環境：${env.name}` : "";
+
+  view.querySelectorAll(".route-node").forEach((el, i) => {
+    const r = run.results[i];
+    el.className = `route-node ${r === true ? "pass" : r === false ? "fail" : i === run.roomIndex ? "current" : ""}`;
+  });
+  // 小隊位置：第 i 個房間開場時剛好站在第 i 個節點上；走完最後一個節點後停住等結算
+  const frac = Math.min(1, Math.max(0, (state.tick - run.startTick) / (CONFIG.roomTicks * (n - 1))));
+  view.querySelector(".route-progress").style.width = `${10 + frac * 80}%`;
+  view.querySelector(".route-party").style.left = `${10 + frac * 80}%`;
+
+  const partyKey = party.map((s) => `${s.id}:${s.injury}:${s.id === state.settings.followId ? 1 : 0}`).join(",");
+  if (view.dataset.party !== partyKey) {
+    view.dataset.party = partyKey;
+    view.querySelector(".route-party").innerHTML = party
+      .map((s) => `<div class="mini">${miniHtml(s, s.id === state.settings.followId ? "👁️" : s.injury > 0 ? "🩹" : "🔦")}</div>`)
+      .join("");
+  }
+
+  const rate = party.length ? Math.round(roomPassRate(state, party, dungeon, env, 0, run.firstTime) * 100) : 0;
+  const done = Math.min(run.roomIndex, n);
+  view.querySelector(".dungeon-status").textContent = `已走完 ${done}/${n} 間・存活 ${party.length} 人・房間通過率 ${rate}%${party.length ? "" : "（全滅，等時間到結算）"}`;
+  const follow = getSamsarite(state, state.settings.followId);
+  view.querySelector(".dungeon-back").innerHTML =
+    peekRunId != null
+      ? `<button data-action="peek-run" data-run-id="${run.id}">⬅ 返回${followedRun() ? "跟隨視角" : "主神空間"}</button>`
+      : follow
+        ? `<small>👁️ 跟隨中：${follow.name}（到名冊或詳情按 👁 可取消）</small>`
+        : "";
 }
 
 function renderSpace() {
@@ -212,11 +298,12 @@ function renderSpace() {
     const emoji = s.injury > 0 ? "🩹" : s.locked ? "🔒" : mood === "love" ? "❤️" : mood === "anger" ? "😡" : ROOMS[mini.room].emoji;
     mini.el.querySelector(".mini-emoji").textContent = emoji;
     mini.el.classList.toggle("injured", s.injury > 0);
+    mini.el.classList.toggle("followed", s.id === state.settings.followId);
   }
 }
 
 /** 進行中副本卡片：每場一張（副本名、環境、5 個房間進度、隊員、目前通過率） */
-function renderRunList() {
+function renderRunList(viewing = null) {
   const box = $("run-list");
   box.style.display = state.runs.length ? "flex" : "none";
   box.innerHTML = state.runs
@@ -233,7 +320,7 @@ function renderRunList() {
         .join("");
       const rate = party.length ? Math.round(roomPassRate(state, party, dungeon, env, 0, run.firstTime) * 100) : 0;
       const names = party.map((s) => `${s.injury > 0 ? "🩹" : "🔦"}${s.name}`).join("、") || "全滅";
-      return `<div class="run-card theme-${dungeon.id}" data-run-id="${run.id}">
+      return `<div class="run-card theme-${dungeon.id} ${viewing?.id === run.id ? "viewing" : ""}" data-action="peek-run" data-run-id="${run.id}" title="點一下在主畫面查看這一場">
         <div class="run-title">${dungeon.icon} <b>${dungeon.name}</b> <small>${env ? env.name : ""}</small></div>
         <div class="run-nodes">${nodes}</div>
         <div class="run-party">${names}</div>
@@ -293,7 +380,7 @@ function renderRoster() {
     .map(
       (s) => `
       <div class="card rank-border-${s.rank} ${s.location === "dungeon" ? "away" : ""}" data-action="open-detail" data-id="${s.id}">
-        <div class="card-top">${rankBadge(s.rank)}<span class="grow">${s.name}</span><span>${s.locked ? "🔒" : ""}</span></div>
+        <div class="card-top">${rankBadge(s.rank)}<span class="grow">${s.name}</span><span>${s.locked ? "🔒" : ""}</span><span class="follow-btn ${s.id === state.settings.followId ? "on" : ""}" data-action="toggle-follow" data-id="${s.id}" title="${s.id === state.settings.followId ? "取消鎖定視角" : "鎖定視角（他下副本時畫面跟著切）"}">👁</span></div>
         <div class="card-meta"><span>⚔️ ${effectivePower(s)}</span><span>🧠 ${s.stats.sanity}</span><span>💸 ${upkeepOf(s)}/天</span></div>
         <div class="tags">${tagChips(s)}</div>
         <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
@@ -504,6 +591,7 @@ function detail() {
     <div class="rel-list">${relationRows(s)}</div>
     <div class="modal-actions">
       <button class="danger" data-action="ask-recycle" data-id="${s.id}" ${home ? "" : "disabled"}>♻️ 推進回收爐（+${CONFIG.recycle.points} 分）</button>
+      <button data-action="toggle-follow" data-id="${s.id}">${s.id === state.settings.followId ? "👁️ 取消鎖定視角" : "👁 鎖定視角"}</button>
       <button data-action="toggle-lock" data-id="${s.id}">${s.locked ? "🔓 解除鎖定" : "🔒 鎖定（不參與自動派遣）"}</button>
       ${closeButton}
     </div>`;
@@ -727,6 +815,17 @@ const actions = {
   "toggle-lock"(el) {
     const s = getSamsarite(state, Number(el.dataset.id));
     if (s) s.locked = !s.locked;
+  },
+  "toggle-follow"(el) {
+    // 同時只能鎖定一個人；再按一次同一個人 = 取消
+    const id = Number(el.dataset.id);
+    state.settings.followId = state.settings.followId === id ? null : id;
+    peekRunId = null;
+    saveGame();
+  },
+  "peek-run"(el) {
+    const id = Number(el.dataset.runId);
+    peekRunId = peekRunId === id ? null : id;
   },
   "ask-recycle"(el) {
     modal = { name: "confirmRecycle", id: Number(el.dataset.id) };
