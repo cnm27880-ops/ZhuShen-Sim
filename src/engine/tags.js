@@ -90,7 +90,7 @@ export function sanityPowerPct(s) {
 export function sanityClashMult(s) {
   return sanityTier(s).clashMult;
 }
-/** 標籤對「別人對他的好感獲取」的倍率（走火入魔 ×0.5）；沒有就 1 */
+/** 標籤對「自己對別人的好感獲取」的倍率（走火入魔 ×0.5）；沒有就 1 */
 export function loveGainMultOf(s) {
   return tagsOf(s).reduce((m, t) => m * (t.loveGainMult ?? 1), 1);
 }
