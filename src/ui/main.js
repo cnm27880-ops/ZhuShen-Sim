@@ -29,6 +29,7 @@ import { erosionUnlocked, applyErosion, erosionBlock, erosionRMult, erosionRewar
 import { facilityInfo, upgradeFacility, facilityTotal } from "../engine/facilities.js";
 import { buildGossip } from "../engine/gossip.js";
 import { applyAutoMode, currentAutoMode } from "../engine/autoMode.js";
+import { stockableItems, stockList, stockCount, stockTargets, buyStock, useStock, checkBuyStock } from "../engine/inventory.js";
 import { drawGossipCard, downloadGossipPng, copyText } from "./gossipCard.js";
 import { RIVAL_SQUADS } from "../data/rivals.js";
 import {
@@ -230,6 +231,8 @@ function renderTopbar() {
   const am = currentAutoMode(state);
   $("btn-auto").textContent = `🤖 自動小幫手：${AUTO_MODES[am]?.label ?? "自訂"}`;
   $("btn-auto").classList.toggle("active", state.settings.autoDispatch);
+  const stockTotal = Object.values(state.inventory ?? {}).reduce((n, v) => n + v, 0);
+  $("btn-inventory").textContent = `🎒 物資${stockTotal ? ` (${stockTotal})` : ""}`;
 }
 
 function miniHtml(s, emoji) {
@@ -576,7 +579,7 @@ function renderModal() {
   document.body.classList.toggle("modal-open", Boolean(modal)); // 開著放大視窗時，角落的副本迷你小窗（#run-list）自動隱藏，關窗恢復（雙視窗互斥，4-E-7）
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel };
+  const builders = { guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel, inventory };
   $("modal").innerHTML = builders[modal.name]();
   if (modal.name === "gossip") drawGossipCard($("gossip-canvas"), buildGossip(state)); // 畫報紙圖卡（Canvas，要等 innerHTML 寫完才拿得到元素）
 }
@@ -837,7 +840,7 @@ function shop() {
   return `<h3>🛒 商店 <small>（目前 Tier ${tier}）</small></h3>
     <p>主神公庫：<b>${state.points}</b>。${progress}。抽卡的花費也算累積花費。</p>
     <div class="tabs">${tabs}</div>
-    ${tab === "relics" ? "" : picker}
+    ${tab === "relics" || (tab === "shop" && ["medicine", "skill", "special"].includes(modal.cat ?? "medicine")) ? "" : picker}
     ${body}
     <div class="modal-actions">${closeButton}</div>`;
 }
@@ -851,7 +854,17 @@ function itemFx(item) {
   return `${stats ? `<br /><small class="good">${stats}</small>` : ""}${passive ? `<br /><small class="warn">⚠️ ${passive}</small>` : ""}`;
 }
 
+const SHOP_CATS = [["medicine", "💊 藥品／消耗品"], ["bloodline", "🧬 血統"], ["gear", "⚔️ 裝備"], ["skill", "📖 技能"], ["special", "✨ 特殊道具"]];
+
 function shopStandardTab(tier, target) {
+  const cat = modal.cat ?? "medicine"; // 預設先看常用的藥品
+  const chips = SHOP_CATS.map(([id, label]) => `<button data-action="shop-cat" data-id="${id}" class="${cat === id ? "active" : ""}">${label}</button>`).join("");
+  const head = `<div class="tabs" style="margin-top:6px">${chips}</div>`;
+  if (cat === "medicine") return head + shopMedicineTab(tier);
+  if (cat === "skill") return head + `<div class="summary">📖 技能系統還沒開放（規劃中：瞳術、技藝、技能）。目前請先強化與突破基因鎖。</div>`;
+  if (cat === "special") return head + `<div class="summary">✨ 特殊道具（世界特產、出征耗材、黑貨）每 3 天換貨一次，只在 <b>8 格黑市</b> 販售。<br /><button data-action="shop-tab" data-id="market">🕶️ 前往黑市</button></div>`;
+
+  const inCat = (item) => (cat === "bloodline" ? item.slot === "bloodline" : item.kind === "gear" && item.slot !== "bloodline");
   const itemRow = (item) => {
     const locked = item.tier > tier;
     const check = locked ? { ok: false, reason: "" } : checkBuy(state, item, target);
@@ -867,8 +880,8 @@ function shopStandardTab(tier, target) {
     .map((_, i) => i + 1)
     .map((t) => {
       const need = CONFIG.shopTierUnlock[t - 1];
-      const head = t <= tier ? `Tier ${t}` : `🔒 Tier ${t}（累積花費 ${need} 分解鎖）`;
-      return `<h3 style="margin-top:14px">${head}</h3><div class="option-list">${shopItemsOfTier(t).map(itemRow).join("")}</div>`;
+      const label = t <= tier ? `Tier ${t}` : `🔒 Tier ${t}（累積花費 ${need} 分解鎖）`;
+      return `<h3 style="margin-top:14px">${label}</h3><div class="option-list">${shopItemsOfTier(t).filter(inCat).map(itemRow).join("")}</div>`;
     })
     .join("");
   const fx = collectionEffects(state);
@@ -880,9 +893,58 @@ function shopStandardTab(tier, target) {
         .join("")
     : "（還沒有。首次通關副本會掉特殊獎勵，永久生效。）";
   const shield = Math.round(fx.injuryShield * 100);
-  return `<p><small>常駐商店只賣制式武防與常備藥；世界特產、血統、耗材、黑貨請到「黑市」。</small></p>${sections}
+  return `${head}<p><small>常駐商店賣制式武防與常備藥；世界特產、出征耗材、黑貨請到「黑市」。</small></p>${sections}
     <h3 style="margin-top:14px">🎁 副本特殊獎勵（永久生效）</h3>
     <div class="summary">${collection}${shield ? `<div><small>全員傷勢減免合計 +${shield}%</small></div>` : ""}</div>`;
+}
+
+/** 藥品／消耗品：買進物資倉庫（可一次買 1／5／10 份），之後到物資面板選人使用 */
+function shopMedicineTab(tier) {
+  const all = stockableItems();
+  // 常用：目前已解鎖的最高階傷藥與最高階理智藥，放最上面
+  const best = (key) => all.filter((i) => i.tier <= tier && i.effect?.[key] !== undefined).sort((x, y) => y.tier - x.tier)[0];
+  const common = [best("healInjury"), best("sanity")].filter(Boolean);
+  const row = (item) => {
+    const locked = item.tier > tier;
+    const buttons = [1, 5, 10]
+      .map((n) => {
+        const c = checkBuyStock(state, item.id, n);
+        return `<button class="${n === 1 ? "primary" : ""}" data-action="buy-stock" data-id="${item.id}" data-qty="${n}" ${c.ok ? "" : `disabled title="${c.reason ?? ""}"`}>${locked ? "🔒" : `買 ${n}（${item.price * n}）`}</button>`;
+      })
+      .join("");
+    return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
+      <span class="option-icon">${item.icon}</span>
+      <span class="grow"><b>${item.name}</b> <small>Tier ${item.tier}・倉庫現有 <b>${stockCount(state, item.id)}</b></small><br /><small>${item.desc}</small></span>
+      <span class="slot-actions">${buttons}</span>
+    </div>`;
+  };
+  const rest = all.filter((i) => !common.includes(i));
+  return `<p><small>買進來的藥放在「物資倉庫」，之後在 🎒 物資面板挑人使用（最缺的人會排最前面）。公庫積分 <b>${state.points}</b>。</small>
+    <button data-action="open-inventory">🎒 前往物資面板</button></p>
+    ${common.length ? `<h3 style="margin-top:10px">⭐ 常用</h3><div class="option-list">${common.map(row).join("")}</div>` : ""}
+    <h3 style="margin-top:14px">全部藥品</h3><div class="option-list">${rest.map(row).join("")}</div>`;
+}
+
+/** 物資面板（功能 2）：倉庫裡有什麼；點一件物資，再點人（最需要的排最前面）直接使用 */
+function inventory() {
+  const list = stockList(state);
+  if (!list.some((r) => r.item.id === modal.itemId)) modal.itemId = list[0]?.item.id ?? null;
+  const stock = list.length
+    ? list.map(({ item, count }) => `<div class="option ${item.id === modal.itemId ? "selected" : ""}" data-action="pick-stock" data-id="${item.id}"><span class="option-icon">${item.icon}</span><span class="grow"><b>${item.name}</b><br /><small>${item.desc}</small></span><b>×${count}</b></div>`).join("")
+    : `<div class="empty">倉庫是空的。到 🛒 商店 → 藥品／消耗品買一些吧。</div>`;
+  const item = getShopItem(modal.itemId);
+  const people = item
+    ? stockTargets(state, item.id)
+        .map(({ s, need, block }) => `<div class="option ${block ? "locked" : ""}" ${block ? `style="opacity:.55" title="${block}"` : `data-action="use-stock" data-id="${s.id}"`}>
+          ${rankBadge(s.rank)}<span class="grow">${s.name}<br /><small>理智 ${s.stats.sanity}・${injuryLabel(s)}${block ? `・<span class="bad">${block}</span>` : need > 0 ? "・<span class=\"good\">需要</span>" : ""}</small></span>
+          <small>${block ? "" : "點我使用"}</small></div>`)
+        .join("")
+    : "";
+  return `<h3>🎒 物資面板</h3>
+    <div class="option-list">${stock}</div>
+    ${item ? `<h3 style="margin-top:12px">要給誰用【${item.name}】？<small>（最需要的排最前面）</small></h3><div class="option-list">${people || `<div class="empty">主神空間裡沒有人。</div>`}</div>` : ""}
+    ${modal.note ? `<div class="summary" style="margin-top:8px">${modal.note}</div>` : ""}
+    <div class="modal-actions"><button data-action="open-shop">🛒 去商店補貨</button>${closeButton}</div>`;
 }
 
 function shopMarketTab(home, target) {
@@ -1477,10 +1539,31 @@ const actions = {
     modal = { name: "gacha" };
   },
   "open-shop"() {
-    modal = { name: "shop", tab: modal?.tab ?? "shop", targetId: modal?.targetId ?? null, victimId: modal?.victimId ?? null };
+    modal = { name: "shop", tab: "shop", cat: modal?.cat ?? "medicine", targetId: modal?.targetId ?? null, victimId: modal?.victimId ?? null };
   },
   "shop-tab"(el) {
     modal.tab = el.dataset.id;
+  },
+  "shop-cat"(el) {
+    modal.cat = el.dataset.id;
+  },
+  "buy-stock"(el) {
+    const r = buyStock(state, el.dataset.id, Number(el.dataset.qty));
+    if (!r.ok) alert(r.reason);
+    saveGame();
+  },
+  "open-inventory"() {
+    modal = { name: "inventory", itemId: modal?.itemId ?? null, note: "" };
+  },
+  "pick-stock"(el) {
+    modal.itemId = el.dataset.id;
+    modal.note = "";
+  },
+  "use-stock"(el) {
+    const r = useStock(state, modal.itemId, Number(el.dataset.id));
+    const who = getSamsarite(state, Number(el.dataset.id));
+    modal.note = r.ok ? `✅ ${who?.name ?? ""}：${r.note}` : `<span class="bad">${r.reason}</span>`;
+    saveGame();
   },
   "market-victim"(el) {
     modal.victimId = Number(el.dataset.id);
@@ -1742,6 +1825,7 @@ document.addEventListener("change", (event) => {
     return;
   } else return;
   saveGame();
+  render(); // 自動小幫手面板與頂欄的模式標籤要跟著刷新（改了進階開關就變「自訂」）
 });
 
 // 鍵盤快捷鍵（4-E-8）：空白鍵 = 暫停／繼續；數字鍵 1～5 = 倍速（0.5x／1x／2x／5x／10x）

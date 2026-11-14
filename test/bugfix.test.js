@@ -95,9 +95,9 @@ test("#23：催熟完成但人口已滿，嬰兒暫留艙內，有空位後才�
 });
 
 import { buyItem, checkBuy } from "../src/engine/shop.js";
-import { SHOP_ITEMS as SHOP_ITEMS_SYNC } from "../src/data/shopItems.js";
+import { SHOP_ITEMS as SHOP_ITEMS_SYNC, getShopItem } from "../src/data/shopItems.js";
 import { upgradeFacility } from "../src/engine/facilities.js";
-import { shopTier } from "../src/engine/core.js";
+import { shopTier, serialize, deserialize } from "../src/engine/core.js";
 
 function shopState(n = 3) {
   const { state, people } = setup(n, 21);
@@ -300,4 +300,52 @@ test("功能 4：三種自動模式套用後設定正確，偵測得回來；手
   assert.equal(currentAutoMode(state), "custom");
   assert.equal(applyAutoMode(state, "nope"), null);
   assert.equal(Object.keys(AUTO_MODES).length, 3);
+});
+
+import { buyStock, useStock, stockList, stockTargets, needOf, stockCount } from "../src/engine/inventory.js";
+
+test("功能 1、2：批量買藥進倉庫、從倉庫選人使用，最缺理智的排最前面", () => {
+  const { state, people: [a, b, c] } = setup(3, 71);
+  state.points = 5000;
+  a.stats.sanity = 90;
+  b.stats.sanity = 20;
+  c.stats.sanity = 60;
+  const spentBefore = state.totalSpent;
+  const r = buyStock(state, "t1_28", 10); // 鎮定劑 ×10
+  assert.equal(r.ok, true);
+  const price = getShopItem("t1_28").price;
+  assert.equal(state.points, 5000 - price * 10);
+  assert.equal(stockCount(state, "t1_28"), 10);
+  assert.equal(state.totalSpent, spentBefore + price * 10, "常備藥計入商店階級");
+  assert.deepEqual(stockList(state).map((x) => [x.item.id, x.count]), [["t1_28", 10]]);
+
+  const order = stockTargets(state, "t1_28").map((t) => t.s.id);
+  assert.deepEqual(order, [b.id, c.id, a.id], "理智最低的排最前面");
+  const u = useStock(state, "t1_28", b.id);
+  assert.equal(u.ok, true);
+  assert.equal(b.stats.sanity, 40);
+  assert.equal(stockCount(state, "t1_28"), 9);
+  assert.ok(needOf(getShopItem("t1_28"), c) > needOf(getShopItem("t1_28"), a));
+});
+
+test("功能 1、2：不能囤的商品、錢不夠、數量不合法、用不到的人都會被擋", () => {
+  const { state, people: [a] } = setup(1, 72);
+  state.points = 50;
+  assert.equal(buyStock(state, "t1_01", 1).ok, false, "裝備不進倉庫");
+  assert.equal(buyStock(state, "t1_28", 0).ok, false);
+  assert.equal(buyStock(state, "t1_28", 1000).ok, false);
+  assert.equal(buyStock(state, "t1_28", 500).ok, false, "錢不夠");
+  assert.equal(stockCount(state, "t1_28"), 0);
+  assert.equal(useStock(state, "t1_28", a.id).ok, false, "倉庫沒貨");
+  state.points = 5000;
+  buyStock(state, "t1_28", 2);
+  a.stats.sanity = 100;
+  assert.equal(useStock(state, "t1_28", a.id).ok, false, "理智已滿用不到");
+  assert.equal(stockCount(state, "t1_28"), 2, "沒用掉就不扣");
+});
+
+test("功能 2：舊存檔補 inventory 欄位", () => {
+  const state = createNewGame(5);
+  delete state.inventory;
+  assert.deepEqual(deserialize(serialize(state)).inventory, {});
 });

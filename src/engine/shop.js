@@ -154,7 +154,7 @@ export function buyItem(state, itemId, targetId, opts = {}) {
 }
 
 /** 即用耗材的效果（結構化欄位統一解析，不看單一 id）。回傳效果摘要文字給日誌用 */
-function applyUse(state, item, s, opts = {}) {
+export function applyUse(state, item, s, opts = {}) {
   const e = item.effect ?? {};
   const notes = [];
   const mates = homeMates(state, s);

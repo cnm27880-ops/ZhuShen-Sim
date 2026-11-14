@@ -69,6 +69,7 @@ export function createNewGame(seed = freshSeed()) {
     gacha: newGachaState(), // 四卡池：本週抽數（漲價計數）與保底計數
     growth: newGrowthState(seed), // 頓悟：獨立亂數流（見 engine/growth.js）
     nextId: 1,
+    inventory: {}, // 物資倉庫（功能 2）：{ 商品 id: 數量 }，公庫買的常備藥先進倉庫，再選人使用（engine/inventory.js）
     samsarites: [],
     graveyard: [],
     memorialStele: [], // 英靈碑名單（見 engine/memorial.js）
@@ -556,6 +557,7 @@ export function deserialize(json) {
   if (state.version !== 1) throw new Error("存檔版本不符");
   state.events = [];
   state.collection ??= []; // 舊存檔沒有這個欄位
+  state.inventory ??= {}; // 物資倉庫（功能 2）
   // Phase 3-A 之前收藏存的是名字，現在存 id；對不上的丟掉
   state.collection = state.collection
     .map((x) => (getSpecialReward(x) ? x : findSpecialRewardByName(x)?.id))
