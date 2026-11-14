@@ -137,7 +137,9 @@ function afterChange() {
     state.settings.followId = null;
     saveGame();
   }
+  const popEvents = [];
   for (const ev of state.events.splice(0)) {
+    popEvents.push(ev);
     if (ev.type === "dayEnd") saveGame();
     if (ev.type === "gameOver") modal = { name: "gameOver" };
     const masterOff = state.settings.autoPause === false && (ev.type === "rival" || ev.type === "mandatory"); // 洲際碰撞預警與強制任務提醒受「自動暫停」總開關控制（4-F-1）
@@ -174,6 +176,7 @@ function afterChange() {
     modal = { name: "godEvent", forced: true };
   }
   render();
+  popEvents.forEach(popOnMinis);
   schedule();
 }
 
@@ -184,6 +187,7 @@ function render() {
   renderStage();
   renderLog();
   renderRoster();
+  renderDaySummary();
   renderModal();
 }
 
@@ -248,6 +252,34 @@ function miniHtml(s, emoji) {
   return `<span class="mini-emoji">${emoji}</span>
     <div class="mini-figure"><div class="mini-head"></div><div class="mini-body"></div></div>
     <div class="mini-shadow"></div><span class="mini-name">${s.name}</span>`;
+}
+
+const ROOM_ACT = { dorm: "睡", canteen: "吃", training: "練", shop: "逛", portal: "候" };
+/** 小人頭頂的持續狀態泡泡：催熟 > 受傷 > 鎖定 > 戀愛 > 怒氣 > 該房間的活動 */
+function bubbleOf(s, mood, room) {
+  if (s.location === "pod") return { key: "pod", html: `<span class="bub bub-txt">育</span>` };
+  if (s.injury > 0) return { key: "injury", html: `<span class="bub bub-bandage"></span>` };
+  if (s.locked) return { key: "lock", html: `<span class="bub bub-txt">鎖</span>` };
+  if (mood === "love") return { key: "love", html: `<span class="bub bub-heart"></span>` };
+  if (mood === "anger") return { key: "anger", html: `<span class="bub bub-anger">怒</span>` };
+  const t = ROOM_ACT[room] ?? "";
+  return { key: `act-${room}`, html: t ? `<span class="bub bub-txt bub-act">${t}</span>` : "" };
+}
+
+/** 劇情事件發生時，在牽涉到的小人身上跳出提示（用名字比對事件文字） */
+const POP_LABELS = { death: "死亡", relation: "感情／恩怨", scheme: "陰謀", drama: "狗血", injurySevere: "重傷", lowSanity: "崩潰", clash: "內鬥", sanityCrash: "暴走", birth: "新生命" };
+function popOnMinis(ev) {
+  const label = POP_LABELS[ev.type];
+  if (!label) return;
+  for (const s of state.samsarites) {
+    const m = minis.get(s.id);
+    if (!m || !ev.text?.includes(s.name)) continue;
+    const pop = document.createElement("span");
+    pop.className = `mini-pop pop-${ev.type}`;
+    pop.textContent = label;
+    m.el.appendChild(pop);
+    setTimeout(() => pop.remove(), 4500);
+  }
 }
 
 function randomSpot(roomId) {
@@ -394,9 +426,13 @@ function renderSpace() {
       mini.el.style.left = `${spot.x}%`;
       mini.el.style.top = `${spot.y}%`;
     }
-    const mood = moodOf(state, s); // 有戀人 ❤️、在家有仇人 😡
-    const emoji = s.location === "pod" ? "🍼" : s.injury > 0 ? "🩹" : s.locked ? "🔒" : mood === "love" ? "❤️" : mood === "anger" ? "😡" : ROOMS[mini.room].emoji;
-    mini.el.querySelector(".mini-emoji").textContent = emoji;
+    const mood = moodOf(state, s); // 有戀人 love、在家有仇人 anger
+    const bub = bubbleOf(s, mood, mini.room);
+    if (mini.bub !== bub.key) {
+      mini.bub = bub.key;
+      mini.el.querySelector(".mini-emoji").innerHTML = bub.html;
+    }
+    mini.el.dataset.act = s.injury > 0 || s.location === "pod" ? "" : mini.room; // 活動姿勢：宿舍睡、訓練場練（見 styles.css）
     mini.el.classList.toggle("injured", s.injury > 0);
     mini.el.classList.toggle("followed", s.id === state.settings.followId);
   }
@@ -529,6 +565,27 @@ function tagPanel() {
   return `<div class="tag-panel"><b>${t.name}</b>（${t.rarity}）${t.desc}<br />效果：${d.effects}<br />${d.lead}</div>`;
 }
 
+/** 名冊卡片的「最近在幹嘛」：取一生大事記最後一條 */
+function recentOf(s) {
+  const e = s.life?.[s.life.length - 1];
+  return e ? `<b>第 ${e.day} 天</b>　${e.text}` : "<small>還沒發生什麼事</small>";
+}
+
+// ── 今日摘要：玩家暫停時，列出最近一天發生的大事，免得一直派遣錯過劇情 ──
+const SUMMARY_TYPES = new Set(["death", "relation", "scheme", "drama", "injurySevere", "lowSanity", "sanityCrash", "birth", "squad", "rival", "stele"]);
+let summaryHiddenKey = "";
+function renderDaySummary() {
+  const box = $("day-summary");
+  const day = currentDay(state);
+  const items = state.log.filter((e) => e.day >= day - 1 && SUMMARY_TYPES.has(e.type)).slice(-8);
+  const key = `${day}:${items.length}`;
+  const show = state.settings.paused && !modal && items.length > 0 && summaryHiddenKey !== key;
+  box.style.display = show ? "block" : "none";
+  if (!show) return;
+  box.innerHTML = `<div class="ds-head"><b>近兩天大事</b><button data-action="close-summary" data-key="${key}" aria-label="關閉">×</button></div>` +
+    items.map((e) => `<div class="ds-item ds-${e.type}"><span class="ds-day">第 ${e.day} 天</span>${e.text}</div>`).join("");
+}
+
 function renderRoster() {
   if (state.samsarites.length === 0) {
     $("roster").innerHTML = `<div class="empty">你手下一個輪迴者都沒有了。去抽卡吧。</div>`;
@@ -543,6 +600,7 @@ function renderRoster() {
         <div class="tags">${tagChips(s)}</div>
         <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
         <div class="card-status">${locationLabel(s)}${statusExtras(s)}</div>
+        <div class="card-recent" title="最近發生的事（點開看完整傳記）">${recentOf(s)}</div>
       </div>`
     )
     .join("");
@@ -1017,7 +1075,7 @@ function detail() {
   return manageDetail();
 }
 
-const SLOT_ICON = { weapon: "🗡️", armor: "🛡️", accessory: "💍", bloodline: "🧬" };
+const SLOT_ICON = { weapon: "", armor: "", accessory: "", bloodline: "" }; // 傳記不用 emoji，欄位名稱本身就夠清楚
 const RANK_TITLE = { C: "新人", B: "好手", A: "精英", S: "傳奇" };
 const STATUS_TONE = { bad: "bio-chip-bad", good: "bio-chip-good", "": "" };
 
@@ -1040,17 +1098,17 @@ function bioCard(b, s) {
   const chips = b.tags.length ? b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}" title="${(t.desc ?? "").replace(/"/g, "&quot;")}">${t.rarity}｜${t.name}</span>`).join("") : `<small>（沒有標籤）</small>`;
   const rel = b.relations;
   const relRows = [
-    rel.partner ? `<div>💞 ${rel.partner.status === "soulmate" ? "靈魂伴侶" : "戀人"}：<b>${rel.partner.name}</b></div>` : "",
-    rel.likes.length ? `<div>🙂 喜歡：${rel.likes.map((x) => `${x.name}（${Math.round(x.love)}）`).join("、")}</div>` : "",
-    rel.dislikes.length ? `<div>😒 討厭：${rel.dislikes.map((x) => `${x.name}（${Math.round(x.hate)}）`).join("、")}</div>` : "",
-    rel.nemeses.length ? `<div>⚔️ 死敵：<span class="bad">${rel.nemeses.join("、")}</span></div>` : "",
-    `<div class="muted">🎓 師徒：${rel.mentor ?? "（師徒關係還沒開放）"}</div>`,
+    rel.partner ? `<div>${rel.partner.status === "soulmate" ? "靈魂伴侶" : "戀人"}：<b>${rel.partner.name}</b></div>` : "",
+    rel.likes.length ? `<div>喜歡：${rel.likes.map((x) => `${x.name}（${Math.round(x.love)}）`).join("、")}</div>` : "",
+    rel.dislikes.length ? `<div>討厭：${rel.dislikes.map((x) => `${x.name}（${Math.round(x.hate)}）`).join("、")}</div>` : "",
+    rel.nemeses.length ? `<div>死敵：<span class="bad">${rel.nemeses.join("、")}</span></div>` : "",
+    `<div class="muted">師徒：${rel.mentor ?? "（師徒關係還沒開放）"}</div>`,
   ].filter(Boolean);
   const canMove = s && s.location === "space";
   const gearRows = Object.entries(SHOP_SLOT_LABELS)
     .map(([slot, label]) => {
       const name = b.gear[slot];
-      const move = canMove && name ? `<button data-action="gear-pick" data-slot="${slot}" ${modal.transfer?.slot === slot ? 'class="active"' : ""}>🔄 卸下並轉給…</button>` : "";
+      const move = canMove && name ? `<button data-action="gear-pick" data-slot="${slot}" ${modal.transfer?.slot === slot ? 'class="active"' : ""}>卸下並轉給…</button>` : "";
       return `<div class="bio-gear"><span>${SLOT_ICON[slot]} ${label}</span><b class="${name ? "" : "muted"}">${name ?? "（空）"}</b>${move}</div>`;
     })
     .join("");
@@ -1066,14 +1124,14 @@ function bioCard(b, s) {
     ? b.life.map((e) => `<div class="bio-event bio-event-${e.kind}"><span class="bio-day">第 ${e.day} 天</span><span>${e.text}</span></div>`).join("")
     : `<div class="muted">（還沒有故事）</div>`;
   const kids = b.children.length ? b.children.map((c) => `${c.name}${c.alive ? "" : "（已逝）"}`).join("、") : "（沒有）";
-  const ach = b.achievements.length ? b.achievements.map((a) => `<span class="bio-ach" title="${a.desc}">${a.icon} ${a.name}</span>`).join("") : `<small class="muted">（還沒有成就）</small>`;
+  const ach = b.achievements.length ? b.achievements.map((a) => `<span class="bio-ach" title="${a.desc}">${a.name}</span>`).join("") : `<small class="muted">（還沒有成就）</small>`;
   const statuses = b.statuses.map((x) => `<span class="bio-chip ${STATUS_TONE[x.tone] ?? ""}">${x.text}</span>`).join("");
   const revive = b.alive
     ? ""
-    : `<div class="summary bio-revive"><b>🕯️ 復活</b><br /><small>使用氪金道具可以讓他回來。道具名稱：—　價格：—（尚未決定）</small><br /><button disabled title="道具與價格還沒決定，尚未開放">使用氪金道具復活（尚未開放）</button></div>`;
+    : `<div class="summary bio-revive"><b>復活</b><br /><small>使用氪金道具可以讓他回來。道具名稱：—　價格：—（尚未決定）</small><br /><button disabled title="道具與價格還沒決定，尚未開放">使用氪金道具復活（尚未開放）</button></div>`;
   return `<div class="bio ${b.alive ? "" : "bio-dead"}">
     <div class="bio-head bio-rank-${b.rank}">
-      <div class="bio-avatar">${b.alive ? "🧑" : "🪦"}</div>
+      <div class="bio-avatar">${b.name.slice(0, 1)}</div>
       <div class="bio-title"><div class="bio-name">${rankBadge(b.rank)} ${b.name}${b.alive ? "" : "　<small>（已逝）</small>"}</div>
         <div class="bio-sub">第 ${b.generation} 代・基因鎖 ${b.geneLock} 階・出征 ${b.runs} 場</div></div>
     </div>
@@ -1081,17 +1139,17 @@ function bioCard(b, s) {
     <p class="bio-story">${bioStory(b)}</p>
     <div class="bio-grid">
       <div><small>戰力</small><b>${b.power}</b></div><div><small>理智</small><b>${Math.round(b.sanity)}</b></div>
-      <div><small>私房錢</small><b>💰 ${b.wallet}</b></div><div><small>階級</small><b>${b.rank}</b></div>
+      <div><small>私房錢</small><b>${b.wallet}</b></div><div><small>階級</small><b>${b.rank}</b></div>
     </div>
-    <h4>🏷️ 標籤</h4><div class="bio-tags">${chips}</div>
-    <h4>💞 關係</h4><div class="bio-rel">${relRows.join("")}</div>
-    <h4>🎒 裝備</h4><div>${gearRows}</div>${transfer}
+    <h4>標籤</h4><div class="bio-tags">${chips}</div>
+    <h4>關係</h4><div class="bio-rel">${relRows.join("")}</div>
+    <h4>裝備</h4><div>${gearRows}</div>${transfer}
     ${modal.note ? `<div class="summary">${modal.note}</div>` : ""}
-    <h4>📜 一生大事記</h4><div class="bio-timeline">${timeline}</div>
-    <h4>👶 子女與血脈</h4><div>${b.parentNames.length ? `父母：${b.parentNames.join("、")}<br />` : ""}子女：${kids}</div>
-    <h4>🏅 成就</h4><div class="bio-achs">${ach}</div>
+    <h4>一生大事記</h4><div class="bio-timeline">${timeline}</div>
+    <h4>子女與血脈</h4><div>${b.parentNames.length ? `父母：${b.parentNames.join("、")}<br />` : ""}子女：${kids}</div>
+    <h4>成就</h4><div class="bio-achs">${ach}</div>
     ${revive}
-    <div class="modal-actions">${s ? `<button data-action="view-manage" data-id="${s.id}">⚙️ 管理（強化／突破／鎖定／回收）</button>` : `<button data-action="open-settings">↩ 回設定</button>`}${closeButton}</div>
+    <div class="modal-actions">${s ? `<button data-action="view-manage" data-id="${s.id}">管理（強化／突破／鎖定／回收）</button>` : `<button data-action="open-settings">↩ 回設定</button>`}${closeButton}</div>
   </div>`;
 }
 
@@ -1580,6 +1638,9 @@ function gameOver() {
 // ───────── 玩家操作 ─────────
 
 const actions = {
+  "close-summary"(el) {
+    summaryHiddenKey = el.dataset.key;
+  },
   "toggle-pause"() {
     state.settings.paused = !state.settings.paused;
     bannerText = "";
