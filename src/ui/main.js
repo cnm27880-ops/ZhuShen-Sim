@@ -196,6 +196,8 @@ function renderTopbar() {
   $("btn-pause").textContent = state.settings.paused ? "▶ 繼續 [Space]" : "⏸ 暫停 [Space]";
   $("auto-strategy").value = state.autoStrategy ?? "balanced";
   const taxPct = Math.round(taxRateOf(state) * 100);
+  document.querySelector('[data-action="tax-down"]').disabled = taxRateOf(state) <= CONFIG.tax.min + 1e-9; // #34：到上下限就 disabled，不要點了沒反應
+  document.querySelector('[data-action="tax-up"]').disabled = taxRateOf(state) >= CONFIG.tax.max - 1e-9;
   $("tax-rate").classList.toggle("tax-low", taxPct <= 30); // 安撫減稅／高壓徵稅的顯眼提醒，免得調完忘記改回（4-E-8）
   $("tax-rate").classList.toggle("tax-high", taxPct >= 60);
   $("tax-rate").title = taxPct <= 30 ? "低稅安撫：在空間的人每日理智 +1，但公庫變瘦" : taxPct >= 60 ? "高壓徵稅：在空間的人每日理智下降（≥60% -2、≥80% -4）" : "";
@@ -724,7 +726,7 @@ function dispatch() {
     if (enemyPairs.length > 0) {
       summary += `<br /><span class="bad">⚔️ 隊內有仇人：${enemyPairs.join("、")}（每個房間有機率先打起來）</span>`;
     }
-    if (dispatchPick.erosion > 0) summary += `<br /><span class="warn">🌌 ${dispatchPick.erosion}★ 侵蝕：有效推薦戰力 ${dungeon.recommendedPower}，通關積分 ×${erosionRewardMult(dispatchPick.erosion).toFixed(2)}，成功掉 ${dispatchPick.erosion * CONFIG.erosion.crystalPerStar} 顆侵蝕結晶。</span>`;
+    if (dispatchPick.erosion > 0) summary += `<br /><span class="warn">🌌 ${dispatchPick.erosion}★ 侵蝕：有效推薦戰力 ${dungeon.recommendedPower}，通關積分 ×${erosionRewardMult(dispatchPick.erosion).toFixed(2)}，成功掉 ${dispatchPick.erosion * CONFIG.erosion.crystalPerStar} 顆侵蝕結晶（侵蝕通關不計入尾王守門次數）。</span>`;
     if (!isMand && !hasIntel(state, dungeon)) {
       summary += `<br /><span class="warn">❓ 首次開荒：傷勢更重；首通有額外 ${Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct)} 分${dungeon.specialRewards?.length ? "與特殊獎勵" : ""}、一件首通奇物${dungeon.boss ? (dungeon.chapter >= CONFIG.space.maxLevel ? "，並完成主線" : "，並讓主神空間升級、解鎖下一章") : ""}。</span>`;
     }
@@ -888,6 +890,7 @@ function shopStandardTab(tier, target) {
 function shopMarketTab(home, target) {
   const info = marketInfo(state);
   const hasContra = info.slots.some((s) => s.item?.kind === "contraband" && !s.sold);
+  const lockedCount = info.slots.filter((s) => s.locked && !s.sold).length;
   const victims = home.filter((s) => s.id !== modal.targetId);
   const victimPicker = hasContra
     ? `<h4 class="chapter-head">狗血黑貨的對象（使用者 = 上面選的人）</h4><div class="option-list">${
@@ -908,14 +911,14 @@ function shopMarketTab(home, target) {
         <small>${item.desc}</small>${itemFx(item)}${world}
         ${!slot.sold && !check.ok ? `<small class="bad">${check.reason}</small>` : ""}
         <div class="slot-actions">
-          <button data-action="market-lock" data-id="${slot.index}" ${slot.sold ? "disabled" : ""}>${slot.locked ? "🔓 解除鎖定" : "🔒 鎖定"}</button>
+          <button data-action="market-lock" data-id="${slot.index}" ${slot.sold || (!slot.locked && lockedCount >= info.lockLimit) ? "disabled" : ""} ${!slot.locked && lockedCount >= info.lockLimit && !slot.sold ? `title="已鎖滿 ${info.lockLimit} 格，先解除別格才能鎖這格"` : ""}>${slot.locked ? "🔓 解除鎖定" : "🔒 鎖定"}</button>
           <button class="primary" data-action="market-buy" data-id="${slot.index}" ${check.ok ? "" : "disabled"}>${slot.sold ? "售罄" : priceHtml}</button>
         </div>
       </div>`;
     })
     .join("");
   return `<div class="summary">⏳ 下次自動換貨：<b>${info.daysLeft}</b> 天後（每 ${CONFIG.market.refreshDays} 天；3 特產武防＋2 特產血統＋2 耗材＋1 黑貨，每格限購 1 次）。
-    可鎖定 ${info.lockLimit} 格不被洗掉。
+    可鎖定 ${info.lockLimit} 格不被洗掉（已鎖 <b>${lockedCount}/${info.lockLimit}</b> 格）。
     <button data-action="market-refresh" ${canAfford(state, info.manualCost) ? "" : "disabled"}>🔄 手動刷新（公庫 ${info.manualCost} 分，同日遞增）</button></div>
     ${victimPicker}
     <div class="slot-grid" style="margin-top:10px">${cards}</div>
@@ -1118,7 +1121,7 @@ function squadCommand() {
       babies
         .map((b) => {
           const cost = speedUpCost(state, b);
-          return `<div class="option">${rankBadge(b.rank)}<span class="grow">${b.name}（第 ${b.generation ?? 1} 代）<small>還要 ${b.podDaysLeft} 天</small></span><button data-action="speed-pod" data-id="${b.id}">加速出艙（${cost} 分）</button></div>`;
+          return `<div class="option">${rankBadge(b.rank)}<span class="grow">${b.name}（第 ${b.generation ?? 1} 代）<small>還要 ${b.podDaysLeft} 天</small></span><button data-action="speed-pod" data-id="${b.id}" ${canAfford(state, cost) ? "" : `disabled title="積分不夠"`}>加速出艙（${cost} 分${canAfford(state, cost) ? "" : "，積分不夠"}）</button></div>`;
         })
         .join("")
     : "";
@@ -1253,7 +1256,7 @@ function gossip() {
     <div style="text-align:center"><canvas id="gossip-canvas" width="${cfg.width}" height="${cfg.height}" style="width:min(100%,${Math.round(cfg.width / 2)}px);height:auto;border:1px solid #888;border-radius:4px"></canvas></div>
     <div class="summary" style="margin-top:8px">本局種子碼：<b id="gossip-seed">${state.seed ?? "（舊存檔無種子碼）"}</b>${modal?.note ? `　<span class="good">${modal.note}</span>` : ""}</div>
     <div class="modal-actions">${closeButton}
-      <button data-action="gossip-copy">📋 複製種子碼</button>
+      <button data-action="gossip-copy" ${state.seed == null ? `disabled title="舊存檔無種子碼，無法複製"` : ""}>📋 複製種子碼</button>
       <button class="primary" data-action="gossip-download">💾 下載 PNG 圖卡</button>
     </div>`;
 }
@@ -1431,7 +1434,11 @@ const actions = {
     renderModal();
   },
   async "gossip-copy"() {
-    const ok = await copyText(String(state.seed ?? ""));
+    if (state.seed == null) { // #33：舊存檔沒有種子碼，不要複製空字串還說成功
+      if (modal?.name === "gossip") modal.note = "舊存檔無種子碼，無法複製";
+      return renderModal();
+    }
+    const ok = await copyText(String(state.seed));
     if (modal?.name === "gossip") modal.note = ok ? `✅ 已複製種子碼 ${state.seed}` : "❌ 複製失敗，請手動選取種子碼";
     renderModal();
   },
