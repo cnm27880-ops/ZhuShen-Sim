@@ -602,5 +602,13 @@ export const PAUSE_EVENTS = {
   lowSanity: { label: "有人理智低於 20（快崩潰）", default: true },
 };
 
+// 自動小幫手三種模式（功能 4）：取代一堆開關。pause："all" 全部事件都暫停、"major" 預設重大事件（PAUSE_EVENTS 的 default）暫停、
+// 陣列 = 只有列出的事件暫停。strategy = null 表示不動目前的自動派遣策略。想自己調的人在面板「進階自訂」。
+export const AUTO_MODES = {
+  easy: { icon: "😌", label: "省心模式", desc: "自動派遣開著（均衡策略），只在死人、許願、強制任務時才暫停。", autoDispatch: true, strategy: "balanced", pause: ["death", "wish", "mandatory"] },
+  balanced: { icon: "⚖️", label: "均衡模式", desc: "自動派遣開著、用保守策略，重大事件（死亡、結算、主神搞事…）都會暫停。", autoDispatch: true, strategy: "safe", pause: "major" },
+  control: { icon: "🎮", label: "掌控模式", desc: "自動派遣關掉、任何事件都暫停，所有決定都由你自己下。", autoDispatch: false, strategy: null, pause: "all" },
+};
+
 // 新增暫停事件的門檻（問題 5）：傷勢 >= severeInjury、理智 < lowSanity 時各提醒一次（恢復後才會再提醒）
 export const ALERT_LEVELS = { severeInjury: 2, lowSanity: 20 };

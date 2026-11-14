@@ -1,7 +1,7 @@
 // 畫面層：只負責「把 state 畫出來」跟「把玩家的點擊轉成引擎呼叫」。
 // 所有遊戲規則都在 src/engine/，這裡不做任何數值計算以外的決定。
 
-import { CONFIG, RANKS, INJURIES, PAUSE_EVENTS } from "../data/config.js";
+import { CONFIG, RANKS, INJURIES, PAUSE_EVENTS, AUTO_MODES } from "../data/config.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
 import {
   createNewGame,
@@ -28,6 +28,7 @@ import { RIVAL_ID, pendingRival, buildRivalDungeon, rivalInfo } from "../engine/
 import { erosionUnlocked, applyErosion, erosionBlock, erosionRMult, erosionRewardMult } from "../engine/erosion.js";
 import { facilityInfo, upgradeFacility, facilityTotal } from "../engine/facilities.js";
 import { buildGossip } from "../engine/gossip.js";
+import { applyAutoMode, currentAutoMode } from "../engine/autoMode.js";
 import { drawGossipCard, downloadGossipPng, copyText } from "./gossipCard.js";
 import { RIVAL_SQUADS } from "../data/rivals.js";
 import {
@@ -194,7 +195,6 @@ function renderTopbar() {
     .join("");
   document.body.style.setProperty("--speed", state.settings.speed); // 讓小人滑動速度跟著遊戲速度變快
   $("btn-pause").textContent = state.settings.paused ? "▶ 繼續 [Space]" : "⏸ 暫停 [Space]";
-  $("auto-strategy").value = state.autoStrategy ?? "balanced";
   const taxPct = Math.round(taxRateOf(state) * 100);
   document.querySelector('[data-action="tax-down"]').disabled = taxRateOf(state) <= CONFIG.tax.min + 1e-9; // #34：到上下限就 disabled，不要點了沒反應
   document.querySelector('[data-action="tax-up"]').disabled = taxRateOf(state) >= CONFIG.tax.max - 1e-9;
@@ -225,13 +225,11 @@ function renderTopbar() {
   $("btn-rival").style.display = riv ? "" : "none";
   if (riv) $("btn-rival").textContent = `⚔️ 洲際碰撞（第 ${riv.deadlineDay} 天前）`;
   $("btn-facility").textContent = `🏗️ 基建 ${facilityTotal(state)}`;
-  $("auto-erosion-wrap").style.display = erosionUnlocked(state) ? "" : "none";
-  $("auto-erosion").checked = !!state.autoErosion;
   $("btn-god").textContent = godWaiting ? "👁 主神搞事 (1)" : "🚨 突襲任務";
 
-  $("auto-dispatch").checked = state.settings.autoDispatch;
-  $("protect-injured").checked = state.settings.protect.noInjured;
-  $("protect-enemies").checked = state.settings.protect.noEnemies;
+  const am = currentAutoMode(state);
+  $("btn-auto").textContent = `🤖 自動小幫手：${AUTO_MODES[am]?.label ?? "自訂"}`;
+  $("btn-auto").classList.toggle("active", state.settings.autoDispatch);
 }
 
 function miniHtml(s, emoji) {
@@ -578,7 +576,7 @@ function renderModal() {
   document.body.classList.toggle("modal-open", Boolean(modal)); // 開著放大視窗時，角落的副本迷你小窗（#run-list）自動隱藏，關窗恢復（雙視窗互斥，4-E-7）
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent, facility, gossip, rivalAlert };
+  const builders = { guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel };
   $("modal").innerHTML = builders[modal.name]();
   if (modal.name === "gossip") drawGossipCard($("gossip-canvas"), buildGossip(state)); // 畫報紙圖卡（Canvas，要等 innerHTML 寫完才拿得到元素）
 }
@@ -1206,6 +1204,34 @@ function settings() {
     </div>`;
 }
 
+/** 自動小幫手面板（功能 4）：三種模式一鍵切換；想自己調的人展開「進階自訂」才看到全部開關 */
+function autoPanel() {
+  const cur = currentAutoMode(state);
+  const cards = Object.entries(AUTO_MODES)
+    .map(([id, m]) => `<div class="option ${cur === id ? "selected" : ""}" data-action="set-auto-mode" data-id="${id}"><span class="option-icon">${m.icon}</span><span class="grow"><b>${m.label}</b>${cur === id ? " ✅" : ""}<br /><small>${m.desc}</small></span></div>`)
+    .join("");
+  const note = cur === "custom" ? `<p class="warn">目前是你自訂的組合（不符合任何一種模式），點上面任一模式會整組覆蓋。</p>` : "";
+  const toggles = Object.entries(PAUSE_EVENTS)
+    .map(([key, def]) => `<label class="option"><input type="checkbox" data-pause-key="${key}" ${state.settings.pauseOn[key] ? "checked" : ""} /><span class="grow">${def.label}</span></label>`)
+    .join("");
+  const advanced = modal.advanced
+    ? `<div class="summary" style="margin-top:8px">
+        <label class="option"><input type="checkbox" id="auto-dispatch" ${state.settings.autoDispatch ? "checked" : ""} /><span class="grow"><b>🤖 自動派遣</b></span></label>
+        <label class="option"><span class="grow"><b>🧭 派遣策略</b><br /><small>穩健＝通關率 85%、每天 1 隊、留 2 人在家、不派傷員與有死亡風險的隊伍；均衡＝75%／2 隊／留 1 人／可接受輕傷；激進＝60%／不限隊數／不留人／受傷也派。</small></span>
+          <select id="auto-strategy"><option value="safe" ${state.autoStrategy === "safe" ? "selected" : ""}>穩健</option><option value="balanced" ${(state.autoStrategy ?? "balanced") === "balanced" ? "selected" : ""}>均衡</option><option value="aggressive" ${state.autoStrategy === "aggressive" ? "selected" : ""}>激進</option></select></label>
+        <label class="option"><input type="checkbox" id="auto-erosion" ${state.autoErosion ? "checked" : ""} ${erosionUnlocked(state) ? "" : "disabled"} /><span class="grow">🌌 自動挑戰侵蝕<br /><small>主線卡關或全通後，改打已通關世界的位面侵蝕星級賺結晶（空間 Lv.4 後解鎖）</small></span></label>
+        <label class="option"><input type="checkbox" id="protect-injured" ${state.settings.protect.noInjured ? "checked" : ""} /><span class="grow">禁止自動派遣受傷人員</span></label>
+        <label class="option"><input type="checkbox" id="protect-enemies" ${state.settings.protect.noEnemies ? "checked" : ""} /><span class="grow">禁止仇恨／死敵同隊</span></label>
+        <p>遇到下列事件時自動暫停：</p><div class="option-list">${toggles}</div></div>`
+    : "";
+  return `<h3>🤖 自動小幫手</h3>
+    <p><small>選一種就好，不用一個一個開關。</small></p>
+    <div class="option-list">${cards}</div>${note}
+    <div style="margin-top:8px"><button data-action="toggle-auto-advanced">${modal.advanced ? "▲ 收起進階自訂" : "▼ 進階自訂（展開全部開關）"}</button></div>
+    ${advanced}
+    <div class="modal-actions">${closeButton}</div>`;
+}
+
 /** 洲際碰撞預警彈窗（4-F-1）：刷出當天與剩餘 1 天；可立即編隊，或稍後處理（逾時主神自動徵召精銳） */
 function rivalAlert() {
   const rv = rivalInfo(state);
@@ -1558,6 +1584,16 @@ const actions = {
     if (!result.ok) alert(result.reason);
     else modal = null;
     saveGame();
+  },
+  "open-auto"() {
+    modal = { name: "auto", advanced: false };
+  },
+  "set-auto-mode"(el) {
+    applyAutoMode(state, el.dataset.id);
+    saveGame();
+  },
+  "toggle-auto-advanced"() {
+    modal.advanced = !modal.advanced;
   },
   "open-settings"() {
     modal = { name: "settings" };

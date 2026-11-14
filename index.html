@@ -61,12 +61,7 @@
         <button id="btn-god" class="primary" data-action="open-god" style="display: none">👁 主神搞事</button>
         <button class="primary" data-action="open-shop">🛒 商店</button>
         <button id="btn-facility" data-action="open-facility" title="主神空間永久基建：重力修煉室、生命溫養艙、法則共鳴碑、萬界育嬰堂、星界觀測樞">🏗️ 基建</button>
-        <label class="toggle"><input type="checkbox" id="auto-dispatch" /> 🤖 自動派遣</label>
-        <label class="toggle" title="自動派遣只挑打得過的任務槽：保守 = 隊伍戰力 ≥ 推薦戰力 ×1.2；穩健 ×1.0（新手期 ×0.85）；狂暴 ×0.8。全部打不過就待機休整。">🧭
-          <select id="auto-strategy"><option value="safe">保守</option><option value="balanced">穩健</option><option value="aggressive">狂暴</option></select></label>
-        <label class="toggle" id="auto-erosion-wrap" style="display: none" title="自動派遣在主線卡關或全通後，改打已通關世界的位面侵蝕星級賺結晶"><input type="checkbox" id="auto-erosion" /> 🌌 自動挑戰侵蝕</label>
-        <label class="toggle"><input type="checkbox" id="protect-injured" /> 禁止自動派遣受傷人員</label>
-        <label class="toggle"><input type="checkbox" id="protect-enemies" /> 禁止仇恨／死敵同隊</label>
+        <button id="btn-auto" data-action="open-auto" title="自動小幫手：選一種模式就好，想自己調再開進階自訂">🤖 自動小幫手</button>
       </div>
       <div id="roster"></div>
     </footer>

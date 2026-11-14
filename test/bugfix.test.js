@@ -273,3 +273,31 @@ test("#30：連續建立兩局（即使同一毫秒）種子也不同", () => {
   for (let i = 0; i < 50; i++) seeds.add(createNewGame().seed);
   assert.equal(seeds.size, 50);
 });
+
+import { applyAutoMode, currentAutoMode } from "../src/engine/autoMode.js";
+import { AUTO_MODES, PAUSE_EVENTS } from "../src/data/config.js";
+
+test("功能 4：三種自動模式套用後設定正確，偵測得回來；手動改開關變成自訂", () => {
+  const { state } = setup(1, 61);
+  applyAutoMode(state, "easy");
+  assert.equal(state.settings.autoDispatch, true);
+  assert.equal(state.autoStrategy, "balanced");
+  const paused = Object.keys(PAUSE_EVENTS).filter((k) => state.settings.pauseOn[k]);
+  assert.deepEqual(paused.sort(), ["death", "mandatory", "wish"], "省心模式只在死人／許願／強制任務暫停");
+  assert.equal(currentAutoMode(state), "easy");
+
+  applyAutoMode(state, "balanced");
+  assert.equal(state.autoStrategy, "safe", "均衡模式用保守策略");
+  for (const [k, def] of Object.entries(PAUSE_EVENTS)) assert.equal(!!state.settings.pauseOn[k], def.default, `${k} 重大事件才暫停`);
+  assert.equal(currentAutoMode(state), "balanced");
+
+  applyAutoMode(state, "control");
+  assert.equal(state.settings.autoDispatch, false);
+  assert.ok(Object.keys(PAUSE_EVENTS).every((k) => state.settings.pauseOn[k]), "掌控模式全部暫停");
+  assert.equal(currentAutoMode(state), "control");
+
+  state.settings.pauseOn.death = false; // 進階自訂改了一項
+  assert.equal(currentAutoMode(state), "custom");
+  assert.equal(applyAutoMode(state, "nope"), null);
+  assert.equal(Object.keys(AUTO_MODES).length, 3);
+});
