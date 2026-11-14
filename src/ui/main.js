@@ -17,7 +17,7 @@ import {
   serialize,
   deserialize,
 } from "../engine/core.js";
-import { roomPassRate, clearChance, chanceAtLeast, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, bossGateInfo, roomCount, roomsToClear, dungeonOfRun } from "../engine/dungeon.js";
+import { roomPassRate, clearChance, chanceDisplay, deathRisk, chanceAtLeast, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, bossGateInfo, roomCount, roomsToClear, dungeonOfRun } from "../engine/dungeon.js";
 import { boardTargets, boardOf } from "../engine/board.js";
 import { marketInfo, manualRefresh, lockSlot, buyMarketSlot, checkMarketBuy, intelFull } from "../engine/market.js";
 import { relicInfo } from "../engine/relics.js";
@@ -76,6 +76,9 @@ let timer = null;
 let modal = null; // 目前開著的彈出視窗：{ name, ...參數 }
 let bannerText = "";
 const minis = new Map(); // 輪迴者 id → { el, room }
+let dismissed = { wish: false, god: false }; // #3：玩家手動關掉許願／主神搞事彈窗後，不再自動以強制版重開（直到那批事件處理完）
+let resumeAfterReports = null; // #4：副本結算彈窗之前的暫停狀態，關掉最後一場結算時還原
+let dispatchHint = ""; // 派遣畫面的無效點擊提示（放假／休眠艙／鎖定／滿員／未解鎖），下一次有效操作或重新開窗時清掉
 const dispatchPick = { dungeonId: null, slotId: null, party: new Set(), greedy: false, erosion: 0 }; // slotId：任務榜的槽（尾王／指定任務／強制任務為 null）
 let peekRunId = null; // 玩家點右側卡片、手動想看的那一場副本 id（只給畫面用，不存檔）
 let lastFollowRunId = null; // 上一次鎖定對象所在的副本 id，用來偵測他進／出副本
@@ -128,6 +131,7 @@ function afterChange() {
     if (ev.type === "gameOver") modal = { name: "gameOver" };
     const masterOff = state.settings.autoPause === false && (ev.type === "rival" || ev.type === "mandatory"); // 洲際碰撞預警與強制任務提醒受「自動暫停」總開關控制（4-F-1）
     if (state.settings.pauseOn[ev.type] && !masterOff) {
+      if (ev.type === "runEnd" && resumeAfterReports === null) resumeAfterReports = state.settings.paused;
       state.settings.paused = true;
       bannerText = `⏸ 自動暫停：${PAUSE_EVENTS[ev.type].label} —— ${ev.text}`;
       if (ev.type === "rival" && !modal && pendingRival(state)) modal = { name: "rivalAlert" }; // 洲際碰撞預警彈窗：刷出當天與剩餘 1 天（4-F-1）
@@ -142,16 +146,19 @@ function afterChange() {
   // 副本結算視窗排隊：一次只彈一個，關掉後若還有就接著彈（含重新整理讀檔後還沒看的）。關掉「副本結算」暫停就不彈、清掉佇列
   if (!state.settings.pauseOn.runEnd) state.runReports.length = 0;
   else if (!modal && !state.gameOver && state.runReports.length > 0) {
+    if (resumeAfterReports === null) resumeAfterReports = state.settings.paused;
     state.settings.paused = true;
     modal = { name: "runResult" };
   }
   // 有人許願等回覆：自動暫停並彈窗（包含重新整理讀檔後還沒回覆的）。關掉「許願」暫停就改用 🙏 按鈕手動處理
-  if (state.settings.pauseOn.wish && !modal && !state.gameOver && pendingWishes(state).length > 0) {
+  if (pendingWishes(state).length === 0) dismissed.wish = false;
+  if (!pendingGodEvent(state)) dismissed.god = false;
+  if (state.settings.pauseOn.wish && !dismissed.wish && !modal && !state.gameOver && pendingWishes(state).length > 0) {
     state.settings.paused = true;
     modal = { name: "wish", forced: true };
   }
   // 主神搞事等回覆：自動暫停並彈窗。關掉「主神搞事」暫停就改用 👁 按鈕手動處理（不處理的話過期會視同照辦）
-  if (state.settings.pauseOn.godEvent && !modal && !state.gameOver && pendingGodEvent(state)) {
+  if (state.settings.pauseOn.godEvent && !dismissed.god && !modal && !state.gameOver && pendingGodEvent(state)) {
     state.settings.paused = true;
     modal = { name: "godEvent", forced: true };
   }
@@ -537,8 +544,13 @@ function openModal(next) {
   schedule(); // 視窗開著時 schedule 會直接 return，等於暫停
 }
 
-function closeModal() {
+function dismissModal() {
+  if (modal?.name === "wish") dismissed.wish = true; // 手動關閉就記住，改由頂欄 🙏／👁 按鈕再開
+  if (modal?.name === "godEvent") dismissed.god = true;
   modal = null;
+}
+function closeModal() {
+  dismissModal();
   render();
   schedule();
 }
@@ -616,7 +628,11 @@ function dispatch() {
   if (!canGreedy) dispatchPick.greedy = false;
 
   const home = state.samsarites.filter((s) => s.location === "space");
-  for (const id of [...dispatchPick.party]) if (!home.some((s) => s.id === id)) dispatchPick.party.delete(id);
+  // 清掉無效選取（問題 7、#5）：不在主神空間、放假中、休眠艙中的人（與自動派遣的過濾條件一致）；🔒 鎖定的留著，讓玩家自己看到並取消
+  for (const id of [...dispatchPick.party]) {
+    const m = home.find((s) => s.id === id);
+    if (!m || m.vacationDays > 0 || m.podLockDays > 0) dispatchPick.party.delete(id);
+  }
   const party = home.filter((s) => dispatchPick.party.has(s.id));
   const injured = party.filter((s) => s.injury > 0);
 
@@ -689,11 +705,14 @@ function dispatch() {
   let summary = "請至少選一個人。";
   if (party.length > 0) {
     const rate = Math.round(roomPassRate(state, party, dungeon, null, 0, isMand ? 0 : null) * 100);
-    const chance = Math.round((isMand ? chanceAtLeast(roomCount(dungeon), roomsToClear(dungeon), roomPassRate(state, party, dungeon, null, 0, 0)) : clearChance(state, party, dungeon)) * 100);
+    const rawChance = isMand ? chanceAtLeast(roomCount(dungeon), roomsToClear(dungeon), roomPassRate(state, party, dungeon, null, 0, 0)) : clearChance(state, party, dungeon);
+    const { pct: chance, failPct } = chanceDisplay(rawChance);
+    const deathPct = Math.round(deathRisk(state, party, dungeon) * 100);
     const cls = chance >= 75 ? "good" : chance >= 50 ? "warn" : "bad";
     summary = `小隊總戰力 <b>${partyPower(party)}</b> / 推薦 ${dungeon.recommendedPower}<br />
       每個房間通過率 <b>${rate}%</b>（${isMand ? "不吃情報加成" : "含情報 " + pct(intelBonus(state, dungeon))}），${roomCount(dungeon)} 個房間通過 ${roomsToClear(dungeon)} 個以上才算通關（約 ${(roomCount(dungeon) * CONFIG.roomTicks) / CONFIG.ticksPerDay} 天）<br />
-      預估通關率 <b class="${cls}">${chance}%</b>（進副本時才會抽環境標籤，實際會再浮動）`;
+      預估通關率 <b class="${cls}">${chance}%</b>（約 ${failPct}% 機率失敗）<small>・樂觀估計：沒算中途有人受傷戰死導致戰力下降，進副本才抽環境標籤，實際可能更低</small><br />
+      預估有人戰死的風險約 <b class="${deathPct >= 20 ? "bad" : deathPct >= 8 ? "warn" : "good"}">${deathPct}%</b><small>（粗估）</small>`;
     const relBonus = Math.round(partyRelationBonus(state, party) * 100);
     if (relBonus !== 0) {
       summary += `<br />隊員關係加成 <b class="${relBonus > 0 ? "good" : "bad"}">${relBonus > 0 ? "+" : ""}${relBonus}%</b>（已含在每房間通過率）`;
@@ -740,7 +759,7 @@ function dispatch() {
     </div>
     <h3 style="margin-top:14px">選擇隊員（最多 ${CONFIG.partyMax} 人，已選 ${party.length}）</h3>
     <div class="option-list">${memberOptions}</div>
-    <div class="summary">${summary}<div style="margin-top:6px">${erosionBox}</div><div style="margin-top:6px">${greedyBox}</div></div>
+    <div class="summary">${dispatchHint ? `<div class="bad" style="margin-bottom:6px">⚠ ${dispatchHint}</div>` : ""}${summary}<div style="margin-top:6px">${erosionBox}</div><div style="margin-top:6px">${greedyBox}</div></div>
     <div class="modal-actions">${closeButton}
       <button class="primary" data-action="confirm-dispatch" ${party.length === 0 ? "disabled" : ""}>出發（耗時約 ${(roomCount(dungeon) * CONFIG.roomTicks) / CONFIG.ticksPerDay} 天）</button>
     </div>`;
@@ -1380,14 +1399,17 @@ const actions = {
     state.settings.speed = Number(el.dataset.value);
   },
   "open-dispatch"() {
+    dispatchHint = "";
     modal = { name: "dispatch" };
   },
   "open-mandatory"() {
+    dispatchHint = "";
     dispatchPick.dungeonId = MANDATORY_ID; // 直接跳到強制任務的派遣畫面
     dispatchPick.slotId = null;
     modal = { name: "dispatch" };
   },
   "open-rival"() {
+    dispatchHint = "";
     dispatchPick.dungeonId = RIVAL_ID; // 直接跳到洲際碰撞的派遣畫面（4-F-1）
     dispatchPick.slotId = null;
     modal = { name: "dispatch" };
@@ -1540,28 +1562,39 @@ const actions = {
     modal = { name: "detail", id: Number(el.dataset.id) };
   },
   "close-modal"() {
-    modal = null;
+    dismissModal();
   },
   "close-run-report"() {
     state.runReports.shift();
     modal = null; // afterChange 會自動接著彈下一場
+    if (state.runReports.length === 0 && resumeAfterReports !== null) { // #4：最後一場結算看完，還原成結算前的暫停狀態
+      state.settings.paused = resumeAfterReports;
+      resumeAfterReports = null;
+    }
   },
   "pick-dungeon"(el) {
-    if (el.dataset.id !== MANDATORY_ID && el.dataset.id !== RIVAL_ID && !isUnlocked(state, getDungeon(el.dataset.id))) return; // 還沒解鎖的章節只能看不能選
+    if (el.dataset.id !== MANDATORY_ID && el.dataset.id !== RIVAL_ID && !isUnlocked(state, getDungeon(el.dataset.id))) return void (dispatchHint = "這個副本還沒解鎖，只能看不能選。"); // 還沒解鎖的章節只能看不能選
+    dispatchHint = "";
     dispatchPick.dungeonId = el.dataset.id;
     dispatchPick.slotId = null;
   },
   "pick-slot"(el) {
     const slot = boardOf(state).slots.find((s) => s.id === Number(el.dataset.id));
-    if (!slot || slot.running) return; // 已經有隊伍出發的槽不能再接
+    if (!slot || slot.running) return void (dispatchHint = "這個任務已經有隊伍出發了，不能再接。"); // 已經有隊伍出發的槽不能再接
+    dispatchHint = "";
     dispatchPick.dungeonId = slot.dungeonId;
     dispatchPick.slotId = slot.id;
   },
   "toggle-member"(el) {
     const id = Number(el.dataset.id);
-    if (getSamsarite(state, id)?.vacationDays > 0) return; // 放假中不能派
-    if (dispatchPick.party.has(id)) dispatchPick.party.delete(id);
-    else if (dispatchPick.party.size < CONFIG.partyMax) dispatchPick.party.add(id);
+    dispatchHint = "";
+    if (dispatchPick.party.has(id)) return void dispatchPick.party.delete(id); // 取消選取：任何狀態都能取消（問題 7 的修法 1）
+    const m = getSamsarite(state, id);
+    if (m?.vacationDays > 0) return void (dispatchHint = `${m.name} 正在放假（還要 ${m.vacationDays} 天），不能派。`);
+    if (m?.podLockDays > 0) return void (dispatchHint = `${m.name} 被鎖在休眠艙裡（還要 ${m.podLockDays} 天），不能派。`);
+    if (m?.locked) return void (dispatchHint = `${m.name} 已鎖定（🔒），要先在他的資料頁解除鎖定才能派。`);
+    if (dispatchPick.party.size >= CONFIG.partyMax) return void (dispatchHint = `一隊最多 ${CONFIG.partyMax} 人，先取消別人再選。`);
+    dispatchPick.party.add(id);
   },
   "confirm-dispatch"() {
     const result = startRun(state, dispatchPick.dungeonId, [...dispatchPick.party], { slotId: dispatchPick.slotId, greedy: dispatchPick.greedy, erosion: dispatchPick.erosion });
@@ -1624,6 +1657,14 @@ const actions = {
     state = createNewGame();
     modal = null;
     bannerText = "";
+    dispatchPick.party.clear(); // #6：舊局的派遣選取不能漏進新局
+    dispatchPick.dungeonId = dispatchPick.slotId = null;
+    dispatchPick.greedy = false;
+    dispatchPick.erosion = 0;
+    peekRunId = null;
+    dispatchHint = "";
+    dismissed = { wish: false, god: false };
+    resumeAfterReports = null;
   },
 };
 

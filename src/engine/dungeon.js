@@ -159,6 +159,15 @@ export function clearChance(state, party, dungeon, env = null) {
 }
 
 /**
+ * 通關率給玩家看的整數百分比（問題 6）：向下取整、最高只顯示 99%（99.9% 四捨五入成 100% 會讓人以為保證通關），
+ * failPct = 100 - pct，至少 1。
+ */
+export function chanceDisplay(chance) {
+  const pct = Math.max(0, Math.min(99, Math.floor(chance * 100 + 1e-9)));
+  return { pct, failPct: 100 - pct };
+}
+
+/**
  * 預估「這隊在這個副本裡有人戰死」的機率（問題 4；粗估，不是精算）。
  * 假設：每個失敗房間隨機打中 1 名隊員；健康的人第一下不會死，所以死亡只來自
  *  (a) 同一人被打中第 2 次（機率 = 失敗次數的「撞人」機率 × CONFIG.auto.deathRehit）
