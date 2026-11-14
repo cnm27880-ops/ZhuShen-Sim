@@ -24,6 +24,7 @@
       <div class="stat"><span class="stat-label">因果結晶</span><span id="karma" class="stat-value small">🔮 0</span></div>
       <div id="speed-controls"></div>
       <button id="btn-pause" data-action="toggle-pause" title="空白鍵：暫停／繼續">⏸ 暫停 [Space]</button>
+      <button id="btn-gossip" data-action="open-gossip" title="《主神八卦日報》：把本局的修羅場、頭條與英靈碑畫成圖卡，可下載 PNG">📰 八卦日報</button>
       <button id="btn-squad" data-action="open-squad" title="小隊指揮部：隊長、流派、先人遺物、空間編年史">👑 小隊指揮部</button>
       <button id="btn-guide" data-action="open-guide" title="新任主神上崗手冊">❓ 上崗手冊</button>
       <button data-action="open-settings" title="設定">⚙️</button>
@@ -56,11 +57,14 @@
         <button id="btn-wishes" class="primary" data-action="open-wishes" style="display: none">🙏 許願</button>
         <button id="btn-stele" data-action="open-stele">🪦 英靈碑</button>
         <button id="btn-mandatory" class="primary" data-action="open-mandatory" style="display: none">☠️ 強制任務</button>
+        <button id="btn-rival" class="primary" data-action="open-rival" style="display: none">⚔️ 洲際碰撞</button>
         <button id="btn-god" class="primary" data-action="open-god" style="display: none">👁 主神搞事</button>
         <button class="primary" data-action="open-shop">🛒 商店</button>
+        <button id="btn-facility" data-action="open-facility" title="主神空間永久基建：重力修煉室、生命溫養艙、法則共鳴碑、萬界育嬰堂、星界觀測樞">🏗️ 基建</button>
         <label class="toggle"><input type="checkbox" id="auto-dispatch" /> 🤖 自動派遣</label>
         <label class="toggle" title="自動派遣只挑打得過的任務槽：保守 = 隊伍戰力 ≥ 推薦戰力 ×1.2；穩健 ×1.0（新手期 ×0.85）；狂暴 ×0.8。全部打不過就待機休整。">🧭
           <select id="auto-strategy"><option value="safe">保守</option><option value="balanced">穩健</option><option value="aggressive">狂暴</option></select></label>
+        <label class="toggle" id="auto-erosion-wrap" style="display: none" title="自動派遣在主線卡關或全通後，改打已通關世界的位面侵蝕星級賺結晶"><input type="checkbox" id="auto-erosion" /> 🌌 自動挑戰侵蝕</label>
         <label class="toggle"><input type="checkbox" id="protect-injured" /> 禁止自動派遣受傷人員</label>
         <label class="toggle"><input type="checkbox" id="protect-enemies" /> 禁止仇恨／死敵同隊</label>
       </div>

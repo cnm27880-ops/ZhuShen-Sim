@@ -21,6 +21,7 @@ import { affinity } from "./relations.js";
 import { giveBirth, hatch, podBabies } from "./children.js";
 import { popLimit } from "./mandatory.js";
 import { squadRng, squadOf, squadUnlocked, captainOf, squadMembers, bump, styleOf } from "./squad.js";
+import { talentFloor } from "./facilities.js";
 import { logText } from "./templates.js";
 
 const L = () => CONFIG.lineage;
@@ -56,6 +57,7 @@ export function applyLineage(state, child, parents, rng, lineage = false, talent
   // 催生黑貨（4-E-8）：high = 天賦至少達上限的 60%、max = 直接頂滿上限（仍不會超過 +25% 封頂）
   if (talent === "high") child.talentPct = Math.max(child.talentPct, L().talentCap * 0.6);
   else if (talent === "max") child.talentPct = L().talentCap;
+  child.talentPct = Math.max(child.talentPct, talentFloor(state)); // 萬界育嬰堂：出世資質下限（4-F-3）
   child.talentPct = Math.round(Math.min(L().talentCap, child.talentPct) * 10000) / 10000;
   child.inheritPower = Math.round(child.stats.power * child.talentPct);
   if (lineage) {

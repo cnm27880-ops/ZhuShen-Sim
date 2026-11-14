@@ -59,6 +59,9 @@ if (args.mpower) CONFIG.forcedMission.powerMult = args.mpower;
 const TAX = args.tax ?? CONFIG.tax.default; // --tax=0.4：公庫稅率
 // Phase 4-E-6：--forceStyle=communal|bond|farming|elite|mercenary 強制所有隊長都開啟同一個小隊流派（測試單一流派的極端表現）；沒傳 = 依隊長性格自然演化
 // --autoStrategy=safe|balanced|aggressive：模擬時改用玩家版的自動派遣戰力門檻（預設 off = 維持既有基準曲線）
+// 4-F：--facilities=0 關閉自動建設、--erosion=0 關閉自動挑戰侵蝕（預設都開，模擬「自然演化」）
+const SIM_FACILITIES = args.facilities !== 0;
+const SIM_EROSION = args.erosion !== 0;
 const SIM_STRATEGY = process.argv.find((a) => a.startsWith("--autoStrategy="))?.split("=")[1] ?? "off";
 const FORCE_STYLE = process.argv.find((a) => a.startsWith("--forceStyle="))?.split("=")[1] ?? null;
 if (FORCE_STYLE) CONFIG.squad.forceStyle = FORCE_STYLE;
@@ -156,6 +159,8 @@ function playOne(seed) {
   setTaxRate(state, TAX);
   state.settings.autoDispatch = true;
   state.autoStrategy = SIM_STRATEGY;
+  state.autoUpgradeFacilities = SIM_FACILITIES;
+  state.autoErosion = SIM_EROSION;
   const botTick = CONFIG.auto.dispatchAtTick - 1; // 自動派遣前一個時段做決策
   let bankruptDay = null;
   let lowestPoints = state.points;
@@ -164,6 +169,8 @@ function playOne(seed) {
   let botSpent = 0; // 機器人（玩家）的公庫支出
   let seenReport = null;
   const byChapter = {}; // { 章: { runs, wins, deaths } }
+  const rivalRuns = { runs: 0, wins: 0, deaths: 0 }; // 洲際碰撞（4-F）
+  const eroRuns = { runs: 0, wins: 0 }; // 位面侵蝕出征
   const mand = { runs: 0, wins: 0, deaths: 0 }; // 強制任務
   const styleDays = {}; // 每個流派在位的天數（4-E-6）
   let lastDay = 0;
@@ -189,6 +196,17 @@ function playOne(seed) {
       // 同一個 step 可能結算好幾場，lastRun 只留最後一場；所以改看 runReports 佇列（上限 runReportMax，這裡每步清空）
     }
     for (const r of state.runReports.splice(0)) {
+      if (r.rival) {
+        rivalRuns.runs += 1;
+        if (r.success) rivalRuns.wins += 1;
+        rivalRuns.deaths += r.deaths.length;
+        income += r.reward;
+        continue;
+      }
+      if (r.erosion > 0) {
+        eroRuns.runs += 1;
+        if (r.success) eroRuns.wins += 1;
+      }
       if (r.mandatory) {
         mand.runs += 1;
         if (r.success) mand.wins += 1;
@@ -219,6 +237,12 @@ function playOne(seed) {
     deaths: state.graveyard.filter((g) => !g.cause.includes("回收爐")).length,
     purged: state.graveyard.filter((g) => g.cause.includes("抹殺")).length, // 被主神抹殺（強制任務逾期等）
     mand,
+    rivalRuns,
+    eroRuns,
+    facilities: { ...state.facilities },
+    erosionLeft: state.erosionCrystals ?? 0,
+    maxErosion: state.maxErosion ?? 0,
+    rivalStats: state.rivals?.stats ?? {},
     stele: state.memorialStele.length,
     alive: state.samsarites.length,
     points: state.points,
@@ -309,5 +333,13 @@ for (let ch = 1; ch <= 5; ch++) {
   const dist = ["communal", "bond", "farming", "elite", "mercenary"].map((k) => `${k} ${Math.round((results.reduce((n, r) => n + (r.styleDays[k] ?? 0), 0) / totalDays) * 100)}%`).join("　");
   console.log(`\n小隊（4-E${FORCE_STYLE ? `，強制流派 ${FORCE_STYLE}` : "，自然演化"}，每局平均）：隊長異動 ${avg(results.map((r) => r.captainChanges))} 次・政變 ${sum("coup").toFixed(1)}・空降不服 ${sum("snub").toFixed(1)}・叛逃 ${sum("defect").toFixed(2)}（${results.filter((r) => (r.counters.defect ?? 0) > 0).length}/${SEEDS} 局發生）・討伐叛徒 ${sum("slain").toFixed(2)}・子嗣 ${sum("birth").toFixed(1)}（其中催生黑貨 ${sum("birthItem").toFixed(1)}）（期末二代以上 ${avg(results.map((r) => r.gen2))} 人、最高第 ${avg(results.map((r) => r.maxGen))} 代）・遺物 ${sum("heirloom").toFixed(1)}（期末庫存 ${avg(results.map((r) => r.heirloomsLeft))}）・人際事件 ${sum("drama").toFixed(1)}・互助金期末 ${avg(results.map((r) => r.fund))}`);
   console.log(`流派分佈（占有隊長的天數）：${dist}`);
+}
+{
+  const sumR = (key) => results.reduce((n, r) => n + (r.rivalStats[key] ?? 0), 0) / SEEDS;
+  const fl = (id) => avg(results.map((r) => r.facilities[id]));
+  console.log(`\n基建（4-F-3，${SIM_FACILITIES ? "自動建設開" : "關"}）期末平均等級：重力 ${fl("gravity")}／10・溫養艙 ${fl("pods")}／10・共鳴碑 ${fl("stele")}／10・育嬰堂 ${fl("nursery")}／5・觀測樞 ${fl("radar")}／5`);
+  console.log(`位面侵蝕（${SIM_EROSION ? "自動挑戰開" : "關"}，每局平均）：出征 ${avg(results.map((r) => r.eroRuns.runs))} 場 / 通關 ${avg(results.map((r) => r.eroRuns.wins))} 場・最高星級均值 ${avg(results.map((r) => r.maxErosion))}★・期末剩餘侵蝕結晶 ${avg(results.map((r) => r.erosionLeft))}`);
+  const rr = results.reduce((n, r) => n + r.rivalRuns.runs, 0);
+  console.log(`洲際碰撞（每局平均）：出征 ${(rr / SEEDS).toFixed(1)} 場 / 勝率 ${rr ? Math.round((results.reduce((n, r) => n + r.rivalRuns.wins, 0) / rr) * 100) : 0}% / 戰死 ${avg(results.map((r) => r.rivalRuns.deaths))} 人・私奔 ${sumR("elopes").toFixed(2)}・反拐 ${sumR("counters").toFixed(2)}・混血子嗣 ${sumR("hybrids").toFixed(2)}・肉豬策反 ${sumR("revolts").toFixed(2)}`);
 }
 console.log(`平均名冊階級：${["C", "B", "A", "S"].map((k) => `${k}×${avg(results.map((r) => r.ranks[k] ?? 0))}`).join("　")}\n`);

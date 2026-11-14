@@ -9,9 +9,10 @@ import { areEnemies as pairEnemies } from "./relations.js";
 import { activeMission } from "./godEvents.js";
 import { MANDATORY_ID, pendingMandatory } from "./mandatory.js";
 import { effectivePower } from "./tags.js";
-import { clearChance, partyPower, startRun, stepDueRooms, settleRuns, unlockedDungeons, isUnlocked } from "./dungeon.js";
+import { clearChance, partyPower, startRun, stepDueRooms, settleRuns, unlockedDungeons, isUnlocked, hasIntel } from "./dungeon.js";
 import { boardTargets } from "./board.js";
 import { intelFull } from "./market.js";
+import { erosionUnlocked, applyErosion, erosionRewardMult } from "./erosion.js";
 
 // 兩人是否為仇恨／死敵（關係系統在 engine/relations.js）
 export function areEnemies(state, a, b) {
@@ -128,7 +129,45 @@ export function planAutoDispatch(state) {
     const plan = bestPlan(state, candidates, [{ dungeon: missionDungeon, slotId: null, mutation: null, reward: missionDungeon.reward }], target);
     if (plan) return plan;
   }
-  return bestPlan(state, candidates, autoTargets(state));
+  const normal = bestPlan(state, candidates, autoTargets(state));
+  // 位面侵蝕（4-F-3）：自動挑戰侵蝕開著時，只在「主線卡關」（打得過的任務都低於最前線章節）或「全通後」才改打已首通世界的侵蝕星級，
+  // 賺結晶與高倍率積分；最前線章節還有打得過的任務時，主線優先（侵蝕獎勵 ×1.32^k 很大，不能搶走推進主線的人手）
+  const frontier = (state.spaceLevel ?? 1) >= CONFIG.space.maxLevel && !!state.chapterClearDay?.[CONFIG.space.maxLevel] ? false : true;
+  const blocked = !frontier || !normal || normal.dungeon.chapter < (state.spaceLevel ?? 1);
+  if (state.autoErosion && erosionUnlocked(state) && blocked) {
+    const eros = bestErosionPlan(state, candidates);
+    if (eros && (!normal || eros.reward > normal.reward)) return eros;
+  }
+  return normal;
+}
+
+/**
+ * 侵蝕方案：從已首通、已解鎖的世界裡挑獎勵最高的前 CONFIG.erosion.autoWorlds 個，
+ * 對每個隊伍組合找「可安全吃下」（通關率達 minClearChance、戰力達 autoStrategy 門檻）的最高星級。
+ */
+function bestErosionPlan(state, candidates) {
+  const worlds = DUNGEONS.filter((d) => hasIntel(state, d) && isUnlocked(state, d))
+    .sort((a, b) => b.reward - a.reward)
+    .slice(0, CONFIG.erosion.autoWorlds);
+  if (worlds.length === 0) return null;
+  const gate = autoRatioGate(state);
+  let best = null;
+  for (const party of subsets(candidates, CONFIG.partyMax)) {
+    if (state.settings.protect.noEnemies && hasEnemyPair(state, party)) continue;
+    const power = partyPower(party);
+    for (const world of worlds) {
+      for (let k = CONFIG.erosion.maxStar; k >= 1; k--) {
+        const dungeon = applyErosion(world, k);
+        if (gate > 0 && power < dungeon.recommendedPower * gate) continue;
+        const chance = clearChance(state, party, dungeon);
+        if (chance < CONFIG.auto.minClearChance) continue;
+        const plan = { dungeon: world, party, chance, power, comfy: chance >= CONFIG.auto.targetClearChance, reward: world.reward * erosionRewardMult(k), slotId: null, mutation: null, erosion: k };
+        if (!best || isBetterPlan(plan, best)) best = plan;
+        break; // 這個隊伍 × 世界已找到最高可行星級
+      }
+    }
+  }
+  return best;
 }
 
 /**
@@ -158,7 +197,7 @@ export function tryAutoDispatch(state) {
     if (!plan) break;
     // 貪婪探索（4-D-4）：預估通關率夠高而且該副本情報滿格就帶上
     const greedy = plan.chance >= CONFIG.relic.autoGreedyAt && intelFull(state, plan.dungeon.id);
-    const result = startRun(state, plan.dungeon.id, plan.party.map((s) => s.id), { slotId: plan.slotId, greedy });
+    const result = startRun(state, plan.dungeon.id, plan.party.map((s) => s.id), { slotId: plan.slotId, greedy, erosion: plan.erosion ?? 0 });
     if (!result.ok) break;
     sent += 1;
   }

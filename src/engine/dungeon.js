@@ -30,6 +30,9 @@ import { dramaAfterRun } from "./drama.js";
 import { rollRogueEncounter, rogueBossOf, rogueDungeon, resolveRogueFight } from "./lineage.js";
 import { squadRng } from "./squad.js";
 import { gearAfterRun } from "./gearFx.js";
+import { erosionBlock, applyErosion, erosionRewardMult } from "./erosion.js";
+import { RIVAL_ID, buildRivalDungeon, rivalOnStart, rivalFinish, rivalSpare } from "./rivals.js";
+import { intelGainBonus, rivalRewardBonus } from "./facilities.js";
 
 /** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
 export function relationBonus(state, party) {
@@ -62,7 +65,7 @@ export function roomsToClear(dungeon) {
 }
 /** 這場副本的定義：強制任務是開場快照（run.dungeonDef），一般副本查資料表 */
 export function dungeonOfRun(run) {
-  return run.dungeonDef ?? applyMutation(getDungeon(run.dungeonId), run.mutationId);
+  return run.dungeonDef ?? applyErosion(applyMutation(getDungeon(run.dungeonId), run.mutationId), run.erosion ?? 0);
 }
 /** 套上突變詞綴對副本本身的修正（目前只有血月狂躁的 R 倍率）；回傳新物件，不動資料表 */
 export function applyMutation(dungeon, mutationId) {
@@ -123,13 +126,17 @@ export function roomPassRate(state, party, dungeon, env = null, swing = 0, intel
   if (party.length === 0) return 0;
   // intelLocked：並行副本在「開場那一刻」就鎖定情報條（null = 看目前的情報條）
   const intel = intelLocked ?? intelBonus(state, dungeon);
+  // 洲際宿敵特色：機械飛昇隊免疫精神類（我方關係／心情的正向加成失效）、中皇天命隊護體（我方每房通過率下修）
+  const rel = relationBonus(state, party);
+  const mood = moodPassBonus(party);
   const raw =
     powerRate(partyPower(party) * squadBossPowerMult(state, !!dungeon.boss), dungeon.recommendedPower) + // 菁英流打尾王戰力 ×1.15（4-E-2）
-    relationBonus(state, party) +
+    (dungeon.mentalImmune ? Math.min(0, rel) : rel) +
     tagBonus(state, party, dungeon, env) +
-    moodPassBonus(party) +
+    (dungeon.mentalImmune ? Math.min(0, mood) : mood) +
     intel +
-    swing;
+    swing -
+    (dungeon.shieldPenalty ?? 0);
   return Math.min(dungeon.passCap ?? CONFIG.dungeon.maxPassRate, Math.max(CONFIG.dungeon.minPassRate, raw));
 }
 
@@ -157,10 +164,15 @@ function partyOf(state, run) {
 
 /** 出發。回傳 { ok, reason } */
 export function startRun(state, dungeonId, partyIds, opts = {}) {
-  const mandatory = dungeonId === MANDATORY_ID; // 主神強制任務（4-C-4）：動態副本，不看章節解鎖、守門、情報條
-  if (mandatory && !state.mandatory?.pending) return { ok: false, reason: "目前沒有主神強制任務" };
-  const dungeon = mandatory ? buildMandatoryDungeon(state) : getDungeon(dungeonId); // 要在隊員離開主神空間前算（R 看名冊戰力）
+  const rival = dungeonId === RIVAL_ID; // 洲際碰撞（4-F-1）：動態副本，和強制任務同樣不看章節解鎖、守門、情報條
+  const mandatory = dungeonId === MANDATORY_ID || rival; // 主神強制任務（4-C-4）與洲際碰撞：動態副本，不看章節解鎖、守門、情報條
+  if (dungeonId === MANDATORY_ID && !state.mandatory?.pending) return { ok: false, reason: "目前沒有主神強制任務" };
+  if (rival && !state.rivals?.pending) return { ok: false, reason: "目前沒有洲際碰撞任務" };
+  const dungeon = rival ? buildRivalDungeon(state, partyIds) : dungeonId === MANDATORY_ID ? buildMandatoryDungeon(state) : getDungeon(dungeonId); // 要在隊員離開主神空間前算（R 看名冊戰力）
   if (!dungeon) return { ok: false, reason: "找不到這個副本" };
+  const erosion = mandatory ? 0 : opts.erosion ?? 0; // 位面侵蝕星級（4-F-3）
+  const eBlock = erosionBlock(state, dungeon, erosion);
+  if (eBlock) return { ok: false, reason: eBlock };
   if (!mandatory) {
     if (dungeon.chapter > (state.spaceLevel ?? 1)) return { ok: false, reason: `第 ${dungeon.chapter} 章還沒解鎖（空間 Lv.${dungeon.chapter} 才能進）` };
     const gate = bossGateInfo(state, dungeon);
@@ -207,20 +219,24 @@ export function startRun(state, dungeonId, partyIds, opts = {}) {
   const env = mandatory ? null : pick(state, ENV_TAGS); // 每次進副本隨機抽一個環境標籤（強制任務沒有）
   const firstTime = mandatory ? false : !hasIntel(state, dungeon);
   const mutationId = slot?.mutationId ?? null;
-  const run = { partyPostRunSanity: partySan, id: state.nextRunId++, startTick: state.tick, dungeonId, mutationId, slotId: slot?.id ?? null, greedy: !!opts.greedy, envId: env?.id ?? null, firstTime, intel, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
+  const run = { partyPostRunSanity: partySan, id: state.nextRunId++, startTick: state.tick, dungeonId, mutationId, slotId: slot?.id ?? null, greedy: !!opts.greedy, erosion, envId: env?.id ?? null, firstTime, intel, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
   if (!mandatory) run.rogueId = rollRogueEncounter(state); // 常規副本 10% 遭遇叛逃野生 Boss 亂入最後一房（4-E-4）
   if (mandatory) {
     run.mandatory = true;
     run.dungeonDef = dungeon; // 開場快照：R 與獎勵不隨之後名冊變動
     run.extraInjury = dungeon.failInjuryExtra;
-    state.mandatory.pending = null; // 派出去了，任務不再逾時
+    if (rival) {
+      run.rival = { squadId: dungeon.rival.squadId, mortalityMod: dungeon.rival.mortalityMod ?? 0 };
+      rivalOnStart(state, run, dungeon, party);
+    } else state.mandatory.pending = null; // 派出去了，任務不再逾時
   }
   if (slot) {
     slot.running = true;
     slot.runId = run.id;
   }
   state.runs.push(run);
-  const shown = applyMutation(dungeon, mutationId); // 血月狂躁：顯示加成後的 R
+  const shown = applyErosion(applyMutation(dungeon, mutationId), erosion); // 血月狂躁、位面侵蝕：顯示加成後的 R
+  if (erosion > 0) emit(state, "erosion", logText(state, "erosionStart", { star: erosion, dungeon: dungeon.name }));
   emit(
     state,
     "runStart",
@@ -325,11 +341,13 @@ export function settleRuns(state) {
 }
 
 export function hurt(state, run, victim, dungeon, attacker = null) {
+  let guarded = null; // 被擋刀救下的人（擋刀者若因此戰死，寫進編年史「壯烈擋刀犧牲」，4-F-4 八卦日報頭條用）
   if (!attacker) {
     // 愛慕／靈魂伴侶的隊友有機會替他擋下這一下
     const guard = findProtector(state, partyOf(state, run), victim);
     if (guard) {
       emit(state, "social", logText(state, "guard", { A: guard, B: victim }));
+      guarded = victim;
       victim = guard;
     }
   }
@@ -367,6 +385,10 @@ export function hurt(state, run, victim, dungeon, attacker = null) {
     dies = false; // 健康免猝死鐵律：最重只會落入致命傷
     newLevel = Math.min(newLevel, INJURIES.length - 1);
   }
+  if (dies && rivalSpare(state, run)) { // 洲際團戰：合歡粉紅／萬年養老隊低殺意，致死率打折，免死者改落致命傷（4-F-1）
+    dies = false;
+    newLevel = Math.min(newLevel, INJURIES.length - 1);
+  }
   if (dies && (victim.deathWard ?? 0) >= 1) {
     // 替死護符（4-E-8）：消耗護符免死；一般護符改落輕傷，高階護符（fullRecover）傷勢清零並回滿理智
     victim.deathWard = 0;
@@ -386,6 +408,7 @@ export function hurt(state, run, victim, dungeon, attacker = null) {
     return;
   }
   if (dies) {
+    if (guarded) addChronicle(state, "guard", logText(state, "chronGuard", { A: victim, B: guarded, dungeon: dungeon.name }));
     run.deaths.push(victim.name);
     killSamsarite(state, victim, attacker ? `死在了隊友 ${attacker.name} 手上（【${dungeon.name}】）` : `死在了【${dungeon.name}】`, attacker, "dungeon"); // 副本戰死：夠格的人入英靈碑
     afterDeath(state, victim, attacker, partyOf(state, run)); // 同隊其他隊員理智 -10（4-C-2）
@@ -419,17 +442,18 @@ function finishRun(state, run) {
   // 情報條：不論成敗，每結算一場就累積（同副本多場依結算順序各加一次）
   const stats = run.mandatory ? null : state.dungeonStats[run.dungeonId]; // 強制任務沒有情報條與通關統計
   const ic = CONFIG.dungeon.intel;
-  if (stats) stats.intel = Math.min(ic.max, (stats.intel ?? ic.start) + ic.perRun);
+  if (stats) stats.intel = Math.min(ic.max, (stats.intel ?? ic.start) + ic.perRun * (1 + intelGainBonus(state))); // 星界觀測樞加成情報獲取（4-F-3）
 
   // 首通在「結算時」才判定：同副本同時開多場，先結算的吃首通，後結算的視為重打
   const firstClear = success && !run.mandatory && !hasIntel(state, dungeon);
   if (success) {
     const env = getEnvTag(run.envId) ?? null;
-    if (run.mandatory) {
+    if (run.rival) reward = Math.round(dungeon.reward * (dungeon.rival.rewardMult ?? 1) * (1 + rivalRewardBonus(state))); // 洲際團戰：宿敵隊獎勵倍率 × 星界觀測樞加成（4-F-1）
+    else if (run.mandatory) {
       // 血腥撫卹：每戰死 1 名隊友，存活者總積分 +25%（加算）；標籤／收藏／氣運加成照常，沒有獎勵遞減
       const bonus = 1 + run.deaths.length * CONFIG.forcedMission.deathRewardPct;
       reward = Math.round(dungeon.reward * bonus * (1 + tagRewardPct(survivors) + collectionEffects(state).rewardPct) * (1 + luckRewardPct(survivors)));
-    } else reward = Math.round(dungeon.reward * rewardMultiplier(state, dungeon, survivors, env) * (1 + (mut?.rewardPct ?? 0))); // 突變詞綴的結算積分加成（4-D-4）
+    } else reward = Math.round(dungeon.reward * rewardMultiplier(state, dungeon, survivors, env) * (1 + (mut?.rewardPct ?? 0)) * erosionRewardMult(run.erosion ?? 0)); // 突變詞綴的結算積分加成（4-D-4）、位面侵蝕積分倍率（4-F-3）
     if (firstClear) {
       reward += Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct);
       const first = firstRelicOf(run.dungeonId); // 首通奇物（4-D-4）：首次通關必得
@@ -475,13 +499,20 @@ function finishRun(state, run) {
     squadAfterClear(state, survivors); // 羈絆流：存活通關全隊理智 +4（4-E-2）
     if (dungeon.boss && !run.mandatory) for (const s of survivors) s.maxBossChapter = Math.max(s.maxBossChapter ?? 0, dungeon.chapter); // 遺物履歷（4-E-4）
     // 尾王守門：只算該章前 3 關（常規副本）的成功結算次數，含首通與重打
-    if (!dungeon.boss && !run.mandatory) {
+    if (!dungeon.boss && !run.mandatory && !run.erosion) {
       state.chapterClears ??= {};
       state.chapterClears[dungeon.chapter] = (state.chapterClears[dungeon.chapter] ?? 0) + 1;
     }
   } else {
     // 失敗但活著回來：一定帶傷
     for (const s of survivors) if (s.injury === 0) setInjury(s, 1);
+  }
+  let erosionCrystals = 0;
+  if (success && run.erosion > 0) { // 位面侵蝕：成功通關 k★ 固定掉 k 顆侵蝕結晶（4-F-3）
+    erosionCrystals = run.erosion * CONFIG.erosion.crystalPerStar;
+    state.erosionCrystals = (state.erosionCrystals ?? 0) + erosionCrystals;
+    state.maxErosion = Math.max(state.maxErosion ?? 0, run.erosion);
+    emit(state, "erosion", logText(state, "erosionClear", { star: run.erosion, dungeon: dungeon.name, n: erosionCrystals, total: state.erosionCrystals }));
   }
   if (rogue?.win) loot.rogueBounty = distributeLoot(state, survivors, rogue.bounty, { run, dungeon }).tax; // 賞金也走流派分潤（4-E-4）
   gearAfterRun(state, survivors); // 裝備被動：出戰扣理智、隨機扣隊友理智（4-E-8）
@@ -496,9 +527,10 @@ function finishRun(state, run) {
     s.sabotaged = false; // 沒被打中就沒用到，動過手腳的裝備回家後已被檢查
   }
 
+  const rivalReport = run.rival ? rivalFinish(state, run, dungeon, survivors, success) : null; // 洲際團戰結算：勝利特色獎勵／落敗懲罰、私奔、春風一度（存活者回家後才處理，4-F-1／2）
   const report = {
     runId: run.id,
-    mandatory: !!run.mandatory,
+    mandatory: !!run.mandatory && !run.rival,
     dungeonId: run.dungeonId,
     dungeonName: dungeon.name,
     success,
@@ -507,6 +539,9 @@ function finishRun(state, run) {
     greedy: !!run.greedy,
     hidden: run.hidden ? (run.hidden.passed ? "passed" : "failed") : null, // 貪婪探索：沒開隱藏房 = null
     relics,
+    erosion: run.erosion ?? 0,
+    erosionCrystals,
+    rival: rivalReport, // 洲際團戰摘要（4-F-1）或 null
     rogue, // 叛逃 Boss 對決結果 { name, win, bounty, crystal } 或 null（4-E-4）
     tax: loot.tax,
     share: loot.share,
@@ -520,7 +555,7 @@ function finishRun(state, run) {
     insights: [], // 這場頓悟的人：[{ name, power, subStat, subGain, n }]
     results: run.results,
     deaths: run.deaths,
-    survivors: survivors.map((s) => ({ name: s.name, injury: s.injury })),
+    survivors: survivors.filter((s) => state.samsarites.includes(s)).map((s) => ({ name: s.name, injury: s.injury })), // 私奔者已不在名冊
   };
   state.lastRun = report;
   state.runReports.push(report); // 結算視窗排隊（畫面層依序顯示）

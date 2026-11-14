@@ -24,6 +24,8 @@ import { relicBonusOf, refreshRelicBonus } from "./relics.js"; // 同上（Phase
 import { leaveHeirloom, dailyLineage } from "./lineage.js"; // 同上（Phase 4-E-4 遺物、子嗣、叛逃）
 import { dailyDrama } from "./drama.js"; // 同上（Phase 4-E-3 5:2:1 狗血事件）
 import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, communalInherit } from "./squad.js"; // 同上（Phase 4-E 小隊隊長與流派）
+import { newFacilities, dailyFacilities, refreshFacilityBonus, gravityPct, podsHeal, restSanityBonus } from "./facilities.js"; // 同上（Phase 4-F-3 永久基建）
+import { newRivalState, dailyRivals } from "./rivals.js"; // 同上（Phase 4-F-1／2 洲際宿敵團戰）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
 // ───────── 事件與日誌 ─────────
@@ -48,6 +50,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
 
   const state = {
     version: 1,
+    seed: seed | 0, // 本局種子碼（八卦日報頁尾印出；rngState 會隨遊戲變動，所以另存一份初始值）
     rngState: seed | 0,
     tick: 0,
     points: CONFIG.startingPoints,
@@ -75,6 +78,13 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     aiShopRngState: (seed ^ 0x5b0b) | 0, // 輪迴者自主逛街的獨立亂數流（見 engine/shopping.js）
     autoStrategy: CONFIG.auto.defaultStrategy, // 自動派遣風險策略 safe／balanced／aggressive（4-E-8，見 engine/dispatch.js）
     autoRiskLogDay: null, // 上次提示「任務風險過高」是第幾天（避免洗版）
+    facilities: newFacilities(), // 5 座永久基建的等級（4-F-3，見 engine/facilities.js）
+    erosionCrystals: 0, // 侵蝕結晶：位面侵蝕通關掉落，升級高階基建要消耗
+    autoUpgradeFacilities: false, // 自動建設：日結公庫高於 30000 × 空間等級時自動升級可負擔設施
+    autoErosion: false, // 自動挑戰侵蝕：自動派遣在主線卡關時改打已首通世界的侵蝕星級（4-F-3）
+    maxErosion: 0, // 通關過的最高侵蝕星級（八卦日報用）
+    facilityRngState: (seed ^ 0xfac1) | 0, // 生命溫養艙的獨立亂數流
+    rivals: newRivalState(seed), // 洲際宿敵團戰：倒數、待派任務、各隊叛逃名冊（4-F-1／2，見 engine/rivals.js）
     squad: newSquadState(), // 小隊隊長、流派、共產互助金（Phase 4-E，見 engine/squad.js）
     squadRngState: (seed ^ 0x5ad0) | 0, // 小隊獨立亂數流：政變、擋刀、狗血事件、子嗣、叛逃（4-E 全域設計原則）
     chronicles: [], // 《空間編年史》：[{ day, kind, text }]，最多 100 條（見 engine/lineage.js）
@@ -143,6 +153,8 @@ export function createSamsarite(state, rank, rng = state) {
     insightCount: 0, // 通關頓悟累計次數（上限 = (基因鎖階數 + 1) × 4）
     relicBonus: relicBonusOf(state), // 奇物圖鑑的全隊戰力加成（4-D-4；圖鑑變動時由 refreshRelicBonus 更新）
     steleBonus: steleBonusOf(state), // 英靈碑的全隊戰力加成（4-C-5；碑變動時由 refreshSteleBonus 更新）
+    facilityBonus: gravityPct(state), // 重力修煉室的全隊戰力加成（4-F-3；升級時由 refreshFacilityBonus 更新）
+    hybridOrigin: null, // 跨洲混血子嗣：出身的宿敵隊 id（4-F-2）
     inheritPower: 0, // 子嗣繼承值（4-E 才會用，先預留；算進本體值、會吃基因鎖乘區）
     gear: {}, // 商店裝備：{ weapon: 商品id, armor: 商品id }
     joinedDay: currentDay(state),
@@ -285,7 +297,7 @@ export function endOfDay(state) {
   let cost = 0;
   for (const s of atHome) {
     cost += upkeepOf(s, state); // 先用「今天的傷勢」算錢，再結算休息
-    s.stats.sanity = Math.min(100, s.stats.sanity + CONFIG.sanity.restRecover); // 人在空間（含帶傷休養）每日自然恢復理智（4-C-2）
+    s.stats.sanity = Math.min(100, s.stats.sanity + CONFIG.sanity.restRecover + restSanityBonus(state)); // 人在空間（含帶傷休養）每日自然恢復理智（4-C-2）
     taxSanityDaily(state, s); // 稅率高壓／低稅的每日理智影響（4-D-1）
     gearDaily(state, s); // 黑貨裝備被動：每日理智、入魔傾向（4-E-8）
     if (s.podLockDays > 0 && --s.podLockDays <= 0) s.lockedInPodBy = null; // 私人休眠艙倒數（4-D-2）
@@ -296,6 +308,7 @@ export function endOfDay(state) {
         emit(state, "healed", logText(state, "healed", { A: s }), { samsariteId: s.id });
       }
     }
+    podsHeal(state, s); // 生命溫養艙：重傷者多一次自然痊癒機會（4-F-3；沒蓋溫養艙不消耗亂數）
     // 體魄（Phase 4-C-1）：總 hp 超過 100 的部分每滿 40 點，+25% 機率額外多恢復 1 級（降 1 級，休養天數重算；沒有額外加成時不消耗亂數）
     if (s.injury > 0) {
       const { sure, chance } = hpRestBonus(s);
@@ -317,6 +330,7 @@ export function endOfDay(state) {
   announceDebtIfNew(state, wasInDebt);
   dailyShopping(state); // 輪迴者用私房錢自主逛街、強化（維持費與休養之後，4-D-3）
   dailyAirdrop(state);
+  dailyFacilities(state); // 自動建設（4-F-3）：公庫高於安全水位才動用
 
   if (state.points < 0 && state.samsarites.length > 0) {
     if (hitLimit) {
@@ -462,6 +476,7 @@ export function advanceTick(state) {
     dailyWishes(state); // 心情／休假倒數、許願超時（Phase 3-B）
     dailyMarket(state); // 黑市到期換貨（4-D-2，獨立亂數流）
     dailyBoard(state); // 任務榜輪換／補槽（4-D-4，獨立亂數流）
+    dailyRivals(state); // 洲際碰撞：倒數、刷出、逾時徵召（4-F-1，獨立亂數流）
     dailyMandatory(state); // 主神強制血腥任務：發布／逾時抹殺（Phase 4-C-4，獨立亂數流）
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
@@ -630,6 +645,17 @@ export function deserialize(json) {
     s.lockedInPodBy ??= null;
     s.podLockDays ??= 0;
   }
+  state.seed ??= null; // 4-F-4：舊存檔沒有種子碼
+  state.facilities = { ...newFacilities(), ...(state.facilities ?? {}) }; // 4-F-3：舊存檔補基建、侵蝕結晶與開關
+  state.erosionCrystals ??= 0;
+  state.autoUpgradeFacilities ??= false;
+  state.autoErosion ??= false;
+  state.maxErosion ??= 0;
+  state.facilityRngState ??= (state.rngState ^ 0xfac1) | 0;
+  state.rivals ??= newRivalState(state.rngState); // 4-F-1／2：舊存檔補洲際碰撞狀態
+  for (const s of state.samsarites) s.hybridOrigin ??= null;
+  for (const r of state.runs) r.erosion ??= 0;
+  refreshFacilityBonus(state);
   state.settings.guideSeen ??= false; // 4-D-7 上崗手冊：舊存檔當作還沒看過
   state.settings.followId ??= null; // 舊存檔沒有視角鎖定欄位，當沒鎖定
   // 之後新增的暫停事件種類，舊存檔沒有就補上預設值
