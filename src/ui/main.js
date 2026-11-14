@@ -29,7 +29,7 @@ import {
   maxGeneOf,
   geneTierOf,
 } from "../engine/growth.js";
-import { effectivePower } from "../engine/tags.js";
+import { effectivePower, subStat, defenseChance, speedSaveChance } from "../engine/tags.js";
 import { shopTier, nextTierInfo, checkBuy, buyItem, collectionEffects } from "../engine/shop.js";
 import { SHOP_ITEMS, SHOP_KIND_LABELS, SHOP_SLOT_LABELS, getShopItem } from "../data/shop.js";
 import { getSpecialReward } from "../data/dungeons.js";
@@ -636,15 +636,15 @@ function detail() {
       <tr><td>狀態</td><td>${s.location === "pod" ? `🍼 催熟艙（還要 ${s.podDaysLeft} 天）` : `${home ? "主神空間" : "副本中"}・${injuryLabel(s)}`}</td></tr>
       ${s.parents ? `<tr><td>家長</td><td>${parentNames(state, s).join("、") || "（已不在世）"}${s.inheritedTags?.length ? `<br /><small>繼承標籤：${s.inheritedTags.map((id) => getTag(id)?.name ?? id).join("、")}</small>` : ""}</td></tr>` : ""}
       ${s.mood || s.vacationDays > 0 || wishesOf(state, s.id).length ? `<tr><td>心情／許願</td><td>${statusExtras(s).replace("<br />", "")}</td></tr>` : ""}
-      <tr><td>生命</td><td>${s.stats.hp}</td></tr>
+      <tr><td>生命</td><td>${subStat(s, "hp")}（超過 100 的部分幫助養傷；≥ ${CONFIG.combat.hpHalfPenalty} 傷勢戰力懲罰減半）</td></tr>
       <tr><td>戰力</td><td>${effectivePower(s)}（本體 ${s.stats.power + (s.inheritPower ?? 0)} × 基因鎖 ×${gene.powerMult}，再加裝備白值、乘標籤與心情）</td></tr>
       <tr><td>基因鎖</td><td>第 ${s.geneLock ?? 0} 階【${gene.name}】・${s.rank} 級最高第 ${maxGeneOf(s)} 階</td></tr>
       <tr><td>強化</td><td>${s.enhanceCount ?? 0}/${enhanceCapOf(s)} 次・成長倍率 ×${RANKS[s.rank].growthMult}<br /><small>每次：戰力 +${gain.power}、生命 +${gain.hp}、防禦／速度／運氣各 +${gain.defense}</small></td></tr>
       <tr><td>頓悟</td><td>${s.insightCount ?? 0}/${insightCapOf(s)} 次<br /><small>副本通關時每位存活隊員 ${Math.round(CONFIG.insight.chance * 100)}% 機率頓悟（戰力 +${Math.round(CONFIG.insight.gainPower * RANKS[s.rank].growthMult)}、再隨機一項副屬性）</small></td></tr>
-      <tr><td>防禦</td><td>${s.stats.defense}</td></tr>
-      <tr><td>速度</td><td>${s.stats.speed}</td></tr>
+      <tr><td>防禦</td><td>${subStat(s, "defense")}（受傷時 ${Math.round(defenseChance(s) * 100)}% 機率少 1 級）</td></tr>
+      <tr><td>速度</td><td>${subStat(s, "speed")}（副本戰死時 ${Math.round(speedSaveChance(s) * 100)}% 機率鎖血改致命傷）</td></tr>
       <tr><td>理智</td><td>${s.stats.sanity}</td></tr>
-      <tr><td>運氣</td><td>${s.stats.luck}</td></tr>
+      <tr><td>運氣</td><td>${subStat(s, "luck")}（每點 +${CONFIG.combat.luckReward.perPoint * 100}% 通關積分，看隊伍平均）</td></tr>
       <tr><td>維持費</td><td>${upkeepOf(s, state)} 分 / 天${s.location === "pod" ? "（催熟艙固定費用）" : `（基礎 ${upkeepBaseOf(state)} ×（1 + 階級 ${Math.round(RANKS[s.rank].upkeepPct * 100)}% + 傷勢 ${Math.round(INJURIES[s.injury].upkeepPct * 100)}%））`}</td></tr>
       <tr><td>資歷</td><td>第 ${s.joinedDay} 天加入・出征 ${s.runs} 次</td></tr>
       <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}`).join("・")}</td></tr>

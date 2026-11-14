@@ -82,6 +82,16 @@ export const CONFIG = {
     reward: [260, 900, 3000, 9500, 30000],
   },
 
+  // ── 戰鬥副屬性（Phase 4-C-1）：hp／defense／speed／luck 取總值 = stats（初始＋強化＋頓悟）＋裝備白值，不吃基因鎖乘區 ──
+  combat: {
+    defense: { k: 60, max: 0.65 }, // 受傷時觸發「傷勢少 1 級」的機率 = min(max, def ÷ (def + k))；原判輕傷則免傷
+    speed: { k: 80, max: 0.5 }, // 副本戰死時觸發「極限閃避鎖血」（免死、改為致命傷）的機率 = min(max, spd ÷ (spd + k))
+    hpRest: { base: 100, step: 40, chancePerStep: 0.25 }, // 超過 base 的部分每滿 step 點，每日休養 +chancePerStep 機率額外多恢復 1 級（可超過 100%）
+    hpHalfPenalty: 180, // 總 hp 達到這個值，重傷／致命傷的戰力懲罰減半
+    injuryPowerPct: [0, 0, -0.2, -0.4], // 傷勢等級（0 無傷／1 輕／2 重／3 致命）對個人有效戰力的百分比（Q2 暫定值，需驗證）
+    luckReward: { perPoint: 0.005, max: 0.5 }, // 存活隊員平均 luck 每 1 點 +0.5% 結算積分，上限 +50%
+  },
+
   // ── 標籤（Phase 2）──
   tags: {
     tagBonusCap: 0.1, // 全隊標籤對「單房通過率」的加減上限（Phase 4-B：露葵拍板由 ±30% 改 ±10%）

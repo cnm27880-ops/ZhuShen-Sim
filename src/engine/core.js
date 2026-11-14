@@ -4,7 +4,7 @@
 import { CONFIG, RANKS, INJURIES, PAUSE_EVENTS } from "../data/config.js";
 import { SURNAMES, GIVEN_NAMES } from "../data/names.js";
 import { rand, randInt, pick, weighted } from "./rng.js";
-import { rollTags } from "./tags.js";
+import { rollTags, hpRestBonus } from "./tags.js";
 import { findSpecialRewardByName, getSpecialReward } from "../data/dungeons.js";
 import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
@@ -213,6 +213,15 @@ export function endOfDay(state) {
       if (s.restDaysLeft <= 0) {
         setInjury(s, 0);
         emit(state, "healed", logText(state, "healed", { A: s }), { samsariteId: s.id });
+      }
+    }
+    // 體魄（Phase 4-C-1）：總 hp 超過 100 的部分每滿 40 點，+25% 機率額外多恢復 1 級（降 1 級，休養天數重算；沒有額外加成時不消耗亂數）
+    if (s.injury > 0) {
+      const { sure, chance } = hpRestBonus(s);
+      const extra = sure + (chance > 0 && rand(state) < chance ? 1 : 0);
+      if (extra > 0) {
+        setInjury(s, Math.max(0, s.injury - extra));
+        if (s.injury === 0) emit(state, "healed", logText(state, "healed", { A: s }), { samsariteId: s.id });
       }
     }
   }

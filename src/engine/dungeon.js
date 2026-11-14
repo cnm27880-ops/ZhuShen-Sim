@@ -11,7 +11,7 @@ import { rand, pick, weighted } from "./rng.js";
 import { wishesAfterRun } from "./wishes.js";
 import { godAfterRun } from "./godEvents.js";
 import { rollInsights, rollKarmaDrop } from "./growth.js";
-import { effectivePower, moodPassBonus, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf } from "./tags.js";
+import { effectivePower, moodPassBonus, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf, defenseChance, speedSaveChance, luckRewardPct } from "./tags.js";
 import { partyRelationBonus, pickClash, clashText, afterClash, afterDeath, findProtector } from "./relations.js";
 import { logText } from "./templates.js";
 import { emit, setInjury, killSamsarite, checkGameOver, currentDay } from "./core.js";
@@ -76,7 +76,7 @@ export function rewardTierMult(state, dungeon) {
   return CONFIG.dungeon.rewardTiers.find((t) => nth <= t.upTo).mult;
 }
 export function rewardMultiplier(state, dungeon, party = [], env = null) {
-  return rewardTierMult(state, dungeon) * (1 + tagRewardPct(party) + collectionEffects(state).rewardPct) * (env?.rewardMult ?? 1);
+  return rewardTierMult(state, dungeon) * (1 + tagRewardPct(party) + collectionEffects(state).rewardPct) * (1 + luckRewardPct(party)) * (env?.rewardMult ?? 1);
 }
 
 export function partyPower(party) {
@@ -219,7 +219,7 @@ export function settleRuns(state) {
   for (const run of [...state.runs]) if (runIsOver(state, run)) finishRun(state, run);
 }
 
-function hurt(state, run, victim, dungeon, attacker = null) {
+export function hurt(state, run, victim, dungeon, attacker = null) {
   if (!attacker) {
     // 愛慕／靈魂伴侶的隊友有機會替他擋下這一下
     const guard = findProtector(state, partyOf(state, run), victim);
@@ -246,9 +246,29 @@ function hurt(state, run, victim, dungeon, attacker = null) {
   const shield = Math.min(cap, injuryShieldOf(victim) + collectionEffects(state).injuryShield); // 個人（標籤＋裝備）＋收藏的全員減免
   if (shield > 0 && rand(state) < shield) gained = Math.max(1, gained - 1);
   else if (shield < 0 && rand(state) < -shield) gained += 1;
-  const newLevel = victim.injury + gained + (sabotaged ? 1 : 0);
+  // 防禦（Phase 4-C-1）：有機率讓這次傷勢少 1 級，原判輕傷則免傷（和上面的標籤／裝備減免獨立疊加）
+  const healthy = victim.injury === 0; // 進這個房間前是健康無傷：這次絕不直接戰死
+  if (gained > 0 && rand(state) < defenseChance(victim)) {
+    gained -= 1;
+    if (gained === 0 && !sabotaged) {
+      emit(state, "dodge", logText(state, "defenseBlock", { A: victim }));
+      return;
+    }
+  }
+  let newLevel = victim.injury + gained + (sabotaged ? 1 : 0);
 
-  if ((deathBonus > 0 && rand(state) < deathBonus) || newLevel >= INJURIES.length) {
+  let dies = (deathBonus > 0 && rand(state) < deathBonus) || newLevel >= INJURIES.length;
+  if (healthy) {
+    dies = false; // 健康免猝死鐵律：最重只會落入致命傷
+    newLevel = Math.min(newLevel, INJURIES.length - 1);
+  }
+  if (dies && rand(state) < speedSaveChance(victim)) {
+    // 速度：極限閃避鎖血，免於死亡，改落致命傷
+    setInjury(victim, INJURIES.length - 1);
+    emit(state, "injury", logText(state, "speedSave", { A: victim }));
+    return;
+  }
+  if (dies) {
     run.deaths.push(victim.name);
     killSamsarite(state, victim, attacker ? `死在了隊友 ${attacker.name} 手上（【${dungeon.name}】）` : `死在了【${dungeon.name}】`, attacker);
     afterDeath(state, victim, attacker);
