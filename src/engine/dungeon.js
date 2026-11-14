@@ -10,6 +10,7 @@ import { ENV_TAGS, getEnvTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
 import { wishesAfterRun } from "./wishes.js";
 import { godAfterRun } from "./godEvents.js";
+import { rollInsights, rollKarmaDrop } from "./growth.js";
 import { effectivePower, moodPassBonus, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf } from "./tags.js";
 import { partyRelationBonus, pickClash, clashText, afterClash, afterDeath, findProtector } from "./relations.js";
 import { logText } from "./templates.js";
@@ -45,9 +46,25 @@ export function roomCount(dungeon) {
 export function roomsToClear(dungeon) {
   return chapterOf(dungeon).toClear;
 }
-/** 空間等級 ≥ 章節才解鎖 */
+/** 這個副本是全域第幾關（1~20；DUNGEONS 陣列順序就是關卡編號） */
+export function dungeonNumber(dungeon) {
+  return DUNGEONS.indexOf(dungeon) + 1;
+}
+
+/**
+ * 尾王守門（Phase 4-B）：各章尾王要「該章前 3 關合計成功結算滿 CONFIG.bossGate.requiredClears 次」才開放。
+ * 已經首通過（或該章尾王首通天數有紀錄）的不再受鎖。回傳 { applies: 是不是尾王, have, need, open }
+ */
+export function bossGateInfo(state, dungeon) {
+  const need = CONFIG.bossGate.requiredClears;
+  const have = state.chapterClears?.[dungeon.chapter] ?? 0;
+  const cleared = !!state.chapterClearDay?.[dungeon.chapter] || (state.dungeonStats?.[dungeon.id]?.clears ?? 0) > 0;
+  return { applies: !!dungeon.boss, have, need, open: !dungeon.boss || cleared || have >= need };
+}
+
+/** 空間等級 ≥ 章節，而且（尾王的話）守門條件達成才解鎖 */
 export function isUnlocked(state, dungeon) {
-  return dungeon.chapter <= (state.spaceLevel ?? 1);
+  return dungeon.chapter <= (state.spaceLevel ?? 1) && bossGateInfo(state, dungeon).open;
 }
 export function unlockedDungeons(state) {
   return DUNGEONS.filter((d) => isUnlocked(state, d));
@@ -113,7 +130,11 @@ function partyOf(state, run) {
 export function startRun(state, dungeonId, partyIds) {
   const dungeon = getDungeon(dungeonId);
   if (!dungeon) return { ok: false, reason: "找不到這個副本" };
-  if (!isUnlocked(state, dungeon)) return { ok: false, reason: `第 ${dungeon.chapter} 章還沒解鎖（空間 Lv.${dungeon.chapter} 才能進）` };
+  if (dungeon.chapter > (state.spaceLevel ?? 1)) return { ok: false, reason: `第 ${dungeon.chapter} 章還沒解鎖（空間 Lv.${dungeon.chapter} 才能進）` };
+  const gate = bossGateInfo(state, dungeon);
+  if (!gate.open) {
+    return { ok: false, reason: `尾王還沒開放：要先在第 ${dungeon.chapter} 章前 3 關合計通關滿 ${gate.need} 次（目前 ${gate.have}/${gate.need}）` };
+  }
   if (partyIds.length < 1 || partyIds.length > CONFIG.partyMax) {
     return { ok: false, reason: `一隊要 1~${CONFIG.partyMax} 人` };
   }
@@ -275,6 +296,11 @@ function finishRun(state, run) {
     }
     state.points += reward;
     stats.clears += 1;
+    // 尾王守門：只算該章前 3 關（常規副本）的成功結算次數，含首通與重打
+    if (!dungeon.boss) {
+      state.chapterClears ??= {};
+      state.chapterClears[dungeon.chapter] = (state.chapterClears[dungeon.chapter] ?? 0) + 1;
+    }
   } else {
     // 失敗但活著回來：一定帶傷
     for (const s of survivors) if (s.injury === 0) setInjury(s, 1);
@@ -296,6 +322,8 @@ function finishRun(state, run) {
     passedCount,
     rooms: roomCount(dungeon),
     levelUp,
+    karma: 0, // 這場掉了幾顆因果結晶
+    insights: [], // 這場頓悟的人：[{ name, power, subStat, subGain, n }]
     results: run.results,
     deaths: run.deaths,
     survivors: survivors.map((s) => ({ name: s.name, injury: s.injury })),
@@ -317,6 +345,10 @@ function finishRun(state, run) {
     text = logText(state, survivors.length > 0 ? "runFail" : "runWipe", vars);
   }
   emit(state, "runEnd", text);
+  if (success) {
+    report.karma = rollKarmaDrop(state, dungeon, dungeonNumber(dungeon), firstClear); // 因果結晶（獨立亂數流）
+    report.insights = rollInsights(state, survivors); // 存活隊員各自擲頓悟（獨立亂數流）
+  }
   wishesAfterRun(state, run.dungeonId, success, partyIds, survivors.map((s) => s.id)); // 想去這個副本的許願結算
   godAfterRun(state, run.dungeonId, success, partyIds, survivors.map((s) => s.id)); // 主神突襲任務結算
   checkGameOver(state);

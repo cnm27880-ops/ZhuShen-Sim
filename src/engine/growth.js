@@ -129,6 +129,25 @@ export function breakGene(state, id) {
   return { ok: true, cost: check.cost, tier: s.geneLock };
 }
 
+// ───────── 因果結晶掉落 ─────────
+
+/**
+ * 副本通關結算時呼叫（只在成功時）。number = 該副本是全域第幾關（1~20）。
+ * 掉落有兩種，各自獨立、可疊加：① 首通該關必掉（CONFIG.karma.firstClear）② 該章任一副本通關機率掉 1 顆（chapterRoll）。
+ * 機率用獨立亂數流 state.growth.rngState，不動主亂數。回傳這次掉了幾顆。
+ */
+export function rollKarmaDrop(state, dungeon, number, firstClear) {
+  const K = CONFIG.karma;
+  let n = firstClear ? (K.firstClear[number] ?? 0) : 0;
+  const chance = K.chapterRoll[dungeon.chapter];
+  if (chance && rand(growth(state)) < chance) n += 1;
+  if (n > 0) {
+    state.karmaCrystals = (state.karmaCrystals ?? 0) + n;
+    emit(state, "karma", logText(state, "karmaDrop", { n, total: state.karmaCrystals }));
+  }
+  return n;
+}
+
 // ───────── 常規通關頓悟 ─────────
 
 const SUB_NAMES = { hp: "生命", defense: "防禦", speed: "速度", luck: "運氣" };

@@ -75,11 +75,14 @@ test("還沒解鎖的章節不能進，自動派遣也不會挑", () => {
   assert.ok(unlockedDungeons(state).every((d) => d.chapter === 1));
   assert.equal(planAutoDispatch(state).dungeon.chapter, 1);
   state.spaceLevel = 3;
-  assert.equal(planAutoDispatch(state).dungeon.id, "ch3_4", "夠強就挑已解鎖中獎勵最高的（第 3 章尾王）");
+  assert.equal(planAutoDispatch(state).dungeon.id, "ch3_3", "尾王還沒開放（守門），挑已解鎖中獎勵最高的（第 3 章第 3 關）");
+  state.chapterClears[3] = CONFIG.bossGate.requiredClears;
+  assert.equal(planAutoDispatch(state).dungeon.id, "ch3_4", "守門條件達成後，夠強就挑獎勵最高的（第 3 章尾王）");
 });
 
 test("首通本章尾王：空間升 1 級、記下第幾天、解鎖下一章；再打一次不會再升", () => {
   const state = setup();
+  state.chapterClears[1] = CONFIG.bossGate.requiredClears; // 尾王守門條件（見 gate.test.js）
   let first = null;
   for (let i = 0; i < 20 && !first; i++) {
     const r = runOnce(state, "ch1_4");
@@ -102,6 +105,7 @@ test("首通本章尾王：空間升 1 級、記下第幾天、解鎖下一章�
 test("首通第 5 章尾王：主線通關，空間停在 Lv.5", () => {
   const state = setup();
   state.spaceLevel = 5;
+  state.chapterClears[5] = CONFIG.bossGate.requiredClears;
   for (let i = 0; i < 20 && !state.chapterClearDay[5]; i++) runOnce(state, "ch5_4");
   assert.ok(state.chapterClearDay[5] >= 1);
   assert.equal(state.spaceLevel, 5);
