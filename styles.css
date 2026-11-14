@@ -640,3 +640,14 @@ button:hover:not(:disabled) { box-shadow: none; }
 .tag-SR { border-color: #a855f7; background: #fff; color: #000; }
 .tag-SSR { border-color: #eab308; background: #fff; color: #000; }
 .tag-UR { border-color: #ef4444; background: #fff; color: #000; }
+
+/* ── 殘留清理（DESIGN.md）：金色只給主神、不用中灰低對比文字、標題層級一致 ── */
+.mut-chip, .mut-chip.calm_wind { background: #fff; border: 1px solid #000; color: #000; border-radius: 50px; padding: 1px 9px; }
+.relic.have { background: #f7f7f5; border-color: #000; }
+#btn-squad { border-color: var(--line); background: #fff; }
+.captain-card { border: 1px solid #000; background: #f7f7f5; border-radius: 8px; }
+.bio-ach { background: #f7f7f5; border: 1px solid var(--line); color: #000; }
+button:disabled { opacity: 1; background: #f1f1f1; border-color: #e6e6e6; color: #6b6b6b; }
+button.primary:disabled { background: #f1f1f1; color: #6b6b6b; border-color: #e6e6e6; }
+#modal h3:not(:first-child), #modal h4 { font-size: 16px; font-weight: 700; margin: 24px 0 8px; color: #000; }
+#modal small, #modal .muted { color: #4b4f58; }
