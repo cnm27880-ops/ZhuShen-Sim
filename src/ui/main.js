@@ -189,6 +189,21 @@ function render() {
   renderRoster();
   renderDaySummary();
   renderModal();
+  for (const id of ["topbar", "actions", "roster", "modal", "log", "banner", "day-summary", "run-list"]) stripEmoji($(id));
+}
+
+/** DESIGN.md：不用 emoji 當裝飾。畫面文字統一在這裡濾掉（小人頭頂泡泡是 CSS 圖形，不受影響；副本路線圖保留原樣） */
+const EMOJI_RE = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]/gu;
+const EMOJI_TEST = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]/u; // 判斷用（不帶 g，避免 lastIndex 跳過節點）
+function stripEmoji(root) {
+  if (!root) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const hits = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) if (EMOJI_TEST.test(n.nodeValue)) hits.push(n);
+  for (const n of hits) {
+    const cleaned = n.nodeValue.replace(EMOJI_RE, "").replace(/^\s+/, (m) => (n.previousSibling ? m : ""));
+    n.nodeValue = cleaned.trim() === "" && n.parentElement?.textContent.trim() === "" ? "鎖" : cleaned;
+  }
 }
 
 function renderTopbar() {
@@ -596,7 +611,7 @@ function renderRoster() {
       (s) => `
       <div class="card rank-border-${s.rank} ${s.location === "dungeon" ? "away" : s.location === "pod" ? "pod" : ""}" data-action="open-detail" data-id="${s.id}">
         <div class="card-top">${rankBadge(s.rank)}<span class="grow">${s.name}</span><span>${s.locked ? "🔒" : ""}</span><span class="follow-btn ${s.id === state.settings.followId ? "on" : ""}" data-action="toggle-follow" data-id="${s.id}" title="${s.id === state.settings.followId ? "取消鎖定視角" : "鎖定視角（他下副本時畫面跟著切）"}">👁</span></div>
-        <div class="card-meta"><span>⚔️ ${effectivePower(s)}</span><span>🧠 ${s.stats.sanity}</span><span>💸 ${upkeepOf(s, state)}/天</span><span title="私房錢">💰 ${s.wallet ?? 0}</span></div>
+        <div class="card-meta"><span>戰力 ${effectivePower(s)}</span><span>理智 ${s.stats.sanity}</span><span>維持 ${upkeepOf(s, state)}</span><span title="私房錢">私房 ${s.wallet ?? 0}</span></div>
         <div class="tags">${tagChips(s)}</div>
         <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
         <div class="card-status">${locationLabel(s)}${statusExtras(s)}</div>
@@ -1509,7 +1524,7 @@ function runResult() {
   const r = state.runReports[0];
   if (!r) return `<h3>副本結算</h3><p>沒有待看的結算。</p><div class="modal-actions">${closeButton}</div>`;
   const waiting = state.runReports.length - 1;
-  const rooms = r.results.map((ok) => (ok ? "✅" : "❌")).join(" ");
+  const rooms = r.results.map((ok) => (ok ? "通過" : "失敗")).join("　");
   const survivors = r.survivors.length
     ? r.survivors.map((s) => `${s.name}（${INJURIES[s.injury].name}）`).join("、")
     : "無";
