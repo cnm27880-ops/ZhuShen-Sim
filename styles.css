@@ -362,3 +362,21 @@ table.stats td:first-child { color: var(--muted); width: 34%; }
 .relic.have { background: #fff9db; border-color: #ffd43b; }
 .relic:not(.have) { opacity: 0.45; filter: grayscale(1); }
 .shop-log { font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+/* ── Phase 4-E-5：小隊指揮部、遺物庫、空間編年史 ── */
+#btn-squad { border-color: #ffd43b; background: #fff9db; }
+.captain-card { border: 1.5px solid #ffd43b; background: #fff9db; border-radius: 12px; padding: 10px 14px; line-height: 1.75; margin-bottom: 8px; }
+.style-chip { display: inline-block; padding: 1px 8px; border-radius: 9px; font-size: 12px; background: #e7f5ff; border: 1px solid #74c0fc; color: #1864ab; }
+.snub-warning { margin-top: 4px; padding: 4px 8px; border-radius: 8px; background: #fff5f5; border: 1px solid #ffa8a8; color: var(--bad); font-size: 12px; line-height: 1.6; }
+.chronicle { display: flex; flex-direction: column; gap: 4px; max-height: 52vh; overflow-y: auto; }
+.chronicle-row { display: flex; gap: 8px; padding: 5px 8px; border-left: 3px solid var(--line); font-size: 13px; line-height: 1.6; }
+.chronicle-row .day { min-width: 52px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chronicle-row.k-boss, .chronicle-row.k-captain { border-left-color: #fab005; }
+.chronicle-row.k-coup, .chronicle-row.k-defect, .chronicle-row.k-snub { border-left-color: #fa5252; }
+.chronicle-row.k-stele, .chronicle-row.k-heirloom, .chronicle-row.k-slain { border-left-color: #868e96; }
+.chronicle-row.k-birth { border-left-color: #51cf66; }
+.chronicle-row.k-drama { border-left-color: #f06595; }
+.heir-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.log-squad { color: #ffd43b; font-weight: 700; border-left-color: #fab005; background: rgba(250, 176, 5, 0.08); }
+.log-drama { color: #f783ac; border-left-color: #f06595; }
+.modal-open #run-list { display: none !important; } /* 4-E-7：放大視窗開著時隱藏角落迷你小窗 */

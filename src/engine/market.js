@@ -7,6 +7,7 @@
 //   - 特產綁定的世界情報滿格 → 85 折
 //   - 亂數用獨立流 state.market.rngState（黑市輪換、之後的任務榜刷新與突變抽樣也共用），不動主亂數
 
+import { squadMarketMult } from "./squad.js"; // 傭兵流黑市 95 折（4-E-2；循環引用只在執行時呼叫）
 import { CONFIG } from "../data/config.js";
 import { SHOP_ITEMS, getShopItem } from "../data/shopItems.js";
 import { weighted } from "./rng.js";
@@ -104,7 +105,8 @@ export function slotPrice(state, slot) {
   const item = getShopItem(slot?.itemId);
   if (!item) return { price: 0, discounted: false };
   const discounted = !!item.worldId && intelFull(state, item.worldId);
-  return { price: discounted ? Math.round(item.price * CONFIG.market.intelDiscount) : item.price, discounted };
+  // 情報滿格 85 折；傭兵流再 95 折，兩者乘算（約 8 折，4-E-2）
+  return { price: Math.round(item.price * (discounted ? CONFIG.market.intelDiscount : 1) * squadMarketMult(state)), discounted };
 }
 
 /** 能不能買這一格？opts：{ payer, victimId } */

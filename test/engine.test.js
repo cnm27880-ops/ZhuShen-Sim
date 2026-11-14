@@ -160,10 +160,10 @@ test("首次通關：額外 + 基礎獎勵 × 50%、掉一個特殊獎勵並收�
 test("每日結算：扣維持費、養傷倒數、傷癒", () => {
   const state = createNewGame(1);
   state.samsarites = [];
-  const s = make(state, "C", 1); // 輕傷：休 1 天、每天 8 × 1.25 = 10 分
+  const s = make(state, "C", 1); // 輕傷：休 1 天、每天 8 × 1.25 = 10 分，新手期（空間 Lv.1）減免 50% = 5 分
   state.tick = CONFIG.ticksPerDay;
   endOfDay(state);
-  assert.equal(state.points, CONFIG.startingPoints - 10);
+  assert.equal(state.points, CONFIG.startingPoints - 5);
   assert.equal(s.injury, 0);
 });
 
@@ -208,7 +208,7 @@ test("一場副本剛好過 1 天，而且出征的人不扣維持費", () => {
   while (state.runs.length && guard++ < 30) step(state);
   assert.equal(state.tick, CONFIG.ticksPerDay);
   assert.equal(state.runs.length, 0);
-  assert.equal(state.points, before - upkeepOf(stay) + state.lastRun.tax);
+  assert.equal(state.points, before - upkeepOf(stay, state) + state.lastRun.tax);
   assert.ok(state.samsarites.every((s) => s.location === "space"));
 });
 

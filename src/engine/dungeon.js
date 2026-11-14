@@ -24,6 +24,11 @@ import { grantRelic } from "./relics.js";
 import { afterRunBoard, boardOf } from "./board.js";
 import { intelFull, marketOf } from "./market.js";
 import { addLove } from "./relations.js";
+import { failSanityLoss, squadBossPowerMult, squadClashMult, squadBondMult, squadDefenseBonus, squadAfterClear, bondGuard, farmingPigDied, farmingRewardMult } from "./squad.js";
+import { addChronicle } from "./lineage.js";
+import { dramaAfterRun } from "./drama.js";
+import { rollRogueEncounter, rogueBossOf, rogueDungeon, resolveRogueFight } from "./lineage.js";
+import { squadRng } from "./squad.js";
 
 /** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
 export function relationBonus(state, party) {
@@ -100,8 +105,10 @@ export function rewardMultiplier(state, dungeon, party = [], env = null) {
   return rewardTierMult(state, dungeon) * (1 + tagRewardPct(party) + collectionEffects(state).rewardPct) * (1 + luckRewardPct(party)) * (env?.rewardMult ?? 1);
 }
 
+/** 小隊總戰力：生死搭檔（4-E-3）兩人都在隊上時，雙方有效戰力各 +CONFIG.drama.pairPowerPct */
 export function partyPower(party) {
-  return party.reduce((sum, s) => sum + effectivePower(s), 0);
+  const ids = new Set(party.map((s) => s.id));
+  return party.reduce((sum, s) => sum + effectivePower(s) * (s.bondPartnerId && ids.has(s.bondPartnerId) ? 1 + CONFIG.drama.pairPowerPct : 1), 0);
 }
 
 /** 飽和公式的戰力基礎率：scale × P ÷ (P + R × k) */
@@ -116,7 +123,7 @@ export function roomPassRate(state, party, dungeon, env = null, swing = 0, intel
   // intelLocked：並行副本在「開場那一刻」就鎖定情報條（null = 看目前的情報條）
   const intel = intelLocked ?? intelBonus(state, dungeon);
   const raw =
-    powerRate(partyPower(party), dungeon.recommendedPower) +
+    powerRate(partyPower(party) * squadBossPowerMult(state, !!dungeon.boss), dungeon.recommendedPower) + // 菁英流打尾王戰力 ×1.15（4-E-2）
     relationBonus(state, party) +
     tagBonus(state, party, dungeon, env) +
     moodPassBonus(party) +
@@ -196,6 +203,7 @@ export function startRun(state, dungeonId, partyIds, opts = {}) {
   const firstTime = mandatory ? false : !hasIntel(state, dungeon);
   const mutationId = slot?.mutationId ?? null;
   const run = { id: state.nextRunId++, startTick: state.tick, dungeonId, mutationId, slotId: slot?.id ?? null, greedy: !!opts.greedy, envId: env?.id ?? null, firstTime, intel, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
+  if (!mandatory) run.rogueId = rollRogueEncounter(state); // 常規副本 10% 遭遇叛逃野生 Boss 亂入最後一房（4-E-4）
   if (mandatory) {
     run.mandatory = true;
     run.dungeonDef = dungeon; // 開場快照：R 與獎勵不隨之後名冊變動
@@ -241,20 +249,20 @@ export function stepRun(state, run = state.runs[0]) {
   const party = partyOf(state, run);
   const env = getEnvTag(run.envId) ?? null;
   const progress = `[${dungeon.name}・${Math.round(((run.roomIndex + 1) / roomCount(dungeon)) * 100)}%・${room.name}]`;
-  const clash = pickClash(state, party, run.roomIndex, mut?.clashMult ?? 1); // 仇人／背刺者：先打自己人，這個房間算失敗
+  const clash = pickClash(state, party, run.roomIndex, (mut?.clashMult ?? 1) * squadClashMult(state)); // 仇人／背刺者：先打自己人，這個房間算失敗
   const passed = clash ? false : rand(state) < roomPassRate(state, party, dungeon, env, tagSwing(state, party), run.intel);
 
   if (clash) {
     emit(state, "clash", `${progress} ${clashText(state, clash)}`);
     afterClash(state, clash);
-    loseSanityOf(clash.victim, CONFIG.sanity.roomFailLoss + (mut?.failSanity ?? 0));
+    loseSanityOf(clash.victim, failSanityLoss(state, party, CONFIG.sanity.roomFailLoss + (mut?.failSanity ?? 0)));
     hurt(state, run, clash.victim, dungeon, clash.attacker);
   } else if (passed) {
     emit(state, "roomPass", `${progress} ${room.pass}`);
   } else {
     const victim = pick(state, party);
     emit(state, "roomFail", `${progress} ${room.fail.replace("{name}", victim.name)}`);
-    loseSanityOf(victim, CONFIG.sanity.roomFailLoss + (mut?.failSanity ?? 0)); // 單房失敗：受害者理智 -5（4-C-2）；斷電黑夜再 -3
+    loseSanityOf(victim, failSanityLoss(state, party, CONFIG.sanity.roomFailLoss + (mut?.failSanity ?? 0))); // 單房失敗：受害者理智 -5（4-C-2）；斷電黑夜再 -3
     hurt(state, run, victim, dungeon);
   }
   run.results.push(passed);
@@ -285,7 +293,7 @@ function stepHiddenRoom(state, run, dungeon) {
   } else {
     const victim = pick(state, party);
     emit(state, "roomFail", `${progress} ${logText(state, "hiddenFail", { A: victim })}`);
-    loseSanityOf(victim, CONFIG.sanity.roomFailLoss + (getMutation(run.mutationId)?.failSanity ?? 0));
+    loseSanityOf(victim, failSanityLoss(state, party, CONFIG.sanity.roomFailLoss + (getMutation(run.mutationId)?.failSanity ?? 0)));
     hurt(state, run, victim, dungeon);
   }
   run.hidden.passed = passed;
@@ -340,7 +348,7 @@ export function hurt(state, run, victim, dungeon, attacker = null) {
   else if (shield < 0 && rand(state) < -shield) gained += 1;
   // 防禦（Phase 4-C-1）：有機率讓這次傷勢少 1 級，原判輕傷則免傷（和上面的標籤／裝備減免獨立疊加）
   const healthy = victim.injury === 0; // 進這個房間前是健康無傷：這次絕不直接戰死
-  if (gained > 0 && rand(state) < defenseChance(victim)) {
+  if (gained > 0 && rand(state) < Math.min(CONFIG.combat.defense.max, defenseChance(victim) + squadDefenseBonus(state))) { // 共產流防禦 +0.08，仍守總上限（4-E-2）
     gained -= 1;
     if (gained === 0 && !sabotaged) {
       emit(state, "dodge", logText(state, "defenseBlock", { A: victim }));
@@ -354,6 +362,7 @@ export function hurt(state, run, victim, dungeon, attacker = null) {
     dies = false; // 健康免猝死鐵律：最重只會落入致命傷
     newLevel = Math.min(newLevel, INJURIES.length - 1);
   }
+  if (dies && bondGuard(state, run, partyOf(state, run), victim)) return; // 羈絆流託付後背：夥伴替他擋下致死一刀（4-E-2）
   if (dies && rand(state) < Math.max(0, speedSaveChance(victim) + (getMutation(run.mutationId)?.speedSaveMod ?? 0))) { // 濃霧走散：鎖血率 -5%
     // 速度：極限閃避鎖血，免於死亡，改落致命傷
     setInjury(victim, INJURIES.length - 1);
@@ -364,6 +373,7 @@ export function hurt(state, run, victim, dungeon, attacker = null) {
     run.deaths.push(victim.name);
     killSamsarite(state, victim, attacker ? `死在了隊友 ${attacker.name} 手上（【${dungeon.name}】）` : `死在了【${dungeon.name}】`, attacker, "dungeon"); // 副本戰死：夠格的人入英靈碑
     afterDeath(state, victim, attacker, partyOf(state, run)); // 同隊其他隊員理智 -10（4-C-2）
+    farmingPigDied(state, run, victim); // 養殖流：肉豬陣亡，隊長暴衝（4-E-2）
     return;
   }
   setInjury(victim, newLevel);
@@ -374,7 +384,15 @@ function finishRun(state, run) {
   const dungeon = dungeonOfRun(run);
   const survivors = partyOf(state, run);
   const passedCount = run.results.filter(Boolean).length;
-  const success = survivors.length > 0 && passedCount >= roomsToClear(dungeon);
+  let success = survivors.length > 0 && passedCount >= roomsToClear(dungeon);
+  // 叛逃野生 Boss 亂入最後一房（4-E-4）：擊敗追回賞金；不敵則全員帶傷撤退（這場算失敗）
+  let rogue = null;
+  const rogueBoss = run.rogueId && survivors.length > 0 ? rogueBossOf(state, run.rogueId) : null;
+  if (rogueBoss) {
+    const win = rand(squadRng(state)) < roomPassRate(state, survivors, rogueDungeon(state), null, 0, 0);
+    rogue = resolveRogueFight(state, rogueBoss, survivors, win);
+    if (!win) success = false;
+  }
   let reward = 0;
   let specialReward = null;
   let dropDesc = "";
@@ -407,6 +425,11 @@ function finishRun(state, run) {
         state.collection.push(drop.id);
       }
       // 首通本章尾王：空間升 1 級（解鎖下一章），記下是第幾天
+      if (dungeon.boss) {
+        // 編年史：尾王首通（4-E-5）；等級在下面升，所以先記「升級後」的等級
+        const lv = dungeon.chapter >= state.spaceLevel ? Math.min(CONFIG.space.maxLevel, state.spaceLevel + 1) : state.spaceLevel;
+        addChronicle(state, "boss", logText(state, "chronBoss", { chapter: dungeon.chapter, boss: dungeon.name, level: lv }));
+      }
       if (dungeon.boss && dungeon.chapter >= state.spaceLevel) {
         state.chapterClearDay[dungeon.chapter] = currentDay(state);
         if (state.spaceLevel < CONFIG.space.maxLevel) {
@@ -424,13 +447,16 @@ function finishRun(state, run) {
         if (got.dup) reward += Math.round(dungeon.reward * CONFIG.relic.dupRewardPct);
       }
     }
+    reward = Math.round(reward * farmingRewardMult(state, run)); // 養殖流：肉豬陣亡每層 +20%（4-E-2）
     if (survivors.length >= 2) {
-      // 同行情誼：存活隊員兩兩好感 +bondLove（吊橋效應 ×1.5），不消耗亂數
-      const bond = Math.round(CONFIG.dungeon.bondLove * (mut?.loveMult ?? 1));
+      // 同行情誼：存活隊員兩兩好感 +bondLove（吊橋效應 ×1.5；傭兵流減半），不消耗亂數
+      const bond = Math.round(CONFIG.dungeon.bondLove * (mut?.loveMult ?? 1) * squadBondMult(state));
       for (const a of survivors) for (const b of survivors) if (a.id !== b.id) addLove(state, a, b, bond);
     }
-    loot = distributeLoot(state, survivors, reward); // 先抽稅入公庫，其餘由存活隊員平分進私房錢（4-D-1）
+    loot = distributeLoot(state, survivors, reward, { run, dungeon }); // 先抽稅入公庫（流派覆寫分潤見 4-E-2），其餘由存活隊員平分進私房錢（4-D-1）
     if (stats) stats.clears += 1;
+    squadAfterClear(state, survivors); // 羈絆流：存活通關全隊理智 +4（4-E-2）
+    if (dungeon.boss && !run.mandatory) for (const s of survivors) s.maxBossChapter = Math.max(s.maxBossChapter ?? 0, dungeon.chapter); // 遺物履歷（4-E-4）
     // 尾王守門：只算該章前 3 關（常規副本）的成功結算次數，含首通與重打
     if (!dungeon.boss && !run.mandatory) {
       state.chapterClears ??= {};
@@ -440,9 +466,11 @@ function finishRun(state, run) {
     // 失敗但活著回來：一定帶傷
     for (const s of survivors) if (s.injury === 0) setInjury(s, 1);
   }
+  if (rogue?.win) loot.rogueBounty = distributeLoot(state, survivors, rogue.bounty, { run, dungeon }).tax; // 賞金也走流派分潤（4-E-4）
   for (const s of survivors) {
     s.location = "space";
     s.runBuff = null; // 單場 buff 用完即止（4-D-2）
+    s.tempPowerPct = 0; // 養殖流的臨時戰力隨副本結束清掉（4-E-2）
     s.sabotaged = false; // 沒被打中就沒用到，動過手腳的裝備回家後已被檢查
   }
 
@@ -457,6 +485,7 @@ function finishRun(state, run) {
     greedy: !!run.greedy,
     hidden: run.hidden ? (run.hidden.passed ? "passed" : "failed") : null, // 貪婪探索：沒開隱藏房 = null
     relics,
+    rogue, // 叛逃 Boss 對決結果 { name, win, bounty, crystal } 或 null（4-E-4）
     tax: loot.tax,
     share: loot.share,
     firstClear,
@@ -495,5 +524,6 @@ function finishRun(state, run) {
   afterRunBoard(state, run); // 任務榜：出發的那一槽移除並立即補新槽（4-D-4）
   wishesAfterRun(state, run.dungeonId, success, partyIds, survivors.map((s) => s.id)); // 想去這個副本的許願結算
   godAfterRun(state, run.dungeonId, success, partyIds, survivors.map((s) => s.id)); // 主神突襲任務結算
+  if (success) dramaAfterRun(state, survivors); // 副本結算穿插人際事件（4-E-3，獨立亂數流）
   checkGameOver(state);
 }

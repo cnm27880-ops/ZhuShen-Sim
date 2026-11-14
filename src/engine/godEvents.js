@@ -41,6 +41,7 @@ export function godVars(state, ev) {
     dungeon: getDungeon(ev.params.dungeonId)?.name,
     reward: ev.params.reward,
     penalty: k.penaltyPoints,
+    extra: k.resolveSanityAll,
   };
 }
 
@@ -145,7 +146,9 @@ export function resolveGodEvent(state) {
   const check = checkResolve(state);
   if (!check.ok) return check;
   const ev = state.god.pending;
-  spend(state, G().kinds[ev.kind].resolveCost);
+  const k = G().kinds[ev.kind];
+  spend(state, k.resolveCost);
+  if (k.resolveSanityAll) for (const s of atHome(state)) s.stats.sanity = Math.max(0, s.stats.sanity - k.resolveSanityAll); // 異質代價：全體留守者理智下降（4-E-7）
   state.god.pending = null;
   emit(state, "god", logText(state, `godResolve_${ev.kind}`, godVars(state, ev)));
   return { ok: true };
@@ -228,3 +231,16 @@ export function cancelGodOf(state, id) {
 }
 
 export { getGodEvent };
+
+/**
+ * 事件經濟檢查（4-E-7 防同幣別套利，測試掃描用）：
+ *   直接後果是否「純扣積分」、最高扣多少；化解的積分價與是否另有非積分代價。
+ * 規則：純扣積分的事件，化解必須帶非積分代價，或積分價 >= 直接最高扣分；
+ *       直接後果含扣理智／受傷／減員／不爽等非積分損失時，才允許花小額積分破財消災。
+ */
+export function godEventEconomics(id) {
+  const k = G().kinds[id];
+  const def = GOD_EVENTS.find((e) => e.id === id);
+  const directPointsMax = def.mode === "tax" ? k.loss[1] : def.mode === "raid" ? k.penaltyPoints : 0;
+  return { directPointsMax, directNonPoint: def.mode !== "tax", resolvePoints: k.resolveCost, resolveNonPoint: !!k.resolveSanityAll };
+}

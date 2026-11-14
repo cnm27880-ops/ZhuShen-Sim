@@ -6,6 +6,8 @@
 
 import { CONFIG } from "../data/config.js";
 import { emit } from "./core.js";
+import { styleOf, captainOf, worthOf } from "./squad.js";
+import { effectivePower } from "./tags.js";
 import { logText } from "./templates.js";
 
 export const taxRateOf = (state) => state.taxRate ?? CONFIG.tax.default;
@@ -19,24 +21,72 @@ export function setTaxRate(state, value) {
 }
 
 /**
- * 結算分潤鉤子：總積分先抽 round(總額 × 稅率) 入公庫，剩下由「當場存活隊員」平分入私房錢（除不盡的零頭歸公庫；
- * 全滅則全歸公庫）。保持獨立函式，4-E 的小隊流派可以覆寫分潤比例（傳入 opts.rate 取代 state.taxRate）。
- * 回傳 { tax, share, members }：tax = 入公庫的總額（含零頭）、share = 每人分到的私房錢。
+ * 結算分潤鉤子：總積分先抽 round(總額 × 稅率) 入公庫，剩下由「當場存活隊員」入私房錢（除不盡的零頭歸公庫；
+ * 全滅則全歸公庫）。保持獨立函式，4-E 的小隊流派在這裡覆寫「剩下的怎麼分」（opts.rate 可取代 state.taxRate）。
+ * 流派（需空間 Lv.2 以上且有隊長，engine/squad.js）：
+ *   communal 100% 絕對均分；bond 帶傷存活者 ×1.25；farming 隊長在隊獨吞 80%（留守仍強抽 35% 保護費）；
+ *   elite 按戰力^1.4；mercenary 稅後總額 +18% 商業溢價、按身價比例。
+ * opts：{ run, dungeon }（run 用來判斷隊長是否隨隊出征）。
+ * 回傳 { tax, share, shares, members, style }：tax = 入公庫的總額（含零頭）、share = 每人平均分到的私房錢、shares = { 輪迴者 id: 實拿 }。
  */
 export function distributeLoot(state, team, totalPoints, opts = {}) {
   const total = Math.max(0, Math.round(totalPoints));
-  const rate = opts.rate ?? taxRateOf(state);
+  let rate = opts.rate ?? taxRateOf(state);
   const members = team.filter(Boolean);
+  // 赤字緊急徵用（4-E-7）：公庫為負時，臨時以較高的有效稅率優先抵債；只是這一次分潤的算法，不改 state.taxRate（不會誤觸高稅率每日扣理智）
+  const deficit = state.points < 0 && members.length > 0 && rate < CONFIG.tax.deficitMinRate;
+  if (deficit) rate = CONFIG.tax.deficitMinRate;
   let tax = members.length === 0 ? total : Math.round(total * rate);
+  const shares = {};
   let share = 0;
+  const style = members.length > 0 ? styleOf(state) : null;
   if (members.length > 0) {
-    const rest = total - tax;
-    share = Math.floor(rest / members.length);
-    tax += rest - share * members.length; // 零頭歸公庫
-    for (const s of members) s.wallet = (s.wallet ?? 0) + share;
+    let rest = total - tax;
+    const F = CONFIG.squad;
+    const weights = new Map(members.map((s) => [s.id, 1]));
+    if (style === "bond") {
+      for (const s of members) if (s.injury >= 1) weights.set(s.id, F.bond.woundedWeight);
+    } else if (style === "elite") {
+      for (const s of members) weights.set(s.id, effectivePower(s) ** F.elite.powerExp);
+    } else if (style === "mercenary") {
+      rest = Math.round(rest * (1 + F.mercenary.premium));
+      for (const s of members) weights.set(s.id, worthOf(s) + F.mercenary.worthBase);
+    } else if (style === "farming") {
+      const cap = captainOf(state);
+      const inRun = cap && members.some((s) => s.id === cap.id);
+      if (inRun) {
+        const take = Math.floor(rest * F.farming.captainShare);
+        shares[cap.id] = take;
+        rest -= take;
+        weights.delete(cap.id);
+        if (weights.size === 0) {
+          shares[cap.id] += rest; // 隊長一個人活著回來：全拿
+          rest = 0;
+        }
+      } else if (cap && !(opts.run?.partyIds ?? []).includes(cap.id)) {
+        const fee = Math.floor(rest * F.farming.guardFeePct); // 隊長留守：強抽保護費
+        cap.wallet = (cap.wallet ?? 0) + fee;
+        rest -= fee;
+        shares[cap.id] = (shares[cap.id] ?? 0) + fee;
+        emit(state, "wallet", logText(state, "farmingFee", { A: cap, fee }));
+      }
+    }
+    const sum = [...weights.values()].reduce((n, w) => n + w, 0);
+    let paid = 0;
+    for (const s of members) {
+      if (!weights.has(s.id)) continue;
+      const got = sum > 0 ? Math.floor((rest * weights.get(s.id)) / sum) : 0;
+      shares[s.id] = (shares[s.id] ?? 0) + got;
+      paid += got;
+    }
+    tax += rest - paid; // 零頭歸公庫
+    for (const s of members) if (shares[s.id]) s.wallet = (s.wallet ?? 0) + shares[s.id];
+    const vals = members.map((s) => shares[s.id] ?? 0);
+    share = Math.floor(vals.reduce((n, v) => n + v, 0) / members.length);
   }
   state.points += tax;
-  return { tax, share, members: members.length };
+  if (deficit) emit(state, "wallet", logText(state, "deficitTax", { rate: Math.round(rate * 100), tax }));
+  return { tax, share, shares, members: members.length, style, deficit };
 }
 
 /** 稅率的每日理智影響（只對在空間的人，endOfDay 逐人呼叫）：低稅 +1、高稅 -2、極高稅 -4 */

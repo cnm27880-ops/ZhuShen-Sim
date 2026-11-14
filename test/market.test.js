@@ -254,12 +254,16 @@ test("存檔：黑市與逛街亂數流往返；舊存檔補預設並上貨", ()
 
 test("預留欄位（4-E／未來使用）：state.squad、s.customProfile 有預設值，舊存檔遷移補上", () => {
   const state = setup(1);
-  assert.deepEqual(state.squad, { captainId: null, style: null });
+  assert.equal(state.squad.captainId, null);
+  assert.equal(state.squad.style, null);
+  assert.equal(state.squad.communalFund, 0);
   assert.equal(state.samsarites[0].customProfile, null);
   const old = JSON.parse(serialize(state));
   delete old.squad;
   delete old.samsarites[0].customProfile;
   const loaded = deserialize(JSON.stringify(old));
-  assert.deepEqual(loaded.squad, { captainId: null, style: null });
+  assert.equal(loaded.squad.captainId, null);
+  assert.equal(loaded.squad.style, null);
+  assert.equal(loaded.squad.communalFund, 0);
   assert.equal(loaded.samsarites[0].customProfile, null);
 });

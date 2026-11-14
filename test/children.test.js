@@ -54,7 +54,7 @@ test("催熟艙：每天只收 podUpkeep，三天後長成輪迴者並發出 hat
   for (let d = 1; d <= C().podDays; d++) {
     state.points = 5000;
     endOfDay(state);
-    assert.equal(5000 - state.points, upkeepOf(a) + upkeepOf(b) + C().podUpkeep, "帳單 = 兩位家長 + 嬰兒固定費");
+    assert.equal(5000 - state.points, upkeepOf(a, state) + upkeepOf(b, state) + C().podUpkeep, "帳單 = 兩位家長 + 嬰兒固定費");
     dailyNursery(state);
     assert.equal(child.location, d < C().podDays ? "pod" : "space");
   }

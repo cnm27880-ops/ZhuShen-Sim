@@ -16,6 +16,7 @@ import { marketOf, checkMarketBuy, buyMarketSlot, slotPrice } from "./market.js"
 import { enhance, checkEnhance, breakGene, checkBreakGene } from "./growth.js";
 import { getRel, pairStatus } from "./relations.js";
 import { getTag } from "../data/tags.js";
+import { styleOf, squadOf, captainOf } from "./squad.js";
 
 /** 把 state.aiShopRngState 包成 rand() 吃得下的亂數物件（讀寫都落回 state） */
 export function aiRng(state) {
@@ -42,9 +43,12 @@ export function isDramaProne(state, s) {
   );
 }
 
-/** 依詞條決定偏好各 aiBuyTag 的權重（戰力詞條愛攻擊、減傷詞條愛保命、通過率詞條愛共用） */
-export function buyTagWeights(s) {
+/** 依詞條決定偏好各 aiBuyTag 的權重（戰力詞條愛攻擊、減傷詞條愛保命、通過率詞條愛共用）；菁英流愛攻擊、傭兵流愛保命（4-E-2） */
+export function buyTagWeights(s, state = null) {
   const w = { ...CONFIG.shopping.tagWeight };
+  const style = state ? styleOf(state) : null;
+  if (style === "elite") w.aggro *= 3;
+  if (style === "mercenary") w.survival *= 3;
   for (const id of s.tags ?? []) {
     const t = getTag(id);
     if (!t) continue;
@@ -112,7 +116,7 @@ function regear(state, s) {
 }
 
 function selfGrow(state, s) {
-  const keep = 1 - CONFIG.shopping.reservePct; // 花完仍要留 reservePct 備用金 → 費用 ≤ 私房錢 × 0.8
+  const keep = 1 - CONFIG.shopping.reservePct * (styleOf(state) === "elite" ? 0.5 : 1); // 花完仍要留 reservePct 備用金 → 費用 ≤ 私房錢 × 0.8；菁英流衝基因鎖只留一半備用金
   const bg = checkBreakGene(state, s.id, { payer: "wallet" });
   if (bg.ok && bg.cost <= s.wallet * keep) {
     breakGene(state, s.id, { payer: "wallet" });
@@ -161,7 +165,7 @@ function leisure(state, s, ctx) {
     }
   }
   // 4b. 依性格偏好搶購黑市（非黑貨）：花完仍留備用金
-  const w = buyTagWeights(s);
+  const w = buyTagWeights(s, state);
   const cands = offers(state, s, (i) => i.kind !== "contraband")
     .filter((o) => o.src === "market" && o.price <= s.wallet * (1 - C.reservePct))
     .map((o) => ({ ...o, weight: w[o.item.aiBuyTag] ?? 1 }));
@@ -169,19 +173,95 @@ function leisure(state, s, ctx) {
   return execute(state, s, weighted(rng, cands));
 }
 
+// ───────── 共產流：老鳥捐錢、菁英菜鳥互助金補貼（4-E-2）─────────
+
+/** 老鳥：武器、防具都已達目前解鎖的最高商店階層，而且沒有傷病 */
+function isVeteranGear(state, s) {
+  const tier = shopTier(state);
+  return s.injury === 0 && ["weapon", "armor"].every((slot) => (getShopItem(s.gear?.[slot])?.tier ?? 0) >= tier);
+}
+
+/**
+ * 互助金補貼的需求（回傳最迫切要買的東西價錢；沒有需求回 0）：
+ *   全隊：傷病治療費（重傷以上）、基因鎖低於現任隊長且目前為 1 階者衝刺 2 階基因鎖（4-E-7）；
+ *   菜鳥（非老鳥）另外：制式武防、第 1 階基因鎖。
+ */
+function communalNeed(state, s) {
+  const tier = shopTier(state);
+  if (s.injury >= 2) {
+    const heal = SHOP_ITEMS.filter((i) => i.kind === "potion" && i.effect.heal && (i.category === "standard" || i.permanent)).map((i) => i.price);
+    if (heal.length) return Math.min(...heal);
+  }
+  const rookie = !isVeteranGear(state, s);
+  if (rookie) {
+    for (const slot of ["weapon", "armor"]) {
+      if (s.soulbound?.[slot]) continue;
+      const cur = getShopItem(s.gear?.[slot]);
+      if (cur && cur.tier >= tier) continue;
+      const best = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard" && i.slot === slot && i.tier <= tier).sort((a, b) => b.tier - a.tier)[0];
+      if (best) return best.price;
+    }
+  }
+  const cap = captainOf(state);
+  const wantsFirst = rookie && (s.geneLock ?? 0) === 0;
+  const wantsSecond = (s.geneLock ?? 0) === 1 && cap && (cap.geneLock ?? 0) > 1; // 基因鎖低於現任隊長、目前 1 階：衝 2 階
+  if (wantsFirst || wantsSecond) {
+    const bg = checkBreakGene(state, s.id);
+    if (bg.ok) return Math.ceil(bg.cost / (1 - CONFIG.shopping.reservePct)); // 自主突破要留 20% 備用金，所以補貼要補到「費用 ÷ 0.8」才買得下去（沒花掉的會退回）
+  }
+  return 0;
+}
+
+/** 補貼：錢不夠買最迫切的東西時，從互助金補差額（先放進他的私房錢，當天沒花掉的會在 communalSettle 退回）。回傳補貼金額 */
+function communalSubsidy(state, s) {
+  const sq = squadOf(state);
+  if (sq.communalFund <= 0) return 0;
+  const deficit = communalNeed(state, s) - (s.wallet ?? 0);
+  if (deficit <= 0) return 0;
+  const give = Math.min(deficit, sq.communalFund);
+  sq.communalFund -= give;
+  s.wallet = (s.wallet ?? 0) + give;
+  logOf(state, s, `互助金補貼 ${give} 分`);
+  return give;
+}
+
+/** 當天結束：沒花掉的補貼退回互助金；老鳥把剩餘私房錢的 50% 捐進互助金 */
+function communalSettle(state, s, subsidy) {
+  const sq = squadOf(state);
+  if (subsidy > 0) {
+    const back = Math.min(s.wallet ?? 0, subsidy);
+    s.wallet -= back;
+    sq.communalFund += back;
+  }
+  const full = sq.communalFund >= CONFIG.squad.communal.fundCapPerLevel * (state.spaceLevel ?? 1); // 互助金軟上限：滿了老鳥暫停捐獻，私房錢留著自購高階裝（4-E-7）
+  if (!full && isVeteranGear(state, s) && (s.wallet ?? 0) > 0) {
+    const donate = Math.floor(s.wallet * CONFIG.squad.communal.donatePct);
+    if (donate > 0) {
+      s.wallet -= donate;
+      sq.communalFund += donate;
+      logOf(state, s, `捐給互助金（-${donate}）`);
+    }
+  }
+}
+
 /** 每日結算掛鉤：逐人（依 id 順序，亂數才可重現）自主消費 */
 export function dailyShopping(state) {
   const C = CONFIG.shopping;
+  const communal = styleOf(state) === "communal";
   let actions = 0;
-  const people = [...state.samsarites].filter((s) => s.location === "space" && (s.wallet ?? 0) > 0 && !(s.podLockDays > 0)).sort((a, b) => a.id - b.id);
+  const people = [...state.samsarites]
+    .filter((s) => s.location === "space" && !(s.podLockDays > 0) && ((s.wallet ?? 0) > 0 || (communal && squadOf(state).communalFund > 0)))
+    .sort((a, b) => a.id - b.id);
   for (const s of people) {
     const ctx = { dramaRolled: false };
+    const subsidy = communal ? communalSubsidy(state, s) : 0;
     for (let n = 0; n < C.maxActionsPerDay; n++) {
       if ((s.wallet ?? 0) <= 0) break;
       const done = emergency(state, s) || regear(state, s) || selfGrow(state, s) || leisure(state, s, ctx);
       if (!done) break;
       actions += 1;
     }
+    if (communal) communalSettle(state, s, subsidy);
   }
   return actions;
 }

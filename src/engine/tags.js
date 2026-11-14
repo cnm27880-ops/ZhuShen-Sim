@@ -33,8 +33,10 @@ export function rollTags(state) {
 }
 
 /** 商店裝備加在某個數值（power 白值 / injuryShield / dodge）上的總和（Phase 4-B 起舊商店強化已移除） */
+const WHITE_KEYS = ["power", "hp", "defense", "speed", "luck"]; // 先人遺物（4-E-4）只加成白值
 export function shopBonus(s, key) {
-  const gear = Object.values(s.gear ?? {}).reduce((n, id) => n + (getShopItem(id)?.effect?.[key] ?? 0), 0);
+  const heirPct = WHITE_KEYS.includes(key) ? CONFIG.lineage.heirloomPct : 0;
+  const gear = Object.entries(s.gear ?? {}).reduce((n, [slot, id]) => n + (getShopItem(id)?.effect?.[key] ?? 0) * (s.heirloomSlots?.[slot] ? 1 + heirPct : 1), 0);
   return gear + (s.runBuff?.[key] ?? 0); // 出征耗材的單場 buff（injuryShield／defense／speed；4-D-2）
 }
 
@@ -123,7 +125,7 @@ export function genePowerMult(s) {
  * 基礎戰力 stats.power 不會被這個函式改動。
  */
 export function effectivePower(s) {
-  const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0) + moodPowerPct(s) + injuryPowerPct(s) + sanityPowerPct(s) + (s.steleBonus ?? 0) + (s.relicBonus ?? 0) + shopBonus(s, "powerPct"); // 血統 powerPct（4-D-2）
+  const pct = tagsOf(s).reduce((sum, t) => sum + (t.powerPct ?? 0), 0) + moodPowerPct(s) + injuryPowerPct(s) + sanityPowerPct(s) + (s.steleBonus ?? 0) + (s.relicBonus ?? 0) + shopBonus(s, "powerPct") + (s.captainBonus ?? 0) + (s.tempPowerPct ?? 0); // 血統 powerPct（4-D-2）；隊長 +8%、養殖流臨時戰力（4-E）
   return Math.max(1, Math.round((bodyPower(s) * genePowerMult(s) + shopBonus(s, "power")) * (1 + pct)));
 }
 
