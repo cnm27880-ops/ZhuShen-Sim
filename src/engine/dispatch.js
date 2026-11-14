@@ -3,10 +3,11 @@
 
 import { CONFIG } from "../data/config.js";
 import { DUNGEONS } from "../data/dungeons.js";
-import { emit, advanceTick, checkGameOver } from "./core.js";
+import { emit, advanceTick, checkGameOver, currentDay } from "./core.js";
 import { logText } from "./templates.js";
 import { areEnemies as pairEnemies } from "./relations.js";
 import { activeMission } from "./godEvents.js";
+import { MANDATORY_ID, pendingMandatory } from "./mandatory.js";
 import { effectivePower } from "./tags.js";
 import { clearChance, partyPower, startRun, stepDueRooms, settleRuns, unlockedDungeons, isUnlocked } from "./dungeon.js";
 
@@ -15,9 +16,18 @@ export function areEnemies(state, a, b) {
   return pairEnemies(state, a, b);
 }
 
-/** 可以被自動派遣的人：在家、沒鎖定、（保護開關開著時）沒受傷 */
+/** 強制任務待派時，要替它保留的人：名冊前 topN 強（不論在哪）。沒有待派任務就是空集合 */
+function reservedForMandatory(state) {
+  if (!pendingMandatory(state) || !CONFIG.auto.holdForMandatory) return new Set();
+  const top = state.samsarites.filter((s) => s.location !== "pod").sort((a, b) => effectivePower(b) - effectivePower(a)).slice(0, CONFIG.forcedMission.topN);
+  return new Set(top.map((s) => s.id));
+}
+
+/** 可以被自動派遣的人：在家、沒鎖定、（保護開關開著時）沒受傷；強制任務待派時前 4 強留給任務 */
 export function autoCandidates(state) {
+  const reserved = reservedForMandatory(state);
   return state.samsarites
+    .filter((s) => !reserved.has(s.id))
     .filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0))
     .filter((s) => !(state.settings.protect.noInjured && s.injury > 0))
     .sort((a, b) => effectivePower(b) - effectivePower(a))
@@ -87,9 +97,27 @@ export function planAutoDispatch(state) {
   return bestPlan(state, candidates, unlockedDungeons(state));
 }
 
+/**
+ * 主神強制任務（Phase 4-C-4）：自動派遣開著時優先處理。不設通關率門檻（不派就是被抹殺），
+ * 派名冊在家、沒鎖定、沒放假的人裡「沒受傷優先、其次戰力高」的最多 4 人。回傳派出幾隊（0 或 1）。
+ * 4-C-6：R 是看名冊前 4 強算的，所以前 4 強還在副本時先等（同時 autoCandidates 不會再把他們派出去），
+ * 等到他們都回家；但期限前最後一個自動派遣時段（再等就逾時）一定派，有多少人派多少。
+ */
+export function autoMandatory(state) {
+  const pending = pendingMandatory(state);
+  if (!pending) return 0;
+  const topAway = [...reservedForMandatory(state)].some((id) => state.samsarites.find((s) => s.id === id)?.location !== "space");
+  const lastChance = currentDay(state) >= pending.deadlineDay - 1;
+  if (CONFIG.auto.holdForMandatory && topAway && !lastChance) return 0;
+  const pool = state.samsarites.filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0));
+  const party = [...pool].sort((a, b) => (a.injury > 0) - (b.injury > 0) || effectivePower(b) - effectivePower(a)).slice(0, CONFIG.partyMax);
+  if (party.length === 0) return 0;
+  return startRun(state, MANDATORY_ID, party.map((s) => s.id)).ok ? 1 : 0;
+}
+
 /** 一次排出多隊：每輪挑最划算的一隊，剩下的人再組下一隊，直到沒有達標的組合（人手用完）。回傳派出幾隊 */
 export function tryAutoDispatch(state) {
-  let sent = 0;
+  let sent = autoMandatory(state);
   for (;;) {
     const plan = planAutoDispatch(state);
     if (!plan) break;

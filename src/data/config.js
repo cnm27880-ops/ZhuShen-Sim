@@ -19,13 +19,18 @@ export const CONFIG = {
   // ── 空間等級（Phase 4-A）：Lv.1 開局，每首通一章尾王升 1 級（最高 Lv.5）。索引 0 = Lv.1 ──
   space: {
     maxLevel: 5,
-    upkeepBase: [8, 16, 35, 80, 180], // 每人每天基礎維持費；階級／傷勢附加費是它的百分比（見 RANKS.upkeepPct、INJURIES.upkeepPct）
+    // Phase 4-C-3 維持費改制：單人日費 = round((基因鎖基準費 + 空間環境底費) ×（1 + 階級附加 + 傷勢醫藥費附加））
+    upkeepGene: [8, 16, 35, 80, 180], // 個人基因鎖基準費，索引 = geneLock 0～4
+    upkeepSpace: [0, 3, 7, 16, 36], // 空間環境底費，索引 = 空間等級 - 1
     debtLimit: [-500, -1500, -4500, -12000, -30000], // 主神高利貸上限（破產線）
   },
 
   // ── 經濟 ──
   debtShockSanity: 10, // 負債期間每天電擊一人，理智 -10
-  recycle: { points: 30, sanityLoss: 5 }, // 主神回收爐（理智扣多少：計畫未定）
+  recycle: { sanityLoss: 5 }, // 主神回收爐：其他人理智扣多少（計畫未定）；返還積分改看階級 RANKS[rank].recycleRefund（4-C-3）
+  // 絕境空投（4-C-3）：存活人數（不含催熟艙）< minAlive 且積分 < pointsBelow，連續滿 everyDays 天，主神免費空投 1 名新人
+  // rescue：true 時空投當作安全網，「沒人又借不到錢」不再直接判遊戲結束（否則全滅當下就死檔，空投來不及；4-C-6）
+  airdrop: { minAlive: 2, pointsBelow: 120, everyDays: 3, rank: "C", rescue: true },
   // 商店 5 階的解鎖門檻：「累積花費」（抽卡也算）達到才開放。索引 0 = Tier 1（Phase 4-A）
   shopTierUnlock: [0, 600, 3000, 12000, 45000],
   shopDodgeMax: 0.9, // 閃避機率上限（標籤 + 商店加成加起來）
@@ -72,7 +77,7 @@ export const CONFIG = {
     ],
   },
 
-  // ── 主神強制血腥任務（Phase 4-D 才會用到，4-A 先記錄拍板數字）──
+  // ── 主神強制血腥任務（Phase 4-C-4：4-A 拍板的數字，4-C 起正式啟用；文字在 src/data/mandatory.js）──
   forcedMission: {
     powerMult: 0.55, // R = max(本章基準, 前 4 強總戰力 × 0.55)，派最強 4 人約 77% 通關
     rooms: 5,
@@ -80,6 +85,52 @@ export const CONFIG = {
     passCap: 0.8, // 單房通過率上限；不吃情報加成
     baseR: [220, 850, 3600, 15000, 60000], // 各空間等級的基準 R（待 sim 驗證）
     reward: [260, 900, 3000, 9500, 30000],
+    topN: 4, // 名冊前幾強的有效戰力總和拿來算 R
+    startDay: 15, // 保護期：這天之後才開始計時（第一次觸發 = startDay + intervalDays）
+    intervalDays: 12, // 兩次強制任務的間隔
+    overPopIntervalDays: 6, // 人口超過軟上限時縮短成這個間隔
+    popBase: 6, // 人口軟上限 = popBase + 空間等級 × popPerLevel（不含催熟艙嬰兒）
+    popPerLevel: 2,
+    deadlineDays: 2, // 觸發後幾天內必須派隊，否則抹殺
+    purgeMin: 1, // 逾時抹殺人數 purgeMin～purgeMax（在主神空間內的人才會被抹殺）
+    purgeMax: 2,
+    purgeSanityLoss: 25, // 逾時抹殺後，全體存活者理智 -25
+    failInjuryExtra: 1, // 單房失敗時受傷等級額外 +1
+    deathRewardPct: 0.25, // 本場每戰死 1 名隊友，存活者結算總積分額外 +25%（加算）
+  },
+
+  // ── 戰鬥副屬性（Phase 4-C-1）：hp／defense／speed／luck 取總值 = stats（初始＋強化＋頓悟）＋裝備白值，不吃基因鎖乘區 ──
+  combat: {
+    defense: { k: 60, max: 0.65 }, // 受傷時觸發「傷勢少 1 級」的機率 = min(max, def ÷ (def + k))；原判輕傷則免傷
+    speed: { k: 80, max: 0.5 }, // 副本戰死時觸發「極限閃避鎖血」（免死、改為致命傷）的機率 = min(max, spd ÷ (spd + k))
+    hpRest: { base: 100, step: 40, chancePerStep: 0.25 }, // 超過 base 的部分每滿 step 點，每日休養 +chancePerStep 機率額外多恢復 1 級（可超過 100%）
+    hpHalfPenalty: 180, // 總 hp 達到這個值，重傷／致命傷的戰力懲罰減半
+    injuryPowerPct: [0, 0, -0.2, -0.4], // 傷勢等級（0 無傷／1 輕／2 重／3 致命）對個人有效戰力的百分比（Q2 暫定值，需驗證）
+    luckReward: { perPoint: 0.005, max: 0.5 }, // 存活隊員平均 luck 每 1 點 +0.5% 結算積分，上限 +50%
+  },
+
+  // ── 英靈碑（Phase 4-C-5）：基因鎖 ≥ minGene 或出戰 ≥ minRuns 場的人，副本戰死／主神抹殺時入碑；碑上加成最高的前 topN 名生效 ──
+  stele: {
+    minGene: 1,
+    minRuns: 15,
+    topN: 4,
+    bonusByGene: [0.02, 0.04, 0.08, 0.13, 0.2], // 依生前基因鎖 0～4 階，全隊有效戰力 +%（前 4 名合計最高 +80%）
+    keep: 20, // 碑上最多留幾筆名單（其餘依加成低者淘汰）
+  },
+
+  // ── 理智閉環（Phase 4-C-2）：sanity 0～100 ──
+  sanity: {
+    // 由高到低；找第一個 sanity >= min 的檔位。powerPct 加進有效戰力的百分比區；clashMult 乘在隊內負面關係內鬥／背刺機率上
+    tiers: [
+      { min: 70, powerPct: 0, clashMult: 1 },
+      { min: 30, powerPct: -0.1, clashMult: 1.5 },
+      { min: 0, powerPct: -0.25, clashMult: 2.5 }, // 1～29（0 也算，反正日結會暴走）
+    ],
+    roomFailLoss: 5, // 副本單房失敗：受害者理智 -5
+    teammateDeathLoss: 10, // 副本內同隊有人戰死：其他隊員理智 -10（取代舊的 deathFearSanity -3；空間內的死亡仍用 relations.deathFearSanity）
+    restRecover: 3, // 人在主神空間（含帶傷休養）每日自然恢復
+    crashDemonChance: 0.5, // 理智歸零日結：入魔砍傷隊友的機率（沒有其他人在空間就改自殘）；其餘自殘
+    crashRecoverTo: 40, // 暴走發作後理智回升到
   },
 
   // ── 標籤（Phase 2）──
@@ -278,6 +329,7 @@ export const CONFIG = {
     targetClearChance: 0.9, // 通關率到這個數字就算「夠穩」，不再多派人（計畫未定）
     maxCandidates: 14, // 最多拿戰力前幾名來排列組合（避免人太多時算太久）
     dispatchAtTick: 5, // 每天第幾個時段檢查一次自動派遣
+    holdForMandatory: true, // 強制任務待派時，前 4 強留給任務、等他們回家再派（期限前最後一個時段才硬派；4-C-6）
     missionFirst: true, // 有主神突襲任務時，自動派遣優先派任務目標去指定副本（通關率仍要達 minClearChance；Phase 3-E）
   },
 
@@ -289,7 +341,7 @@ export const CONFIG = {
 // 階級：維持費附加（基礎費的百分比）+ 各屬性的隨機範圍。
 // Phase 4-A：所有人入隊時五維統一拉平為零階凡人；階級之後只決定成長倍率與基因鎖上限（Phase 4-B）。
 // growthMult = 成長倍率（乘在每次強化與頓悟的增加量上）；maxGene = 基因鎖上限階數；
-// recycleRefund = 回收返還積分（預留：4-B 只存數字，尚未接到回收爐）
+// recycleRefund = 回收返還積分（4-C-3 起接到回收爐）
 const MORTAL = { power: [26, 34], hp: [90, 110], defense: [8, 14], speed: [8, 14], luck: [8, 14] };
 export const RANKS = {
   C: { upkeepPct: 0, growthMult: 1.0, maxGene: 1, recycleRefund: 30, ...MORTAL },
@@ -317,6 +369,8 @@ export const PAUSE_EVENTS = {
   autoIdle: { label: "自動派遣找不到合適隊伍", default: false },
   wish: { label: "輪迴者許願（彈窗讓你答應或拒絕）", default: true },
   godEvent: { label: "主神搞事（彈窗讓你照辦或花積分化解）", default: true },
+  stele: { label: "有人名字刻上英靈碑", default: false },
+  mandatory: { label: "主神強制血腥任務（限時派隊，逾時抹殺）", default: true },
   birth: { label: "有小孩出生（進催熟艙）", default: true },
   hatch: { label: "催熟完成（小孩長成輪迴者）", default: true },
 };

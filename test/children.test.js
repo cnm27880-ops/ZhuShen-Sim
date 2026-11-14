@@ -155,6 +155,7 @@ test("存檔：嬰兒存讀後還在催熟艙；舊存檔缺 nursery 欄位會�
 test("長時間模擬：靈魂伴侶一定生得出小孩，且催熟完成後可正常加入", () => {
   const { state } = couple("soulmate", 21);
   state.points = 100000;
+  state.mandatory.lastDay = 1e9; // 這個測試沒人派隊，關掉主神強制任務（否則逾時會被抹殺，4-C-4）
   days(state, 120);
   const kids = state.samsarites.filter((s) => s.parents);
   assert.ok(kids.length > 0, "120 天內至少生過一個");

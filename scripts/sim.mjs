@@ -10,13 +10,16 @@
 //   2. 裝備：核心 4 人（階級高的優先、同階級看戰力），依序換上已解鎖的最好武器、防具
 //   3. 養成：核心 4 人的「強化／突破基因鎖」，每次挑全隊最便宜、買得起的那一步（所以會點滿當階強化再突破）
 //   4. 剩錢：名冊還沒滿時，用買得起的最高階卡池多抽幾次（滿了就不抽、也不回收）
-//   5. 其他（許願、主神搞事）不理會：許願會超時、主神搞事視同照辦
+//   5. 人口超過軟上限（6 + 空間等級 × 2）時，回收最弱的非核心冗員（4-C-6），避免把強制任務縮短成 6 天一次
+//   6. 主神強制任務：交給引擎的自動派遣（優先派最強的 4 人）；逾時被抹殺的人數另外統計
+//   7. 其他（許願、主神搞事）不理會：許願會超時、主神搞事視同照辦
 //   派遣交給引擎的自動派遣（通關率 ≥ CONFIG.auto.minClearChance 才出門；尾王守門由引擎處理）
 
 import { CONFIG } from "../src/data/config.js";
 import { DUNGEONS } from "../src/data/dungeons.js";
 import { SHOP_ITEMS } from "../src/data/shop.js";
-import { createNewGame, currentDay, canAfford, pullGacha, checkGacha, upkeepOf } from "../src/engine/core.js";
+import { createNewGame, currentDay, canAfford, pullGacha, checkGacha, upkeepOf, recycle } from "../src/engine/core.js";
+import { popLimit } from "../src/engine/mandatory.js";
 import { step } from "../src/engine/dispatch.js";
 import { effectivePower } from "../src/engine/tags.js";
 import { buyItem, checkBuy } from "../src/engine/shop.js";
@@ -31,6 +34,7 @@ const args = Object.fromEntries(
 // 校正用的「執行時覆寫」（只改這個模擬行程裡的數字，不會動資料檔；試出好數字後再手動寫回 dungeons.js／config.js）：
 //   --rmult=1,1,0.8,0.8,0.7   各章「一般關」推薦戰力 R 的倍率   --bossr=1,1,1,1,1   各章「尾王」R 的倍率
 //   --reward=1,1,1.2,1.2,1.2  各章通關基礎獎勵的倍率（含尾王）
+//   --mpower=0.5              強制任務的 forcedMission.powerMult（預設 0.55）
 //   --minClear=0.6            自動派遣的最低預估通關率  --growReserve=8   養成（強化／突破）後至少留幾天維持費
 const listArg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1]?.split(",").map(Number);
 const rmult = listArg("rmult");
@@ -42,6 +46,7 @@ for (const d of DUNGEONS) {
   if (rewardMult) d.reward = Math.round(d.reward * (rewardMult[d.chapter - 1] ?? 1));
 }
 if (args.minClear) CONFIG.auto.minClearChance = args.minClear;
+if (args.mpower) CONFIG.forcedMission.powerMult = args.mpower;
 const GROW_RESERVE_DAYS = args.growReserve ?? 8;
 const SEEDS = args.seeds || 100;
 const DAYS = args.days || 120;
@@ -107,6 +112,13 @@ function botDay(state) {
     if (!pick) break;
     (pick.kind === "enhance" ? enhance : breakGene)(state, pick.id);
   }
+  // 3.5 人口超標：回收最弱的非核心冗員（階級低、戰力低的先走）
+  for (let guard = 0; guard < 10 && alive(state).length > popLimit(state); guard++) {
+    const core = new Set(core4(state).map((s) => s.id));
+    const spare = alive(state).filter((s) => !core.has(s.id) && s.location === "space");
+    spare.sort((a, b) => RANK_VAL[a.rank] - RANK_VAL[b.rank] || effectivePower(a) - effectivePower(b));
+    if (!spare[0] || !recycle(state, spare[0].id)) break;
+  }
   // 4. 剩錢：名冊還沒滿時，用「買得起的最高階卡池」多抽（不再抽了就回收，避免無謂的抽卡損耗）
   for (let guard = 0; alive(state).length < ROSTER_MAX && guard < 10; guard++) {
     const c = bestPool(state, SURPLUS_RESERVE_DAYS);
@@ -123,6 +135,7 @@ function playOne(seed) {
   let income = 0;
   let seenReport = null;
   const byChapter = {}; // { 章: { runs, wins, deaths } }
+  const mand = { runs: 0, wins: 0, deaths: 0 }; // 強制任務
   while (currentDay(state) <= DAYS && !state.gameOver) {
     if (state.tick % CONFIG.ticksPerDay === botTick) botDay(state);
     step(state);
@@ -134,6 +147,13 @@ function playOne(seed) {
       // 同一個 step 可能結算好幾場，lastRun 只留最後一場；所以改看 runReports 佇列（上限 runReportMax，這裡每步清空）
     }
     for (const r of state.runReports.splice(0)) {
+      if (r.mandatory) {
+        mand.runs += 1;
+        if (r.success) mand.wins += 1;
+        mand.deaths += r.deaths.length;
+        income += r.reward;
+        continue; // 強制任務不算在各章統計裡
+      }
       const ch = DUNGEONS.find((d) => d.id === r.dungeonId)?.chapter ?? 0;
       const c = (byChapter[ch] ??= { runs: 0, wins: 0, deaths: 0 });
       c.runs += 1;
@@ -155,6 +175,9 @@ function playOne(seed) {
     clearDay: state.chapterClearDay,
     bankruptDay,
     deaths: state.graveyard.filter((g) => !g.cause.includes("回收爐")).length,
+    purged: state.graveyard.filter((g) => g.cause.includes("抹殺")).length, // 被主神抹殺（強制任務逾期等）
+    mand,
+    stele: state.memorialStele.length,
     alive: state.samsarites.length,
     points: state.points,
     lowestPoints,
@@ -193,7 +216,7 @@ if (args.json) {
     const days = results.map((r) => r.clearDay[ch]).filter(Boolean);
     return { ch, frac: days.length / SEEDS, median: days.length ? pctl(days, 0.5) : null, p25: days.length ? pctl(days, 0.25) : null, p75: days.length ? pctl(days, 0.75) : null };
   });
-  console.log(JSON.stringify({ chapters, deaths: avg(results.map((r) => r.deaths)), income: avg(results.map((r) => r.income / DAYS)), bankrupt: results.filter((r) => r.bankruptDay).length / SEEDS }));
+  console.log(JSON.stringify({ chapters, purged: avg(results.map((r) => r.purged)), mandRuns: avg(results.map((r) => r.mand.runs)), mandWinRate: results.reduce((n, r) => n + r.mand.wins, 0) / Math.max(1, results.reduce((n, r) => n + r.mand.runs, 0)), alive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), income: avg(results.map((r) => r.income / DAYS)), bankrupt: results.filter((r) => r.bankruptDay).length / SEEDS }));
   process.exit(0);
 }
 console.log(`\n主神空間平衡模擬：${SEEDS} 組種子 × 最多 ${DAYS} 天（${((Date.now() - t0) / 1000).toFixed(1)} 秒）\n`);
@@ -214,6 +237,8 @@ console.log(`最終空間等級分布：${[1, 2, 3, 4, 5].map((lv) => `Lv.${lv}�
 console.log(`最終最高基因鎖分布：${[0, 1, 2, 3, 4].map((g) => `${g}階×${results.filter((r) => r.maxGene === g).length}`).join("　")}`);
 console.log(`平均最強戰力：${avg(results.map((r) => r.topPower))}　平均剩餘因果結晶：${avg(results.map((r) => r.crystals))}`);
 console.log(`平均總收入（副本獎勵）：${avg(results.map((r) => r.income))}　每天約 ${avg(results.map((r) => r.income / DAYS))}`);
+const mandRuns = results.reduce((n, r) => n + r.mand.runs, 0);
+console.log(`強制任務（每局平均）：出征 ${(mandRuns / SEEDS).toFixed(1)} 場 / 通關率 ${mandRuns ? Math.round((results.reduce((n, r) => n + r.mand.wins, 0) / mandRuns) * 100) : 0}% / 戰死 ${avg(results.map((r) => r.mand.deaths))} 人；被主神抹殺 ${avg(results.map((r) => r.purged))} 人；英靈碑 ${avg(results.map((r) => r.stele))} 筆`);
 console.log("各章（每局平均）：出征場數 / 通關率 / 死亡人數");
 for (let ch = 1; ch <= 5; ch++) {
   const rows = results.map((r) => r.byChapter[ch] ?? { runs: 0, wins: 0, deaths: 0 });

@@ -66,7 +66,7 @@ export const ENV_TAGS = [
 // 事件獲得的標籤（死亡連鎖等）：不會被抽卡抽到，所以不放在 TAGS（MVP 標籤維持 30 個）
 export const ACQUIRED_TAGS = [
   { id: "broken_heart", name: "道心破碎", rarity: "R", kind: "acquired", desc: "失去重要的人之後，再也提不起勁。", passBonus: -0.03 },
-  { id: "demon_path", name: "走火入魔", rarity: "SR", kind: "acquired", desc: "力量變強了，人也變得不太穩定。", powerPct: 0.15, passBonus: -0.04, injuryShield: -0.2 },
+  { id: "demon_path", name: "走火入魔", rarity: "SR", kind: "acquired", desc: "力量變強了，人也變得不太穩定，別人更難喜歡上他。", powerPct: 0.08, loveGainMult: 0.5 }, // 4-C-2：戰力 +8%、別人對他的好感獲取減半（取代舊的 +15%／通過率 -4%／受傷減免 -20%）
 ];
 
 export function getTag(id) {

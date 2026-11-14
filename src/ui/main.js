@@ -8,7 +8,7 @@ import {
   currentDay,
   getSamsarite,
   upkeepOf,
-  upkeepBaseOf,
+  upkeepPartsOf,
   debtLimitOf,
   canAfford,
   pullGacha,
@@ -17,7 +17,9 @@ import {
   serialize,
   deserialize,
 } from "../engine/core.js";
-import { roomPassRate, clearChance, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, bossGateInfo, roomCount, roomsToClear } from "../engine/dungeon.js";
+import { roomPassRate, clearChance, chanceAtLeast, partyPower, startRun, hasIntel, rewardTierMult, intelBonus, isUnlocked, bossGateInfo, roomCount, roomsToClear, dungeonOfRun } from "../engine/dungeon.js";
+import { steleBonusOf } from "../engine/memorial.js";
+import { MANDATORY_ID, pendingMandatory, buildMandatoryDungeon } from "../engine/mandatory.js";
 import {
   enhance as enhanceSamsarite,
   breakGene as breakSamsariteGene,
@@ -29,7 +31,7 @@ import {
   maxGeneOf,
   geneTierOf,
 } from "../engine/growth.js";
-import { effectivePower } from "../engine/tags.js";
+import { effectivePower, subStat, defenseChance, speedSaveChance } from "../engine/tags.js";
 import { shopTier, nextTierInfo, checkBuy, buyItem, collectionEffects } from "../engine/shop.js";
 import { SHOP_ITEMS, SHOP_KIND_LABELS, SHOP_SLOT_LABELS, getShopItem } from "../data/shop.js";
 import { getSpecialReward } from "../data/dungeons.js";
@@ -167,6 +169,11 @@ function renderTopbar() {
 
   const godWaiting = Boolean(pendingGodEvent(state));
   $("btn-god").style.display = godWaiting || activeMission(state) ? "" : "none";
+  const steleTotal = Math.round(steleBonusOf(state) * 100);
+  $("btn-stele").textContent = `🪦 英靈碑${steleTotal > 0 ? ` +${steleTotal}%` : ""}`;
+  const mand = pendingMandatory(state);
+  $("btn-mandatory").style.display = mand ? "" : "none";
+  if (mand) $("btn-mandatory").textContent = `☠️ 強制任務（第 ${mand.deadlineDay} 天前）`;
   $("btn-god").textContent = godWaiting ? "👁 主神搞事 (1)" : "🚨 突襲任務";
 
   $("auto-dispatch").checked = state.settings.autoDispatch;
@@ -227,7 +234,7 @@ function renderStage() {
 /** 副本路線圖：骨架每場只建一次（這樣小隊的 CSS 滑動才不會被重建打斷），之後只更新節點、位置、隊員 */
 function renderDungeonView(run) {
   const view = $("dungeon-view");
-  const dungeon = getDungeon(run.dungeonId);
+  const dungeon = dungeonOfRun(run);
   const n = dungeon.rooms.length;
   const px = (i) => 10 + (i / (n - 1)) * 80; // 節點橫向位置（%）
   if (view.dataset.runId !== String(run.id)) {
@@ -338,7 +345,7 @@ function renderRunList(viewing = null) {
   box.style.display = state.runs.length ? "flex" : "none";
   box.innerHTML = state.runs
     .map((run) => {
-      const dungeon = getDungeon(run.dungeonId);
+      const dungeon = dungeonOfRun(run);
       const party = run.partyIds.map((id) => getSamsarite(state, id)).filter(Boolean);
       const env = getEnvTag(run.envId);
       const nodes = dungeon.rooms
@@ -444,14 +451,21 @@ function closeModal() {
 function renderModal() {
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { dispatch, gacha, shop, detail, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent };
+  const builders = { dispatch, gacha, shop, detail, stele, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent };
   $("modal").innerHTML = builders[modal.name]();
 }
 
 const closeButton = `<button data-action="close-modal">關閉</button>`;
 
+/** 派遣用的副本定義：強制任務是動態副本（依當下名冊算 R），其他查資料表 */
+function dungeonById(id) {
+  return id === MANDATORY_ID ? buildMandatoryDungeon(state) : getDungeon(id);
+}
+
 function dispatch() {
-  const dungeon = getDungeon(dispatchPick.dungeonId);
+  if (dispatchPick.dungeonId === MANDATORY_ID && !pendingMandatory(state)) dispatchPick.dungeonId = DUNGEONS[0].id; // 任務沒了（已派出或已逾時）
+  const dungeon = dungeonById(dispatchPick.dungeonId);
+  const isMand = Boolean(dungeon.mandatory);
   const home = state.samsarites.filter((s) => s.location === "space");
   for (const id of [...dispatchPick.party]) if (!home.some((s) => s.id === id)) dispatchPick.party.delete(id);
   const party = home.filter((s) => dispatchPick.party.has(s.id));
@@ -465,6 +479,13 @@ function dispatch() {
       ? `<br /><small class="bad">🔒 尾王未開放：本章前 3 關合計通關 ${gate.have}/${gate.need} 次</small>`
       : "";
   };
+  const mandatoryOption = pendingMandatory(state)
+    ? `<h4 class="chapter-head">☠️ 主神強制任務（限時，不能化解）</h4><div class="option ${isMand ? "selected" : ""}" data-action="pick-dungeon" data-id="${MANDATORY_ID}">
+      <span class="option-icon">${dungeonById(MANDATORY_ID).icon}</span>
+      <span class="grow"><b>${dungeonById(MANDATORY_ID).name}</b> <small class="bad">第 ${pendingMandatory(state).deadlineDay} 天前要派隊，逾時主神隨機抹殺 ${CONFIG.forcedMission.purgeMin}～${CONFIG.forcedMission.purgeMax} 人、全員理智 -${CONFIG.forcedMission.purgeSanityLoss}</small><br /><small>${dungeonById(MANDATORY_ID).intro}</small></span>
+      <small>推薦戰力 ${dungeonById(MANDATORY_ID).recommendedPower}<br />獎勵 ${dungeonById(MANDATORY_ID).reward} 分（每戰死 1 人 +${Math.round(CONFIG.forcedMission.deathRewardPct * 100)}%）<br />${roomCount(dungeonById(MANDATORY_ID))} 房過 ${roomsToClear(dungeonById(MANDATORY_ID))}・單房上限 ${Math.round(CONFIG.forcedMission.passCap * 100)}%</small>
+    </div>`
+    : "";
   // 只列出已解鎖的章節＋下一章（鎖住、預告用），其餘不顯示
   const dungeonOptions = DUNGEONS.filter((d) => d.chapter <= state.spaceLevel + 1).map((d) => {
     const st = state.dungeonStats[d.id] ?? { attempts: 0, clears: 0 };
@@ -490,11 +511,11 @@ function dispatch() {
 
   let summary = "請至少選一個人。";
   if (party.length > 0) {
-    const rate = Math.round(roomPassRate(state, party, dungeon) * 100);
-    const chance = Math.round(clearChance(state, party, dungeon) * 100);
+    const rate = Math.round(roomPassRate(state, party, dungeon, null, 0, isMand ? 0 : null) * 100);
+    const chance = Math.round((isMand ? chanceAtLeast(roomCount(dungeon), roomsToClear(dungeon), roomPassRate(state, party, dungeon, null, 0, 0)) : clearChance(state, party, dungeon)) * 100);
     const cls = chance >= 75 ? "good" : chance >= 50 ? "warn" : "bad";
     summary = `小隊總戰力 <b>${partyPower(party)}</b> / 推薦 ${dungeon.recommendedPower}<br />
-      每個房間通過率 <b>${rate}%</b>（含情報 ${pct(intelBonus(state, dungeon))}），${roomCount(dungeon)} 個房間通過 ${roomsToClear(dungeon)} 個以上才算通關（約 ${(roomCount(dungeon) * CONFIG.roomTicks) / CONFIG.ticksPerDay} 天）<br />
+      每個房間通過率 <b>${rate}%</b>（${isMand ? "不吃情報加成" : "含情報 " + pct(intelBonus(state, dungeon))}），${roomCount(dungeon)} 個房間通過 ${roomsToClear(dungeon)} 個以上才算通關（約 ${(roomCount(dungeon) * CONFIG.roomTicks) / CONFIG.ticksPerDay} 天）<br />
       預估通關率 <b class="${cls}">${chance}%</b>（進副本時才會抽環境標籤，實際會再浮動）`;
     const relBonus = Math.round(partyRelationBonus(state, party) * 100);
     if (relBonus !== 0) {
@@ -507,7 +528,7 @@ function dispatch() {
     if (enemyPairs.length > 0) {
       summary += `<br /><span class="bad">⚔️ 隊內有仇人：${enemyPairs.join("、")}（每個房間有機率先打起來）</span>`;
     }
-    if (!hasIntel(state, dungeon)) {
+    if (!isMand && !hasIntel(state, dungeon)) {
       summary += `<br /><span class="warn">❓ 首次開荒：傷勢更重；首通有額外 ${Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct)} 分${dungeon.specialRewards?.length ? "與特殊獎勵" : ""}${dungeon.boss ? (dungeon.chapter >= CONFIG.space.maxLevel ? "，並完成主線" : "，並讓主神空間升級、解鎖下一章") : ""}。</span>`;
     }
     if (injured.length > 0) {
@@ -518,7 +539,7 @@ function dispatch() {
   }
 
   return `<h3>🚪 派遣</h3>
-    <div class="option-list">${dungeonOptions}</div>
+    <div class="option-list">${mandatoryOption}${dungeonOptions}</div>
     <h3 style="margin-top:14px">選擇隊員（最多 ${CONFIG.partyMax} 人，已選 ${party.length}）</h3>
     <div class="option-list">${memberOptions}</div>
     <div class="summary">${summary}</div>
@@ -636,16 +657,16 @@ function detail() {
       <tr><td>狀態</td><td>${s.location === "pod" ? `🍼 催熟艙（還要 ${s.podDaysLeft} 天）` : `${home ? "主神空間" : "副本中"}・${injuryLabel(s)}`}</td></tr>
       ${s.parents ? `<tr><td>家長</td><td>${parentNames(state, s).join("、") || "（已不在世）"}${s.inheritedTags?.length ? `<br /><small>繼承標籤：${s.inheritedTags.map((id) => getTag(id)?.name ?? id).join("、")}</small>` : ""}</td></tr>` : ""}
       ${s.mood || s.vacationDays > 0 || wishesOf(state, s.id).length ? `<tr><td>心情／許願</td><td>${statusExtras(s).replace("<br />", "")}</td></tr>` : ""}
-      <tr><td>生命</td><td>${s.stats.hp}</td></tr>
+      <tr><td>生命</td><td>${subStat(s, "hp")}（超過 100 的部分幫助養傷；≥ ${CONFIG.combat.hpHalfPenalty} 傷勢戰力懲罰減半）</td></tr>
       <tr><td>戰力</td><td>${effectivePower(s)}（本體 ${s.stats.power + (s.inheritPower ?? 0)} × 基因鎖 ×${gene.powerMult}，再加裝備白值、乘標籤與心情）</td></tr>
       <tr><td>基因鎖</td><td>第 ${s.geneLock ?? 0} 階【${gene.name}】・${s.rank} 級最高第 ${maxGeneOf(s)} 階</td></tr>
       <tr><td>強化</td><td>${s.enhanceCount ?? 0}/${enhanceCapOf(s)} 次・成長倍率 ×${RANKS[s.rank].growthMult}<br /><small>每次：戰力 +${gain.power}、生命 +${gain.hp}、防禦／速度／運氣各 +${gain.defense}</small></td></tr>
       <tr><td>頓悟</td><td>${s.insightCount ?? 0}/${insightCapOf(s)} 次<br /><small>副本通關時每位存活隊員 ${Math.round(CONFIG.insight.chance * 100)}% 機率頓悟（戰力 +${Math.round(CONFIG.insight.gainPower * RANKS[s.rank].growthMult)}、再隨機一項副屬性）</small></td></tr>
-      <tr><td>防禦</td><td>${s.stats.defense}</td></tr>
-      <tr><td>速度</td><td>${s.stats.speed}</td></tr>
+      <tr><td>防禦</td><td>${subStat(s, "defense")}（受傷時 ${Math.round(defenseChance(s) * 100)}% 機率少 1 級）</td></tr>
+      <tr><td>速度</td><td>${subStat(s, "speed")}（副本戰死時 ${Math.round(speedSaveChance(s) * 100)}% 機率鎖血改致命傷）</td></tr>
       <tr><td>理智</td><td>${s.stats.sanity}</td></tr>
-      <tr><td>運氣</td><td>${s.stats.luck}</td></tr>
-      <tr><td>維持費</td><td>${upkeepOf(s, state)} 分 / 天${s.location === "pod" ? "（催熟艙固定費用）" : `（基礎 ${upkeepBaseOf(state)} ×（1 + 階級 ${Math.round(RANKS[s.rank].upkeepPct * 100)}% + 傷勢 ${Math.round(INJURIES[s.injury].upkeepPct * 100)}%））`}</td></tr>
+      <tr><td>運氣</td><td>${subStat(s, "luck")}（每點 +${CONFIG.combat.luckReward.perPoint * 100}% 通關積分，看隊伍平均）</td></tr>
+      <tr><td>維持費</td><td>${upkeepOf(s, state)} 分 / 天${s.location === "pod" ? "（催熟艙固定費用）" : `（（基因鎖 ${upkeepPartsOf(s, state).gene} + 空間 ${upkeepPartsOf(s, state).space}）×（1 + 階級 ${Math.round(RANKS[s.rank].upkeepPct * 100)}% + 傷勢 ${Math.round(INJURIES[s.injury].upkeepPct * 100)}%））`}</td></tr>
       <tr><td>資歷</td><td>第 ${s.joinedDay} 天加入・出征 ${s.runs} 次</td></tr>
       <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}`).join("・")}</td></tr>
       <tr><td>標籤</td><td>${(s.tags ?? [])
@@ -662,7 +683,7 @@ function detail() {
       <button class="primary" data-action="break-gene" data-id="${s.id}" ${brk.ok ? "" : "disabled"} title="${brk.ok ? "" : brk.reason}">🧬 突破基因鎖${brk.cost ? `（${brk.cost} 分）` : ""}</button>
     </div>
     <div class="modal-actions">
-      <button class="danger" data-action="ask-recycle" data-id="${s.id}" ${home ? "" : "disabled"}>♻️ 推進回收爐（+${CONFIG.recycle.points} 分）</button>
+      <button class="danger" data-action="ask-recycle" data-id="${s.id}" ${home ? "" : "disabled"}>♻️ 推進回收爐（+${RANKS[s.rank].recycleRefund} 分）</button>
       <button data-action="toggle-follow" data-id="${s.id}">${s.id === state.settings.followId ? "👁️ 取消鎖定視角" : "👁 鎖定視角"}</button>
       <button data-action="toggle-lock" data-id="${s.id}">${s.locked ? "🔓 解除鎖定" : "🔒 鎖定（不參與自動派遣）"}</button>
       ${closeButton}
@@ -722,11 +743,30 @@ function confirmRecycle() {
   const s = getSamsarite(state, modal.id);
   return `<h3>♻️ 主神回收爐</h3>
     <p>確定要把 <b>${s.name}</b> 推進回收爐嗎？<span class="bad">這個人會永久消失。</span></p>
-    <p>你會拿到 ${CONFIG.recycle.points} 分，並省下之後的維持費；但其他所有輪迴者理智 -${CONFIG.recycle.sanityLoss}。</p>
+    <p>你會拿到 ${RANKS[s.rank].recycleRefund} 分，並省下之後的維持費；但其他所有輪迴者理智 -${CONFIG.recycle.sanityLoss}。</p>
     <div class="modal-actions">
       <button data-action="open-detail" data-id="${s.id}">算了</button>
       <button class="danger" data-action="confirm-recycle" data-id="${s.id}">推進去</button>
     </div>`;
+}
+
+/** 英靈碑：名單與目前的全隊戰力加成（只有前 N 名生效） */
+function stele() {
+  const list = state.memorialStele ?? [];
+  const top = CONFIG.stele.topN;
+  const rows = list.length
+    ? list
+        .map(
+          (e, i) => `<div class="option ${i < top ? "selected" : ""}">${rankBadge(e.rank)}<span class="grow">${e.name}
+            <small>基因鎖 ${e.geneLock} 階・出征 ${e.runs} 場・第 ${e.day} 天・${e.cause}</small></span>
+            <b>${i < top ? "✅ " : "💤 "}+${Math.round(e.bonus * 100)}%</b></div>`
+        )
+        .join("")
+    : `<div class="empty">還沒有人入碑。基因鎖 ${CONFIG.stele.minGene} 階以上、或出征滿 ${CONFIG.stele.minRuns} 場的輪迴者，戰死在副本或被主神抹殺時才會刻上去。</div>`;
+  return `<h3>🪦 英靈碑</h3>
+    <p>目前全隊有效戰力 <b class="good">+${Math.round(steleBonusOf(state) * 100)}%</b>（碑上加成最高的前 ${top} 名生效，依生前基因鎖 0～4 階各 ${CONFIG.stele.bonusByGene.map((b) => Math.round(b * 100)).join("／")}%，最多 +${Math.round(CONFIG.stele.bonusByGene[4] * top * 100)}%）。</p>
+    <div class="option-list">${rows}</div>
+    <div class="modal-actions">${closeButton}</div>`;
 }
 
 function settings() {
@@ -856,6 +896,10 @@ const actions = {
   "open-dispatch"() {
     modal = { name: "dispatch" };
   },
+  "open-mandatory"() {
+    dispatchPick.dungeonId = MANDATORY_ID; // 直接跳到強制任務的派遣畫面
+    modal = { name: "dispatch" };
+  },
   "open-gacha"() {
     modal = { name: "gacha" };
   },
@@ -883,6 +927,9 @@ const actions = {
     refuseWish(state, Number(el.dataset.id));
     if (pendingWishes(state).length === 0) modal = null;
     saveGame();
+  },
+  "open-stele"() {
+    modal = { name: "stele" };
   },
   "open-god"() {
     modal = { name: "godEvent", forced: false };
@@ -916,7 +963,7 @@ const actions = {
     modal = null; // afterChange 會自動接著彈下一場
   },
   "pick-dungeon"(el) {
-    if (!isUnlocked(state, getDungeon(el.dataset.id))) return; // 還沒解鎖的章節只能看不能選
+    if (el.dataset.id !== MANDATORY_ID && !isUnlocked(state, getDungeon(el.dataset.id))) return; // 還沒解鎖的章節只能看不能選
     dispatchPick.dungeonId = el.dataset.id;
   },
   "toggle-member"(el) {

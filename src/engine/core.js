@@ -4,12 +4,15 @@
 import { CONFIG, RANKS, INJURIES, PAUSE_EVENTS } from "../data/config.js";
 import { SURNAMES, GIVEN_NAMES } from "../data/names.js";
 import { rand, randInt, pick, weighted } from "./rng.js";
-import { rollTags } from "./tags.js";
+import { rollTags, hpRestBonus } from "./tags.js";
 import { findSpecialRewardByName, getSpecialReward } from "../data/dungeons.js";
 import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
 import { dailyGod, cancelGodOf, newGodState } from "./godEvents.js"; // 同上（Phase 3-E 主神搞事）
 import { dailyNursery, newNurseryState, podCost } from "./children.js"; // 同上（Phase 3-F 生小孩）
+import { enshrine, refreshSteleBonus, steleBonusOf } from "./memorial.js"; // 同上（Phase 4-C-5 英靈碑）
+import { dailyMandatory, newMandatoryState } from "./mandatory.js"; // 同上（Phase 4-C-4 主神強制任務）
+import { dailySanity, newSanityState } from "./sanity.js"; // 同上（Phase 4-C-2 理智暴走）
 import { newGrowthState } from "./growth.js"; // 同上（Phase 4-B 基因鎖／強化／頓悟；growth.js 也會 import 這個檔案）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
@@ -48,10 +51,14 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     nextId: 1,
     samsarites: [],
     graveyard: [],
+    memorialStele: [], // 英靈碑名單（見 engine/memorial.js）
     relations: {}, // 關係矩陣（見 engine/relations.js）
     wishes: [], // 進行中的許願（見 engine/wishes.js）
     nextWishId: 1,
     nursery: newNurseryState(seed), // 生小孩：獨立亂數流（見 engine/children.js）
+    mandatory: newMandatoryState(seed), // 主神強制血腥任務：計時與待派任務（見 engine/mandatory.js）
+    airdrop: newAirdropState(seed), // 絕境空投：連續天數與獨立亂數流（見下方 dailyAirdrop）
+    sanity: newSanityState(seed), // 理智暴走：獨立亂數流（見 engine/sanity.js）
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
     cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
     dungeonStats: {}, // { 副本id: { attempts, clears } }；clears > 0 代表已有該副本情報
@@ -108,6 +115,7 @@ export function createSamsarite(state, rank, rng = state) {
     geneLock: 0, // 基因鎖階數 0~4（上限依階級，見 RANKS.maxGene；engine/growth.js）
     enhanceCount: 0, // 個人強化累計次數（上限跟基因鎖階數走）
     insightCount: 0, // 通關頓悟累計次數（上限 = (基因鎖階數 + 1) × 4）
+    steleBonus: steleBonusOf(state), // 英靈碑的全隊戰力加成（4-C-5；碑變動時由 refreshSteleBonus 更新）
     inheritPower: 0, // 子嗣繼承值（4-E 才會用，先預留；算進本體值、會吃基因鎖乘區）
     gear: {}, // 商店裝備：{ weapon: 商品id, armor: 商品id }
     joinedDay: currentDay(state),
@@ -122,15 +130,19 @@ export function getSamsarite(state, id) {
   return state.samsarites.find((s) => s.id === id);
 }
 
-/** 目前空間等級的基礎日維持費 */
-export function upkeepBaseOf(state) {
-  return CONFIG.space.upkeepBase[(state?.spaceLevel ?? 1) - 1];
+/** 維持費的兩個基準部分：個人基因鎖基準費 + 空間環境底費（Phase 4-C-3；沒傳 state 當 Lv.1） */
+export function upkeepPartsOf(s, state = null) {
+  return {
+    gene: CONFIG.space.upkeepGene[s.geneLock ?? 0] ?? 0,
+    space: CONFIG.space.upkeepSpace[(state?.spaceLevel ?? 1) - 1] ?? 0,
+  };
 }
 
-/** 每日維持費 = 基礎 ×（1 + 階級附加% + 傷勢醫藥費%），四捨五入。基礎費跟空間等級走（沒傳 state 當 Lv.1） */
+/** 每日維持費 = （個人基因鎖基準費 + 空間環境底費）×（1 + 階級附加% + 傷勢醫藥費%），四捨五入 */
 export function upkeepOf(s, state = null) {
   if (s.location === "pod") return CONFIG.child.podUpkeep; // 催熟艙的嬰兒只吃固定的小額
-  return Math.round(upkeepBaseOf(state) * (1 + RANKS[s.rank].upkeepPct + INJURIES[s.injury].upkeepPct));
+  const { gene, space } = upkeepPartsOf(s, state);
+  return Math.round((gene + space) * (1 + RANKS[s.rank].upkeepPct + INJURIES[s.injury].upkeepPct));
 }
 
 export function setInjury(s, level) {
@@ -139,11 +151,12 @@ export function setInjury(s, level) {
 }
 
 /** killer：被同伴害死時的兇手（怪物殺的就不傳）。連鎖反應在 relations.js 的 afterDeath，由呼叫端接著呼叫 */
-export function killSamsarite(state, s, cause, killer = null) {
+export function killSamsarite(state, s, cause, killer = null, stele = null) {
   state.samsarites = state.samsarites.filter((x) => x.id !== s.id);
   cancelWishesOf(state, s.id);
   cancelGodOf(state, s.id);
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null });
+  if (stele) enshrine(state, s, stele); // 副本戰死／主神抹殺才入碑（4-C-5）
   emit(state, "death", logText(state, "death", { A: s, rank: s.rank, cause }), { samsariteId: s.id, killerId: killer?.id ?? null });
 }
 
@@ -208,11 +221,21 @@ export function endOfDay(state) {
   let cost = 0;
   for (const s of atHome) {
     cost += upkeepOf(s, state); // 先用「今天的傷勢」算錢，再結算休息
+    s.stats.sanity = Math.min(100, s.stats.sanity + CONFIG.sanity.restRecover); // 人在空間（含帶傷休養）每日自然恢復理智（4-C-2）
     if (s.injury > 0) {
       s.restDaysLeft -= 1;
       if (s.restDaysLeft <= 0) {
         setInjury(s, 0);
         emit(state, "healed", logText(state, "healed", { A: s }), { samsariteId: s.id });
+      }
+    }
+    // 體魄（Phase 4-C-1）：總 hp 超過 100 的部分每滿 40 點，+25% 機率額外多恢復 1 級（降 1 級，休養天數重算；沒有額外加成時不消耗亂數）
+    if (s.injury > 0) {
+      const { sure, chance } = hpRestBonus(s);
+      const extra = sure + (chance > 0 && rand(state) < chance ? 1 : 0);
+      if (extra > 0) {
+        setInjury(s, Math.max(0, s.injury - extra));
+        if (s.injury === 0) emit(state, "healed", logText(state, "healed", { A: s }), { samsariteId: s.id });
       }
     }
   }
@@ -225,6 +248,7 @@ export function endOfDay(state) {
 
   emit(state, "dayEnd", logText(state, "dayEnd", { day, home: atHome.length, cost }));
   announceDebtIfNew(state, wasInDebt);
+  dailyAirdrop(state);
 
   if (state.points < 0 && state.samsarites.length > 0) {
     if (hitLimit) {
@@ -239,6 +263,30 @@ export function endOfDay(state) {
   }
 }
 
+// ───────── 絕境空投（Phase 4-C-3）─────────
+
+export function newAirdropState(seed = 0) {
+  return { rngState: (seed ^ 0xa1d0) | 0, days: 0 };
+}
+
+/** 每日結算尾端：名冊（不含催熟艙）< 2 人且積分 < 120 連續滿 3 天，主神免費空投 1 名 C 級新人，防止死檔。條件中斷就歸零 */
+export function dailyAirdrop(state) {
+  const ad = (state.airdrop ??= newAirdropState(state.rngState));
+  const cfg = CONFIG.airdrop;
+  const alive = state.samsarites.filter((s) => s.location !== "pod").length;
+  if (state.gameOver || alive >= cfg.minAlive || state.points >= cfg.pointsBelow) {
+    ad.days = 0;
+    return null;
+  }
+  ad.days += 1;
+  if (ad.days < cfg.everyDays) return null;
+  ad.days = 0;
+  const s = createSamsarite(state, cfg.rank, ad); // 用獨立亂數流，不動主亂數
+  state.samsarites.push(s);
+  emit(state, "airdrop", logText(state, "airdrop", { A: s, rank: s.rank }), { samsariteId: s.id });
+  return s;
+}
+
 /** 主神回收爐：把人做成營養液，換一點積分，其他人理智下降 */
 export function recycle(state, id) {
   const s = getSamsarite(state, id);
@@ -248,12 +296,13 @@ export function recycle(state, id) {
   forgetRelations(state, id);
   cancelWishesOf(state, id);
   cancelGodOf(state, id);
-  state.points += CONFIG.recycle.points;
+  const refund = RANKS[s.rank].recycleRefund; // 依階級返還（C 30／B 80／A 250／S 800）
+  state.points += refund;
   for (const other of state.samsarites) loseSanity(other, CONFIG.recycle.sanityLoss);
   emit(
     state,
     "recycle",
-    logText(state, "recycle", { A: s, points: CONFIG.recycle.points, san: CONFIG.recycle.sanityLoss })
+    logText(state, "recycle", { A: s, points: refund, san: CONFIG.recycle.sanityLoss })
   );
   checkGameOver(state);
   return true;
@@ -339,15 +388,17 @@ export function pullGacha(state, poolId) {
 export function advanceTick(state) {
   state.tick += 1;
   if (state.tick % CONFIG.ticksPerDay === 0) {
+    dailySanity(state); // 理智歸零的人暴走（要在 endOfDay 補理智之前，Phase 4-C-2）
     endOfDay(state);
     dailyWishes(state); // 心情／休假倒數、許願超時（Phase 3-B）
+    dailyMandatory(state); // 主神強制血腥任務：發布／逾時抹殺（Phase 4-C-4，獨立亂數流）
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
     dailyNursery(state); // 催熟倒數、戀人懷孕（Phase 3-F；放在關係事件之後，剛升級的靈魂伴侶今天就有機會）
   }
 }
 
-/** 沒人可用、又抽不起最便宜的卡池 = 遊戲結束 */
+/** 沒人可用、又抽不起最便宜的卡池 = 遊戲結束（4-C-6 起空投開著時由空投救援，不會結束，見 CONFIG.airdrop.rescue） */
 export function checkGameOver(state) {
   if (state.gameOver) return true;
   // 用「基礎價」判斷（不含本週漲價）：沒人時沒有維持費，等到下週重置價格就回來了，不算卡死
@@ -356,7 +407,7 @@ export function checkGameOver(state) {
       .filter((p) => p.spaceLevel <= (state.spaceLevel ?? 1) && p.crystal <= (state.karmaCrystals ?? 0))
       .map((p) => p.base)
   );
-  if (state.samsarites.length === 0 && !canAfford(state, cheapest)) {
+  if (state.samsarites.length === 0 && !canAfford(state, cheapest) && !CONFIG.airdrop.rescue) {
     state.gameOver = true;
     emit(state, "gameOver", logText(state, "gameOver"));
   }
@@ -396,6 +447,11 @@ export function deserialize(json) {
   delete state.run;
   for (const r of state.runs) r.id ??= state.nextRunId++;
   state.nextRunId = Math.max(state.nextRunId, 1 + Math.max(0, ...state.runs.map((r) => r.id)));
+  state.memorialStele ??= []; // 舊存檔沒有英靈碑（Phase 4-C-5）
+  refreshSteleBonus(state);
+  state.mandatory ??= newMandatoryState(state.rngState); // 舊存檔沒有強制任務欄位（Phase 4-C-4）
+  state.airdrop ??= newAirdropState(state.rngState); // 舊存檔沒有絕境空投欄位（Phase 4-C-3）
+  state.sanity ??= newSanityState(state.rngState); // 舊存檔沒有理智暴走欄位（Phase 4-C-2）
   state.god ??= newGodState(state.rngState); // 舊存檔沒有主神搞事欄位（Phase 3-E）
   state.god.pending ??= null;
   state.god.mission ??= null;
