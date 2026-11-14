@@ -19,13 +19,17 @@ export const CONFIG = {
   // ── 空間等級（Phase 4-A）：Lv.1 開局，每首通一章尾王升 1 級（最高 Lv.5）。索引 0 = Lv.1 ──
   space: {
     maxLevel: 5,
-    upkeepBase: [8, 16, 35, 80, 180], // 每人每天基礎維持費；階級／傷勢附加費是它的百分比（見 RANKS.upkeepPct、INJURIES.upkeepPct）
+    // Phase 4-C-3 維持費改制：單人日費 = round((基因鎖基準費 + 空間環境底費) ×（1 + 階級附加 + 傷勢醫藥費附加））
+    upkeepGene: [8, 16, 35, 80, 180], // 個人基因鎖基準費，索引 = geneLock 0～4
+    upkeepSpace: [0, 3, 7, 16, 36], // 空間環境底費，索引 = 空間等級 - 1
     debtLimit: [-500, -1500, -4500, -12000, -30000], // 主神高利貸上限（破產線）
   },
 
   // ── 經濟 ──
   debtShockSanity: 10, // 負債期間每天電擊一人，理智 -10
-  recycle: { points: 30, sanityLoss: 5 }, // 主神回收爐（理智扣多少：計畫未定）
+  recycle: { sanityLoss: 5 }, // 主神回收爐：其他人理智扣多少（計畫未定）；返還積分改看階級 RANKS[rank].recycleRefund（4-C-3）
+  // 絕境空投（4-C-3）：存活人數（不含催熟艙）< minAlive 且積分 < pointsBelow，連續滿 everyDays 天，主神免費空投 1 名新人
+  airdrop: { minAlive: 2, pointsBelow: 120, everyDays: 3, rank: "C" },
   // 商店 5 階的解鎖門檻：「累積花費」（抽卡也算）達到才開放。索引 0 = Tier 1（Phase 4-A）
   shopTierUnlock: [0, 600, 3000, 12000, 45000],
   shopDodgeMax: 0.9, // 閃避機率上限（標籤 + 商店加成加起來）
@@ -314,7 +318,7 @@ export const CONFIG = {
 // 階級：維持費附加（基礎費的百分比）+ 各屬性的隨機範圍。
 // Phase 4-A：所有人入隊時五維統一拉平為零階凡人；階級之後只決定成長倍率與基因鎖上限（Phase 4-B）。
 // growthMult = 成長倍率（乘在每次強化與頓悟的增加量上）；maxGene = 基因鎖上限階數；
-// recycleRefund = 回收返還積分（預留：4-B 只存數字，尚未接到回收爐）
+// recycleRefund = 回收返還積分（4-C-3 起接到回收爐）
 const MORTAL = { power: [26, 34], hp: [90, 110], defense: [8, 14], speed: [8, 14], luck: [8, 14] };
 export const RANKS = {
   C: { upkeepPct: 0, growthMult: 1.0, maxGene: 1, recycleRefund: 30, ...MORTAL },

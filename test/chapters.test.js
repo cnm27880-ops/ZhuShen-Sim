@@ -131,9 +131,9 @@ test("副本長度跟房數走：5 房 1 天、7 房 1.4 天、12 房 2.4 天", 
 test("維持費與破產線跟空間等級走", () => {
   const state = setup(1, 30);
   const s = state.samsarites[0];
-  CONFIG.space.upkeepBase.forEach((base, i) => {
+  CONFIG.space.upkeepSpace.forEach((spaceFee, i) => {
     state.spaceLevel = i + 1;
-    assert.equal(upkeepOf(s, state), base);
+    assert.equal(upkeepOf(s, state), CONFIG.space.upkeepGene[s.geneLock ?? 0] + spaceFee);
     assert.equal(debtLimitOf(state), CONFIG.space.debtLimit[i]);
   });
   state.spaceLevel = 2;

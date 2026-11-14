@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { CONFIG } from "../src/data/config.js";
+import { CONFIG, RANKS } from "../src/data/config.js";
 import { DUNGEONS, getDungeon } from "../src/data/dungeons.js";
 import { TAGS, ENV_TAGS, getTag } from "../src/data/tags.js";
 import {
@@ -35,15 +35,19 @@ test("同一個種子會產生一模一樣的開局", () => {
   assert.equal(createNewGame(42).samsarites.length, CONFIG.startingSamsarites);
 });
 
-test("維持費：Lv.1 基礎 8 分 ×（1 + 階級% + 傷勢%），四捨五入；空間升級後基礎費跟著漲", () => {
+test("維持費：（基因鎖基準 + 空間底費）×（1 + 階級% + 傷勢%），四捨五入；空間升級後底費跟著漲", () => {
   const state = createNewGame(1);
   assert.equal(upkeepOf(make(state, "C", 0)), 8); // 8 × 1
   assert.equal(upkeepOf(make(state, "B", 1)), 12); // 8 × (1 + 25% + 25%)
   assert.equal(upkeepOf(make(state, "A", 2)), 18); // 8 × (1 + 50% + 75%)
   assert.equal(upkeepOf(make(state, "S", 3)), 28); // 8 × (1 + 100% + 150%)
   state.spaceLevel = 3;
-  assert.equal(upkeepOf(make(state, "C", 0), state), 35);
-  assert.equal(upkeepOf(make(state, "B", 0), state), 44); // 35 × 1.25 = 43.75
+  assert.equal(upkeepOf(make(state, "C", 0), state), 15); // (8 + 7) × 1
+  assert.equal(upkeepOf(make(state, "B", 0), state), 19); // 15 × 1.25 = 18.75
+  const s4 = make(state, "S", 0);
+  s4.geneLock = 4;
+  assert.equal(upkeepOf(s4, state), 374); // (180 + 7) × 2
+
 });
 
 test("房間通過率：飽和公式 0.85 × P ÷ (P + R × 0.55) + 情報條，並且有上下限", () => {
@@ -273,12 +277,12 @@ test("自動派遣：不浪費戰力（簡單副本不會把最強的人全派�
   assert.ok(plan.chance >= CONFIG.auto.minClearChance);
 });
 
-test("回收爐：+30 分、其他人理智下降", () => {
+test("回收爐：依階級返還積分（C 30）、其他人理智下降", () => {
   const state = createNewGame(2);
   const [a, b] = state.samsarites;
   const before = state.points;
   assert.equal(recycle(state, a.id), true);
-  assert.equal(state.points, before + CONFIG.recycle.points);
+  assert.equal(state.points, before + RANKS.C.recycleRefund);
   assert.equal(b.stats.sanity, 100 - CONFIG.recycle.sanityLoss);
   assert.equal(state.samsarites.includes(a), false);
 });

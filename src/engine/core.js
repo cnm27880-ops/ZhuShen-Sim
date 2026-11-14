@@ -53,6 +53,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     wishes: [], // 進行中的許願（見 engine/wishes.js）
     nextWishId: 1,
     nursery: newNurseryState(seed), // 生小孩：獨立亂數流（見 engine/children.js）
+    airdrop: newAirdropState(seed), // 絕境空投：連續天數與獨立亂數流（見下方 dailyAirdrop）
     sanity: newSanityState(seed), // 理智暴走：獨立亂數流（見 engine/sanity.js）
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
     cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
@@ -124,15 +125,19 @@ export function getSamsarite(state, id) {
   return state.samsarites.find((s) => s.id === id);
 }
 
-/** 目前空間等級的基礎日維持費 */
-export function upkeepBaseOf(state) {
-  return CONFIG.space.upkeepBase[(state?.spaceLevel ?? 1) - 1];
+/** 維持費的兩個基準部分：個人基因鎖基準費 + 空間環境底費（Phase 4-C-3；沒傳 state 當 Lv.1） */
+export function upkeepPartsOf(s, state = null) {
+  return {
+    gene: CONFIG.space.upkeepGene[s.geneLock ?? 0] ?? 0,
+    space: CONFIG.space.upkeepSpace[(state?.spaceLevel ?? 1) - 1] ?? 0,
+  };
 }
 
-/** 每日維持費 = 基礎 ×（1 + 階級附加% + 傷勢醫藥費%），四捨五入。基礎費跟空間等級走（沒傳 state 當 Lv.1） */
+/** 每日維持費 = （個人基因鎖基準費 + 空間環境底費）×（1 + 階級附加% + 傷勢醫藥費%），四捨五入 */
 export function upkeepOf(s, state = null) {
   if (s.location === "pod") return CONFIG.child.podUpkeep; // 催熟艙的嬰兒只吃固定的小額
-  return Math.round(upkeepBaseOf(state) * (1 + RANKS[s.rank].upkeepPct + INJURIES[s.injury].upkeepPct));
+  const { gene, space } = upkeepPartsOf(s, state);
+  return Math.round((gene + space) * (1 + RANKS[s.rank].upkeepPct + INJURIES[s.injury].upkeepPct));
 }
 
 export function setInjury(s, level) {
@@ -237,6 +242,7 @@ export function endOfDay(state) {
 
   emit(state, "dayEnd", logText(state, "dayEnd", { day, home: atHome.length, cost }));
   announceDebtIfNew(state, wasInDebt);
+  dailyAirdrop(state);
 
   if (state.points < 0 && state.samsarites.length > 0) {
     if (hitLimit) {
@@ -251,6 +257,30 @@ export function endOfDay(state) {
   }
 }
 
+// ───────── 絕境空投（Phase 4-C-3）─────────
+
+export function newAirdropState(seed = 0) {
+  return { rngState: (seed ^ 0xa1d0) | 0, days: 0 };
+}
+
+/** 每日結算尾端：名冊（不含催熟艙）< 2 人且積分 < 120 連續滿 3 天，主神免費空投 1 名 C 級新人，防止死檔。條件中斷就歸零 */
+export function dailyAirdrop(state) {
+  const ad = (state.airdrop ??= newAirdropState(state.rngState));
+  const cfg = CONFIG.airdrop;
+  const alive = state.samsarites.filter((s) => s.location !== "pod").length;
+  if (state.gameOver || alive >= cfg.minAlive || state.points >= cfg.pointsBelow) {
+    ad.days = 0;
+    return null;
+  }
+  ad.days += 1;
+  if (ad.days < cfg.everyDays) return null;
+  ad.days = 0;
+  const s = createSamsarite(state, cfg.rank, ad); // 用獨立亂數流，不動主亂數
+  state.samsarites.push(s);
+  emit(state, "airdrop", logText(state, "airdrop", { A: s, rank: s.rank }), { samsariteId: s.id });
+  return s;
+}
+
 /** 主神回收爐：把人做成營養液，換一點積分，其他人理智下降 */
 export function recycle(state, id) {
   const s = getSamsarite(state, id);
@@ -260,12 +290,13 @@ export function recycle(state, id) {
   forgetRelations(state, id);
   cancelWishesOf(state, id);
   cancelGodOf(state, id);
-  state.points += CONFIG.recycle.points;
+  const refund = RANKS[s.rank].recycleRefund; // 依階級返還（C 30／B 80／A 250／S 800）
+  state.points += refund;
   for (const other of state.samsarites) loseSanity(other, CONFIG.recycle.sanityLoss);
   emit(
     state,
     "recycle",
-    logText(state, "recycle", { A: s, points: CONFIG.recycle.points, san: CONFIG.recycle.sanityLoss })
+    logText(state, "recycle", { A: s, points: refund, san: CONFIG.recycle.sanityLoss })
   );
   checkGameOver(state);
   return true;
@@ -409,6 +440,7 @@ export function deserialize(json) {
   delete state.run;
   for (const r of state.runs) r.id ??= state.nextRunId++;
   state.nextRunId = Math.max(state.nextRunId, 1 + Math.max(0, ...state.runs.map((r) => r.id)));
+  state.airdrop ??= newAirdropState(state.rngState); // 舊存檔沒有絕境空投欄位（Phase 4-C-3）
   state.sanity ??= newSanityState(state.rngState); // 舊存檔沒有理智暴走欄位（Phase 4-C-2）
   state.god ??= newGodState(state.rngState); // 舊存檔沒有主神搞事欄位（Phase 3-E）
   state.god.pending ??= null;

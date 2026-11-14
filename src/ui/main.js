@@ -8,7 +8,7 @@ import {
   currentDay,
   getSamsarite,
   upkeepOf,
-  upkeepBaseOf,
+  upkeepPartsOf,
   debtLimitOf,
   canAfford,
   pullGacha,
@@ -645,7 +645,7 @@ function detail() {
       <tr><td>速度</td><td>${subStat(s, "speed")}（副本戰死時 ${Math.round(speedSaveChance(s) * 100)}% 機率鎖血改致命傷）</td></tr>
       <tr><td>理智</td><td>${s.stats.sanity}</td></tr>
       <tr><td>運氣</td><td>${subStat(s, "luck")}（每點 +${CONFIG.combat.luckReward.perPoint * 100}% 通關積分，看隊伍平均）</td></tr>
-      <tr><td>維持費</td><td>${upkeepOf(s, state)} 分 / 天${s.location === "pod" ? "（催熟艙固定費用）" : `（基礎 ${upkeepBaseOf(state)} ×（1 + 階級 ${Math.round(RANKS[s.rank].upkeepPct * 100)}% + 傷勢 ${Math.round(INJURIES[s.injury].upkeepPct * 100)}%））`}</td></tr>
+      <tr><td>維持費</td><td>${upkeepOf(s, state)} 分 / 天${s.location === "pod" ? "（催熟艙固定費用）" : `（（基因鎖 ${upkeepPartsOf(s, state).gene} + 空間 ${upkeepPartsOf(s, state).space}）×（1 + 階級 ${Math.round(RANKS[s.rank].upkeepPct * 100)}% + 傷勢 ${Math.round(INJURIES[s.injury].upkeepPct * 100)}%））`}</td></tr>
       <tr><td>資歷</td><td>第 ${s.joinedDay} 天加入・出征 ${s.runs} 次</td></tr>
       <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}`).join("・")}</td></tr>
       <tr><td>標籤</td><td>${(s.tags ?? [])
@@ -662,7 +662,7 @@ function detail() {
       <button class="primary" data-action="break-gene" data-id="${s.id}" ${brk.ok ? "" : "disabled"} title="${brk.ok ? "" : brk.reason}">🧬 突破基因鎖${brk.cost ? `（${brk.cost} 分）` : ""}</button>
     </div>
     <div class="modal-actions">
-      <button class="danger" data-action="ask-recycle" data-id="${s.id}" ${home ? "" : "disabled"}>♻️ 推進回收爐（+${CONFIG.recycle.points} 分）</button>
+      <button class="danger" data-action="ask-recycle" data-id="${s.id}" ${home ? "" : "disabled"}>♻️ 推進回收爐（+${RANKS[s.rank].recycleRefund} 分）</button>
       <button data-action="toggle-follow" data-id="${s.id}">${s.id === state.settings.followId ? "👁️ 取消鎖定視角" : "👁 鎖定視角"}</button>
       <button data-action="toggle-lock" data-id="${s.id}">${s.locked ? "🔓 解除鎖定" : "🔒 鎖定（不參與自動派遣）"}</button>
       ${closeButton}
@@ -722,7 +722,7 @@ function confirmRecycle() {
   const s = getSamsarite(state, modal.id);
   return `<h3>♻️ 主神回收爐</h3>
     <p>確定要把 <b>${s.name}</b> 推進回收爐嗎？<span class="bad">這個人會永久消失。</span></p>
-    <p>你會拿到 ${CONFIG.recycle.points} 分，並省下之後的維持費；但其他所有輪迴者理智 -${CONFIG.recycle.sanityLoss}。</p>
+    <p>你會拿到 ${RANKS[s.rank].recycleRefund} 分，並省下之後的維持費；但其他所有輪迴者理智 -${CONFIG.recycle.sanityLoss}。</p>
     <div class="modal-actions">
       <button data-action="open-detail" data-id="${s.id}">算了</button>
       <button class="danger" data-action="confirm-recycle" data-id="${s.id}">推進去</button>
