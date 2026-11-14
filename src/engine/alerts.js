@@ -4,11 +4,14 @@
 
 import { ALERT_LEVELS, INJURIES } from "../data/config.js";
 import { emit } from "./core.js";
+import { addLifeOnce } from "./life.js";
 import { logText } from "./templates.js";
 
 export function checkAlerts(state) {
   for (const s of state.samsarites) {
     if (s.location === "pod") continue;
+    if (s.injury > 0) addLifeOnce(state, s, "firstInjury", "injury", `第一次受傷（${INJURIES[s.injury].name}）。`); // 一生大事記（功能 5）
+    if (s.injury >= 3) s.lifeFlags = { ...(s.lifeFlags ?? {}), survivedFatal: true };
     const severe = s.injury >= ALERT_LEVELS.severeInjury;
     if (severe && !s.alertInjury) emit(state, "injurySevere", logText(state, "injurySevere", { A: s, inj: INJURIES[s.injury].name }));
     s.alertInjury = severe;

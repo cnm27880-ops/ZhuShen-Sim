@@ -349,3 +349,79 @@ test("功能 2：舊存檔補 inventory 欄位", () => {
   delete state.inventory;
   assert.deepEqual(deserialize(serialize(state)).inventory, {});
 });
+
+import { bioOf, graveBio, addLife } from "../src/engine/life.js";
+import { checkTransfer, transferGear } from "../src/engine/gearTransfer.js";
+import { giveBirth } from "../src/engine/children.js";
+import { checkAlerts } from "../src/engine/alerts.js";
+import { effectivePower } from "../src/engine/tags.js";
+
+test("功能 5：一生大事記——到職、第一次出征／受傷／殺人、戀人、生小孩、死亡", () => {
+  const { state, people: [a, b] } = setup(2, 81);
+  assert.equal(a.life[0].kind, "join");
+  startRun(state, "ghost_village", [a.id]);
+  assert.ok(a.life.some((e) => e.kind === "run"), "第一次出征");
+  a.injury = 1;
+  checkAlerts(state);
+  checkAlerts(state);
+  assert.equal(a.life.filter((e) => e.kind === "injury").length, 1, "第一次受傷只記一次");
+  state.relations[`${a.id}>${b.id}`] = { love: 90, hate: 0 };
+  state.relations[`${b.id}>${a.id}`] = { love: 90, hate: 0 };
+  const kid = giveBirth(state, a, b);
+  assert.equal(kid.life[0].kind, "birth");
+  assert.ok(a.life.some((e) => e.kind === "child") && b.life.some((e) => e.kind === "child"));
+  killSamsarite(state, b, "測試被殺", a);
+  assert.equal(a.kills, 1);
+  assert.ok(a.life.some((e) => e.kind === "kill"));
+  const g = state.graveyard.at(-1);
+  assert.equal(g.bio.alive, false);
+  assert.equal(g.bio.cause, "測試被殺");
+  assert.ok(g.bio.life.some((e) => e.kind === "death"));
+  assert.equal(graveBio(state, state.graveyard.length - 1), g.bio);
+  const bioA = bioOf(state, a);
+  assert.equal(bioA.children.length, 1);
+  assert.ok(bioA.achievements.some((x) => x.id === "bloodied"));
+  assert.ok(bioA.achievements.some((x) => x.id === "parent"));
+  assert.equal(bioA.power, effectivePower(a));
+  void addLife;
+});
+
+test("功能 5：舊墓園紀錄（沒有 bio）也能查看簡版傳記；舊存檔補大事記欄位", () => {
+  const { state } = setup(1, 82);
+  state.graveyard.push({ name: "老骨頭", rank: "C", day: 3, cause: "戰死", killer: null });
+  const b = graveBio(state, 0);
+  assert.equal(b.alive, false);
+  assert.equal(b.life.length, 1);
+  const s2 = deserialize(serialize(state));
+  assert.ok(Array.isArray(s2.samsarites[0].life));
+});
+
+test("功能 3：裝備轉移——卸下轉給別人、原主不開心；對方已有就互換；不在空間不能轉", () => {
+  const { state, people: [a, b, c] } = setup(3, 83);
+  a.gear = { weapon: "t1_01" };
+  a.soulbound = { weapon: true };
+  const san = a.stats.sanity;
+  assert.deepEqual(checkTransfer(state, a.id, "weapon", a.id).ok, false, "不能轉給自己");
+  assert.equal(checkTransfer(state, a.id, "armor", b.id).ok, false, "空欄位不能轉");
+  const r = transferGear(state, a.id, "weapon", b.id);
+  assert.equal(r.ok, true);
+  assert.equal(r.swap, false);
+  assert.equal(a.gear.weapon, undefined, "A 的裝備被卸下");
+  assert.equal(b.gear.weapon, "t1_01");
+  assert.ok(!a.soulbound.weapon, "轉手後不再綁定");
+  assert.equal(a.mood.kind, "upset", "A 不開心");
+  assert.ok(a.stats.sanity < san, "A 理智下降");
+  assert.ok(a.stripped && a.stripped.item);
+  assert.ok(bioOf(state, a).statuses.some((x) => x.text.includes("被奪走裝備")), "傳記顯示被奪走裝備，不開心");
+  assert.ok(b.life.some((e) => e.kind === "gear"));
+  // 互換
+  c.gear = { weapon: "t1_02" };
+  const r2 = transferGear(state, b.id, "weapon", c.id);
+  assert.equal(r2.swap, true);
+  assert.equal(b.gear.weapon, "t1_02");
+  assert.equal(c.gear.weapon, "t1_01");
+  assert.equal(c.mood.kind, "upset", "被換走的人也不開心");
+  // 不在空間
+  c.location = "dungeon";
+  assert.equal(transferGear(state, a.id, "weapon", c.id).ok, false);
+});

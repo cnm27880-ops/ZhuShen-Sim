@@ -469,6 +469,9 @@ export const CONFIG = {
     chapterRoll: { 4: 0.15, 5: 0.25 },
   },
 
+  // ── 裝備轉移（功能 3）：被奪走裝備的人套用哪種心情（見 wish.moods）──
+  gearTransfer: { mood: "upset" },
+
   // ── 自動派遣 ──
   auto: {
     minClearChance: 0.6, // 預估通關率低於這個數字就不自動派（計畫未定）

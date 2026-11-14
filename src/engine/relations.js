@@ -14,6 +14,7 @@ import { effectivePower, sanityClashMult, loveGainMultOf } from "./tags.js";
 import { logText } from "./templates.js";
 import { captainOf } from "./squad.js";
 import { gearMult } from "./gearFx.js";
+import { addLife } from "./life.js"; // 一生大事記（功能 5）
 import { maybeWish } from "./wishes.js";
 import {
   emit,
@@ -100,6 +101,9 @@ export function pairStatus(state, a, b) {
 function setPairStatus(state, a, b, status) {
   ensureRel(state, a, b).status = status;
   ensureRel(state, b, a).status = status;
+  // 一生大事記（功能 5）：結為戀人／靈魂伴侶／死敵
+  const text = { lover: "成為戀人", soulmate: "結為靈魂伴侶", nemesis: "結為死敵" }[status];
+  if (text) for (const [x, y] of [[a, b], [b, a]]) addLife(state, x, status === "nemesis" ? "nemesis" : "love", `與 ${y.name} ${text}。`);
 }
 
 /** 忘情水（4-D-2）：兩人雙向的好感、仇恨歸零，戀人／靈魂伴侶／死敵狀態與復仇標記一併解除 */

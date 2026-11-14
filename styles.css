@@ -394,3 +394,41 @@ table.stats td:first-child { color: var(--muted); width: 34%; }
 .fac-bar { height: 8px; margin: 4px 0; border-radius: 4px; background: #dfe3ec; overflow: hidden; }
 .fac-fill { height: 100%; background: linear-gradient(90deg, #5b8def, #9a6bff); }
 #btn-gossip, #btn-rival { white-space: nowrap; }
+
+/* ───── 人物傳記卡（功能 5）：白色主題，乾淨、有質感 ───── */
+.bio { font-size: 14px; line-height: 1.6; }
+.bio h4 { margin: 14px 0 6px; font-size: 13px; letter-spacing: 0.04em; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.bio-head { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 14px; background: linear-gradient(135deg, #f8f9fc, #eef1f8); border: 1px solid var(--line); border-left: 6px solid var(--rank-C); }
+.bio-rank-B { border-left-color: var(--rank-B); } .bio-rank-A { border-left-color: var(--rank-A); } .bio-rank-S { border-left-color: var(--rank-S); background: linear-gradient(135deg, #fffaf0, #fff1d6); }
+.bio-avatar { font-size: 40px; width: 64px; height: 64px; border-radius: 50%; background: #fff; display: grid; place-items: center; box-shadow: var(--shadow); }
+.bio-name { font-size: 20px; font-weight: 700; }
+.bio-sub { color: var(--muted); font-size: 12px; }
+.bio-status { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.bio-chip { padding: 2px 10px; border-radius: 999px; background: #f1f3f5; font-size: 12px; border: 1px solid var(--line); }
+.bio-chip-bad { background: #fff0f0; color: var(--bad); border-color: #f5c2c2; }
+.bio-chip-good { background: #ebfbee; color: var(--good); border-color: #b2e5bf; }
+.bio-story { margin: 12px 2px; padding: 10px 14px; border-left: 3px solid var(--accent); background: #f6f8ff; border-radius: 0 10px 10px 0; color: #394056; font-style: italic; }
+.bio-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.bio-grid > div { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; text-align: center; }
+.bio-grid small { display: block; color: var(--muted); font-size: 11px; }
+.bio-grid b { font-size: 17px; }
+.bio-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.bio-rel > div { padding: 1px 0; }
+.bio-gear { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+.bio-gear > span { flex: 0 0 84px; color: var(--muted); }
+.bio-gear > b { flex: 1; }
+.bio-transfer { margin-top: 8px; }
+.bio-timeline { padding-left: 10px; max-height: 240px; overflow-y: auto; }
+.bio-event { position: relative; padding: 3px 0 3px 16px; border-left: 2px solid var(--line); }
+.bio-event::before { content: ""; position: absolute; left: -7px; top: 10px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; }
+.bio-event-death::before, .bio-event-kill::before, .bio-event-stripped::before { background: var(--bad); }
+.bio-event-love::before, .bio-event-child::before, .bio-event-birth::before { background: #e64980; }
+.bio-day { display: inline-block; min-width: 56px; margin-right: 8px; color: var(--muted); font-size: 12px; }
+.bio-achs { display: flex; flex-wrap: wrap; gap: 6px; }
+.bio-ach { padding: 3px 10px; border-radius: 999px; background: #fff9db; border: 1px solid #ffe066; font-size: 12px; }
+.bio-dead { filter: grayscale(0.55); }
+.bio-dead .bio-head { border-left-color: #868e96; background: #f1f3f5; }
+.bio-revive { margin-top: 12px; background: #faf5ff; border: 1px dashed #b197fc; }
+.grave-row { cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+.grave-row:hover { background: #eef1f6; }
+@media (max-width: 560px) { .bio-grid { grid-template-columns: repeat(2, 1fr); } }

@@ -24,6 +24,7 @@ import { relicBonusOf, refreshRelicBonus } from "./relics.js"; // 同上（Phase
 import { leaveHeirloom, dailyLineage } from "./lineage.js"; // 同上（Phase 4-E-4 遺物、子嗣、叛逃）
 import { dailyDrama } from "./drama.js"; // 同上（Phase 4-E-3 5:2:1 狗血事件）
 import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, communalInherit, styleOf, squadSteleMult } from "./squad.js"; // 同上（Phase 4-E 小隊隊長與流派）
+import { addLife, addLifeOnce, bioOf } from "./life.js"; // 人物傳記（功能 5；循環引用只在執行時呼叫）
 import { newFacilities, dailyFacilities, refreshFacilityBonus, gravityPct, podsHeal, restSanityBonus } from "./facilities.js"; // 同上（Phase 4-F-3 永久基建）
 import { newRivalState, dailyRivals } from "./rivals.js"; // 同上（Phase 4-F-1／2 洲際宿敵團戰）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
@@ -165,6 +166,9 @@ export function createSamsarite(state, rank, rng = state) {
     inheritPower: 0, // 子嗣繼承值（4-E 才會用，先預留；算進本體值、會吃基因鎖乘區）
     gear: {}, // 商店裝備：{ weapon: 商品id, armor: 商品id }
     joinedDay: currentDay(state),
+    life: [{ day: currentDay(state), kind: "join", text: "被主神召喚進主神空間，成為輪迴者。" }], // 一生大事記（功能 5，engine/life.js）
+    lifeFlags: {}, // 「第一次…」事件的防重複旗標
+    kills: 0, // 親手殺死過幾個同伴
     runs: 0,
     mood: null, // 心情狀態 { kind: "happy"|"upset", daysLeft }（見 engine/wishes.js）
     vacationDays: 0, // 許願放假：剩幾天不能派遣
@@ -224,11 +228,17 @@ export function killSamsarite(state, s, cause, killer = null, stele = null) {
   // #12、#22：流派與英靈碑倍率都看隊長，隊長自己戰死時移出名冊後就查不到了，所以要在移出前先算好
   const style = styleOf(state);
   const steleMult = squadSteleMult(state);
+  if (killer && killer.id !== s.id) { // 功能 5：親手殺人記進兇手的大事記
+    killer.kills = (killer.kills ?? 0) + 1;
+    addLifeOnce(state, killer, "firstKill", "kill", `第一次親手殺死同伴：${s.name}。`);
+  }
+  addLife(state, s, "death", `${cause}。`);
+  const bio = bioOf(state, s, { alive: false, deathDay: currentDay(state), cause }); // 傳記快照要在移出名冊、清關係之前存
   state.samsarites = state.samsarites.filter((x) => x.id !== s.id);
   clearBondPartner(state, s.id);
   cancelWishesOf(state, s.id);
   cancelGodOf(state, s.id);
-  state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null });
+  state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null, bio });
   if (!communalInherit(state, s, style)) forfeitWallet(state, s, CONFIG.wallet.deathForfeitPct); // 私房錢 50% 充公、50% 消散（4-D-1）；共產流全進互助金（4-E-2）
   if (stele) enshrine(state, s, stele, steleMult); // 副本戰死／主神抹殺才入碑（4-C-5）
   emit(state, "death", logText(state, "death", { A: s, rank: s.rank, cause }), { samsariteId: s.id, killerId: killer?.id ?? null });
@@ -391,8 +401,10 @@ export function dailyAirdrop(state) {
 export function recycle(state, id) {
   const s = getSamsarite(state, id);
   if (!s || s.location !== "space") return false;
+  addLife(state, s, "death", "被主管推進了回收爐。");
+  const bio = bioOf(state, s, { alive: false, deathDay: currentDay(state), cause: "被主管推進回收爐" });
   state.samsarites = state.samsarites.filter((x) => x.id !== id);
-  state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause: "被主管推進回收爐" });
+  state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause: "被主管推進回收爐", bio });
   forgetRelations(state, id);
   cancelWishesOf(state, id);
   cancelGodOf(state, id);
@@ -632,6 +644,9 @@ export function deserialize(json) {
   for (const s of state.samsarites) {
     s.generation ??= 1;
     s.bondPartnerId ??= null;
+    s.life ??= [{ day: s.joinedDay ?? 1, kind: "join", text: "被主神召喚進主神空間，成為輪迴者。" }]; // 舊存檔補一生大事記（功能 5）
+    s.lifeFlags ??= {};
+    s.kills ??= 0;
     s.heirloomSlots ??= {};
     s.captainBonus ??= 0;
     s.tempPowerPct ??= 0;

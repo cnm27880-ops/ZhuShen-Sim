@@ -4,6 +4,7 @@
 //   P = 小隊總戰力、R = 推薦戰力；情報條每個副本獨立（-3% 起，每結算一場 +1.5%，上限 +9%）
 //   房數與過關門檻依章節（CONFIG.dungeon.chapters）；賭徒型標籤每房間再隨機浮動
 
+import { addLifeOnce } from "./life.js"; // 一生大事記（功能 5）
 import { CONFIG, INJURIES } from "../data/config.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
 import { getMutation } from "../data/mutations.js";
@@ -245,6 +246,7 @@ export function startRun(state, dungeonId, partyIds, opts = {}) {
   for (const s of party) {
     consumeRunBuffs(s); // 出征耗材套用成單場 buff（4-D-2）
     s.location = "dungeon";
+    if (s.runs === 0) addLifeOnce(state, s, "firstRun", "run", `第一次踏進副本「${dungeon.name}」。`); // 一生大事記（功能 5）
     s.runs += 1;
     enteredInjury[s.id] = s.injury; // 記住「帶傷出征」的等級，用來算死亡率加成
   }

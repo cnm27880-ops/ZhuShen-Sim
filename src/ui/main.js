@@ -29,6 +29,8 @@ import { erosionUnlocked, applyErosion, erosionBlock, erosionRMult, erosionRewar
 import { facilityInfo, upgradeFacility, facilityTotal } from "../engine/facilities.js";
 import { buildGossip } from "../engine/gossip.js";
 import { applyAutoMode, currentAutoMode } from "../engine/autoMode.js";
+import { bioOf, graveBio } from "../engine/life.js";
+import { transferGear } from "../engine/gearTransfer.js";
 import { stockableItems, stockList, stockCount, stockTargets, buyStock, useStock, checkBuyStock } from "../engine/inventory.js";
 import { drawGossipCard, downloadGossipPng, copyText } from "./gossipCard.js";
 import { RIVAL_SQUADS } from "../data/rivals.js";
@@ -997,7 +999,96 @@ function shopRelicTab() {
     首通每張副本必得「首通奇物」；情報滿格後勾選貪婪探索，通關後有機率打開隱藏房，通過掉「隱藏奇物」（重複則轉為額外積分）。</div>${byChapter.join("")}`;
 }
 
+/** 點小人／角色卡：預設打開「人物傳記」；傳記裡可切到管理（強化、突破、鎖定、回收）。墓園的人（modal.dead）只看傳記 */
 function detail() {
+  if (modal.dead != null) {
+    const gb = graveBio(state, modal.dead);
+    return gb ? bioCard(gb, null) : `<h3>查無此人</h3><div class="modal-actions">${closeButton}</div>`;
+  }
+  const who = getSamsarite(state, modal.id);
+  if (who && (modal.view ?? "bio") === "bio") return bioCard(bioOf(state, who), who);
+  return manageDetail();
+}
+
+const SLOT_ICON = { weapon: "🗡️", armor: "🛡️", accessory: "💍", bloodline: "🧬" };
+const RANK_TITLE = { C: "新人", B: "好手", A: "精英", S: "傳奇" };
+const STATUS_TONE = { bad: "bio-chip-bad", good: "bio-chip-good", "": "" };
+
+/** 一段「這個人的故事」：用已有資料拼成幾句，讓他看起來有自己的人生，而不是一串數字 */
+function bioStory(b) {
+  const parts = [`${b.name}，一位${RANK_TITLE[b.rank] ?? ""}輪迴者，第 ${b.joinedDay} 天被主神召喚進主神空間${b.generation > 1 ? `（第 ${b.generation} 代，生在催熟艙${b.parentNames.length ? `，父母是${b.parentNames.join("與")}` : ""}）` : ""}。`];
+  if (b.runs > 0) parts.push(`${b.alive ? "至今" : "一生"}出征 ${b.runs} 場${b.kills > 0 ? `，手上沾過 ${b.kills} 條同伴的命` : ""}。`);
+  else parts.push(b.alive ? "還沒有踏進過任何一個副本。" : "沒來得及踏進任何副本。");
+  const r = b.relations;
+  if (r.partner) parts.push(`${r.partner.status === "soulmate" ? "與" : "心裡裝著"}${r.partner.name}${r.partner.status === "soulmate" ? "是靈魂伴侶" : "，是他的戀人"}。`);
+  else if (r.likes[0]) parts.push(`最放在心上的人是${r.likes[0].name}。`);
+  if (r.nemeses.length) parts.push(`和${r.nemeses.join("、")}不共戴天。`);
+  if (b.children.length) parts.push(`留下了 ${b.children.length} 個孩子。`);
+  if (!b.alive) parts.push(`第 ${b.deathDay} 天：${b.cause}。`);
+  return parts.join("");
+}
+
+/** 人物傳記卡（功能 5）。s 有值 = 還活著、可轉移裝備；null = 墓園裡的人（只看，附復活入口） */
+function bioCard(b, s) {
+  const chips = b.tags.length ? b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}" title="${(t.desc ?? "").replace(/"/g, "&quot;")}">${t.rarity}｜${t.name}</span>`).join("") : `<small>（沒有標籤）</small>`;
+  const rel = b.relations;
+  const relRows = [
+    rel.partner ? `<div>💞 ${rel.partner.status === "soulmate" ? "靈魂伴侶" : "戀人"}：<b>${rel.partner.name}</b></div>` : "",
+    rel.likes.length ? `<div>🙂 喜歡：${rel.likes.map((x) => `${x.name}（${Math.round(x.love)}）`).join("、")}</div>` : "",
+    rel.dislikes.length ? `<div>😒 討厭：${rel.dislikes.map((x) => `${x.name}（${Math.round(x.hate)}）`).join("、")}</div>` : "",
+    rel.nemeses.length ? `<div>⚔️ 死敵：<span class="bad">${rel.nemeses.join("、")}</span></div>` : "",
+    `<div class="muted">🎓 師徒：${rel.mentor ?? "（師徒關係還沒開放）"}</div>`,
+  ].filter(Boolean);
+  const canMove = s && s.location === "space";
+  const gearRows = Object.entries(SHOP_SLOT_LABELS)
+    .map(([slot, label]) => {
+      const name = b.gear[slot];
+      const move = canMove && name ? `<button data-action="gear-pick" data-slot="${slot}" ${modal.transfer?.slot === slot ? 'class="active"' : ""}>🔄 卸下並轉給…</button>` : "";
+      return `<div class="bio-gear"><span>${SLOT_ICON[slot]} ${label}</span><b class="${name ? "" : "muted"}">${name ?? "（空）"}</b>${move}</div>`;
+    })
+    .join("");
+  let transfer = "";
+  if (canMove && modal.transfer) {
+    const slot = modal.transfer.slot;
+    const others = state.samsarites.filter((o) => o.id !== s.id && o.location === "space");
+    transfer = `<div class="summary bio-transfer"><b>把${SHOP_SLOT_LABELS[slot]}【${b.gear[slot]}】轉給誰？</b><small>（卸下的人會不開心：心情「不爽」、理智下降；對方已有同欄裝備會互換）</small>
+      <div class="option-list">${others.length ? others.map((o) => { const cur = getShopItem(o.gear?.[slot])?.name; return `<div class="option" data-action="gear-give" data-to="${o.id}" data-slot="${slot}">${rankBadge(o.rank)}<span class="grow">${o.name}<br /><small>${cur ? `目前：${cur}（會互換）` : "這欄是空的"}</small></span></div>`; }).join("") : `<div class="empty">空間裡沒有其他人。</div>`}</div>
+      <button data-action="gear-cancel">取消</button></div>`;
+  }
+  const timeline = b.life.length
+    ? b.life.map((e) => `<div class="bio-event bio-event-${e.kind}"><span class="bio-day">第 ${e.day} 天</span><span>${e.text}</span></div>`).join("")
+    : `<div class="muted">（還沒有故事）</div>`;
+  const kids = b.children.length ? b.children.map((c) => `${c.name}${c.alive ? "" : "（已逝）"}`).join("、") : "（沒有）";
+  const ach = b.achievements.length ? b.achievements.map((a) => `<span class="bio-ach" title="${a.desc}">${a.icon} ${a.name}</span>`).join("") : `<small class="muted">（還沒有成就）</small>`;
+  const statuses = b.statuses.map((x) => `<span class="bio-chip ${STATUS_TONE[x.tone] ?? ""}">${x.text}</span>`).join("");
+  const revive = b.alive
+    ? ""
+    : `<div class="summary bio-revive"><b>🕯️ 復活</b><br /><small>使用氪金道具可以讓他回來。道具名稱：—　價格：—（尚未決定）</small><br /><button disabled title="道具與價格還沒決定，尚未開放">使用氪金道具復活（尚未開放）</button></div>`;
+  return `<div class="bio ${b.alive ? "" : "bio-dead"}">
+    <div class="bio-head bio-rank-${b.rank}">
+      <div class="bio-avatar">${b.alive ? "🧑" : "🪦"}</div>
+      <div class="bio-title"><div class="bio-name">${rankBadge(b.rank)} ${b.name}${b.alive ? "" : "　<small>（已逝）</small>"}</div>
+        <div class="bio-sub">第 ${b.generation} 代・基因鎖 ${b.geneLock} 階・出征 ${b.runs} 場</div></div>
+    </div>
+    ${statuses ? `<div class="bio-status">${statuses}</div>` : ""}
+    <p class="bio-story">${bioStory(b)}</p>
+    <div class="bio-grid">
+      <div><small>戰力</small><b>${b.power}</b></div><div><small>理智</small><b>${Math.round(b.sanity)}</b></div>
+      <div><small>私房錢</small><b>💰 ${b.wallet}</b></div><div><small>階級</small><b>${b.rank}</b></div>
+    </div>
+    <h4>🏷️ 標籤</h4><div class="bio-tags">${chips}</div>
+    <h4>💞 關係</h4><div class="bio-rel">${relRows.join("")}</div>
+    <h4>🎒 裝備</h4><div>${gearRows}</div>${transfer}
+    ${modal.note ? `<div class="summary">${modal.note}</div>` : ""}
+    <h4>📜 一生大事記</h4><div class="bio-timeline">${timeline}</div>
+    <h4>👶 子女與血脈</h4><div>${b.parentNames.length ? `父母：${b.parentNames.join("、")}<br />` : ""}子女：${kids}</div>
+    <h4>🏅 成就</h4><div class="bio-achs">${ach}</div>
+    ${revive}
+    <div class="modal-actions">${s ? `<button data-action="view-manage" data-id="${s.id}">⚙️ 管理（強化／突破／鎖定／回收）</button>` : `<button data-action="open-settings">↩ 回設定</button>`}${closeButton}</div>
+  </div>`;
+}
+
+function manageDetail() {
   const s = getSamsarite(state, modal.id);
   if (!s) return `<h3>查無此人</h3><p>這個人已經不在了。</p><div class="modal-actions">${closeButton}</div>`;
   const home = s.location === "space";
@@ -1005,7 +1096,7 @@ function detail() {
   const gain = enhanceGain(s);
   const enh = checkEnhance(state, s.id);
   const brk = checkBreakGene(state, s.id);
-  return `<h3>${rankBadge(s.rank)} ${s.name}</h3>
+  return `<h3>${rankBadge(s.rank)} ${s.name} <button data-action="view-bio" data-id="${s.id}">📖 人物傳記</button></h3>
     <table class="stats">
       <tr><td>狀態</td><td>${s.location === "pod" ? `🍼 催熟艙（還要 ${s.podDaysLeft} 天）` : `${home ? "主神空間" : "副本中"}・${injuryLabel(s)}`}</td></tr>
       ${s.parents ? `<tr><td>家長</td><td>${parentNames(state, s).join("、") || "（已不在世）"}${s.inheritedTags?.length ? `<br /><small>繼承標籤：${s.inheritedTags.map((id) => getTag(id)?.name ?? id).join("、")}</small>` : ""}</td></tr>` : ""}
@@ -1251,7 +1342,7 @@ function settings() {
     )
     .join("");
   const graves = state.graveyard.length
-    ? state.graveyard.map((g) => `<div>第 ${g.day} 天・${rankBadge(g.rank)} ${g.name}・${g.cause}${g.killer ? `（兇手：${g.killer}）` : ""}</div>`).join("")
+    ? state.graveyard.map((g, i) => `<div class="grave-row" data-action="open-grave" data-id="${i}" title="查看他的一生">第 ${g.day} 天・${rankBadge(g.rank)} ${g.name}・${g.cause}${g.killer ? `（兇手：${g.killer}）` : ""} 📖</div>`).join("")
     : "（還沒有人死）";
   return `<h3>⚙️ 設定</h3>
     <label class="option"><input type="checkbox" data-setting-key="autoPause" ${state.settings.autoPause !== false ? "checked" : ""} />
@@ -1685,7 +1776,29 @@ const actions = {
     modal = { name: "relations" };
   },
   "open-detail"(el) {
-    modal = { name: "detail", id: Number(el.dataset.id) };
+    modal = { name: "detail", id: Number(el.dataset.id), view: "bio" };
+  },
+  "view-bio"(el) {
+    modal = { name: "detail", id: Number(el.dataset.id), view: "bio" };
+  },
+  "view-manage"(el) {
+    modal = { name: "detail", id: Number(el.dataset.id), view: "manage" };
+  },
+  "open-grave"(el) {
+    modal = { name: "detail", dead: Number(el.dataset.id) };
+  },
+  "gear-pick"(el) {
+    modal.transfer = { slot: el.dataset.slot };
+    modal.note = "";
+  },
+  "gear-cancel"() {
+    modal.transfer = null;
+  },
+  "gear-give"(el) {
+    const r = transferGear(state, modal.id, el.dataset.slot, Number(el.dataset.to));
+    modal.transfer = null;
+    modal.note = r.ok ? `✅ 轉移完成${r.swap ? "（雙方互換）" : ""}。` : `<span class="bad">${r.reason}</span>`;
+    saveGame();
   },
   "close-modal"() {
     dismissModal();

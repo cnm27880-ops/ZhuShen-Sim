@@ -15,6 +15,7 @@ import { emit, currentDay, createSamsarite, getSamsarite } from "./core.js";
 import { pairStatus, addLove } from "./relations.js";
 import { logText } from "./templates.js";
 import { podDaysCut } from "./facilities.js"; // 同上（4-F-3）
+import { addLife } from "./life.js"; // 一生大事記（功能 5）
 import { popLimit } from "./mandatory.js"; // 人口上限（#14、#23）
 import { applyLineage, addChronicle } from "./lineage.js"; // 世代、天賦封頂、編年史（4-E-4；循環引用只在執行時呼叫）
 
@@ -86,6 +87,8 @@ export function giveBirth(state, a, b, opts = {}) {
   child.joinedDay = currentDay(state);
   applyLineage(state, child, [a, b], g, !!opts.lineage, opts.talent ?? "normal"); // 世代、天賦白值（總封頂 +25%）、保證繼承性格詞條（4-E-4）
   state.samsarites.push(child);
+  child.life = [{ day: currentDay(state), kind: "birth", text: `在催熟艙誕生，父母是 ${a.name} 與 ${b.name}。` }]; // 子嗣的一生從出生開始（功能 5）
+  for (const p of [a, b]) addLife(state, p, "child", `迎來了孩子：${child.name}（第 ${child.generation} 代）。`);
 
   // 家人之間有一點好感（不到「喜歡」，不會直接變成出征加成）
   for (const p of [a, b]) {
