@@ -48,6 +48,9 @@ import { getGodEvent } from "../data/godEvents.js";
 import { renderTemplate } from "../engine/templates.js";
 import { pairSummary, moodOf, partyRelationBonus } from "../engine/relations.js";
 import { parentNames } from "../engine/children.js";
+import { squadUnlocked, captainOf, styleOf, candidateStyle, replacePreview, checkReplace, appointCaptain, replaceCaptain, squadMembers } from "../engine/squad.js";
+import { bestowHeirloom, heirloomHeirs, speedUpPod, speedUpCost, rogueDungeon } from "../engine/lineage.js";
+import { SQUAD_STYLES } from "../data/squadStyles.js";
 import { LEVEL_LABELS, STATUS_LABELS } from "../data/relations.js";
 
 const SAVE_KEY = "zhushen-sim-save-v1";
@@ -183,6 +186,9 @@ function renderTopbar() {
   $("btn-god").style.display = godWaiting || activeMission(state) ? "" : "none";
   const steleTotal = Math.round(steleBonusOf(state) * 100);
   $("btn-stele").textContent = `🪦 英靈碑${steleTotal > 0 ? ` +${steleTotal}%` : ""}`;
+  const capt = captainOf(state);
+  const capStyle = styleOf(state) ? SQUAD_STYLES[styleOf(state)] : null; // 頂欄徽章：現任隊長與流派（4-E-5）
+  $("btn-squad").textContent = capt ? `👑 ${capt.name}・${capStyle?.icon ?? ""}${capStyle?.name ?? ""}` : squadUnlocked(state) ? "👑 隊長缺位" : "👑 小隊指揮部";
   const mand = pendingMandatory(state);
   $("btn-mandatory").style.display = mand ? "" : "none";
   if (mand) $("btn-mandatory").textContent = `☠️ 強制任務（第 ${mand.deadlineDay} 天前）`;
@@ -483,7 +489,7 @@ function closeModal() {
 function renderModal() {
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { guide, dispatch, gacha, shop, detail, stele, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent };
+  const builders = { guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent };
   $("modal").innerHTML = builders[modal.name]();
 }
 
@@ -824,6 +830,7 @@ function detail() {
       <tr><td>運氣</td><td>${subStat(s, "luck")}（每點 +${CONFIG.combat.luckReward.perPoint * 100}% 通關積分，看隊伍平均）</td></tr>
       <tr><td>維持費</td><td>${upkeepOf(s, state)} 分 / 天${s.location === "pod" ? "（催熟艙固定費用）" : `（（基因鎖 ${upkeepPartsOf(s, state).gene} + 空間 ${upkeepPartsOf(s, state).space}）×（1 + 階級 ${Math.round(RANKS[s.rank].upkeepPct * 100)}% + 傷勢 ${Math.round(INJURIES[s.injury].upkeepPct * 100)}%））`}</td></tr>
       <tr><td>資歷</td><td>第 ${s.joinedDay} 天加入・出征 ${s.runs} 次</td></tr>
+      ${squadRows(s)}
       <tr><td>私房錢</td><td>💰 <b>${s.wallet ?? 0}</b> 分<br /><small>副本結算先抽 ${Math.round(taxRateOf(state) * 100)}% 稅入公庫，其餘由存活隊員平分；他會自己逛街、強化（戰死 ${Math.round(CONFIG.wallet.deathForfeitPct * 100)}% 充公，回收 100% 歸公庫）</small></td></tr>
       <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}${s.soulbound?.[slot] ? ' <span class="badge-bound">🔒綁定</span>' : ""}`).join("<br />")}${s.consumables?.length ? `<br />🎒 出征耗材：${s.consumables.map((id) => getShopItem(id)?.name ?? id).join("、")}` : ""}${s.podLockDays > 0 ? `<br />🛏️ 被鎖在私人休眠艙（還要 ${s.podLockDays} 天）` : ""}</td></tr>
       <tr><td>自主購買</td><td class="shop-log">${s.shopLog?.length ? s.shopLog.slice().reverse().map((l) => `第 ${l.day} 天：${l.text}`).join("<br />") : "（還沒有）"}</td></tr>
@@ -906,6 +913,113 @@ function confirmRecycle() {
       <button data-action="open-detail" data-id="${s.id}">算了</button>
       <button class="danger" data-action="confirm-recycle" data-id="${s.id}">推進去</button>
     </div>`;
+}
+
+// ───────── 小隊指揮部、先人遺物與空間編年史（4-E-5）─────────
+
+const KIND_ICON = { boss: "🏆", captain: "👑", coup: "⚔️", snub: "😤", stele: "🪦", birth: "🍼", defect: "🩸", slain: "🗡️", heirloom: "🏺", drama: "🎭" };
+const HEIR_KIND = { child: "子嗣", friend: "摯友", other: "" };
+
+/** 角色詳情的「世代／小隊」資訊列：隊長、世代與父母、生死搭檔、天賦、遺物 */
+function squadRows(s) {
+  const parts = [];
+  if (captainOf(state)?.id === s.id) parts.push(`👑 現任隊長（第 ${s.captainNo ?? 1} 任）・帶動【${SQUAD_STYLES[styleOf(state)]?.name ?? ""}】`);
+  if ((s.generation ?? 1) > 1) parts.push(`🧬 第 ${s.generation} 代${parentNames(state, s).length ? `（父母：${parentNames(state, s).join("、")}）` : ""}・天賦 +${Math.round((s.talentPct ?? 0) * 100)}%（本體戰力 +${s.inheritPower ?? 0}，上限 ${Math.round(CONFIG.lineage.talentCap * 100)}%）`);
+  const partner = getSamsarite(state, s.bondPartnerId);
+  if (partner) parts.push(`🤝 生死搭檔：${partner.name}（同隊出征戰力各 +${Math.round(CONFIG.drama.pairPowerPct * 100)}%）`);
+  const heir = Object.entries(s.heirloomSlots ?? {}).filter(([slot, v]) => v && s.gear?.[slot]).map(([slot]) => `${SHOP_SLOT_LABELS[slot]}【${getShopItem(s.gear[slot])?.name}】`);
+  if (heir.length) parts.push(`🏺 穿著先人遺物：${heir.join("、")}（白值 +${Math.round(CONFIG.lineage.heirloomPct * 100)}%）`);
+  return parts.length ? `<tr><td>世代／小隊</td><td>${parts.join("<br />")}</td></tr>` : "";
+}
+
+/** 小隊指揮部：指揮（隊長與任命）／遺物庫／編年史／叛逃者 四個分頁 */
+function squad() {
+  const tab = modal.tab ?? "command";
+  const heirs = state.armoryHeirlooms ?? [];
+  const rogues = state.rogueBosses ?? [];
+  const tabs = [["command", "👑 指揮部"], ["armory", `🏺 遺物庫（${heirs.length}）`], ["chronicle", `📜 空間編年史（${(state.chronicles ?? []).length}）`], ["rogue", `👹 叛逃者（${rogues.length}）`]]
+    .map(([id, label]) => `<button data-action="squad-tab" data-id="${id}" class="${tab === id ? "active" : ""}">${label}</button>`)
+    .join("");
+  const body = { command: squadCommand, armory: squadArmory, chronicle: squadChronicle, rogue: squadRogue }[tab]();
+  return `<h3>👑 小隊指揮部</h3><div class="tabs">${tabs}</div>${body}<div class="modal-actions">${closeButton}</div>`;
+}
+
+function squadCommand() {
+  if (!squadUnlocked(state)) return `<div class="empty">首通<b>第 1 章尾王</b>（空間升到 Lv.${CONFIG.squad.unlockSpaceLevel}）後，才能冊封小隊隊長、啟用五大流派。</div>`;
+  const cap = captainOf(state);
+  const style = styleOf(state) ? SQUAD_STYLES[styleOf(state)] : null;
+  const fund = styleOf(state) === "communal" ? `<br />☭ 小隊互助金：<b>${state.squad.communalFund ?? 0}</b> 分（戰死者的私房錢全進這裡；老鳥捐款、菜鳥缺錢時補貼）` : "";
+  const head = cap
+    ? `<div class="captain-card">👑 現任隊長：${rankBadge(cap.rank)} <b>${cap.name}</b>（第 ${cap.captainNo ?? 1} 任・⚔️ ${effectivePower(cap)}）<br />
+        小隊流派：<span class="style-chip">${style.icon} ${style.name}</span><br /><small>${style.desc}</small>${fund}<br />
+        <small>隊長光環：個人戰力 +${Math.round(CONFIG.squad.captainPowerPct * 100)}%；在隊出征時全隊單房失敗理智損耗 -${CONFIG.squad.captainFailSanityCut}。流派由隊長的性格詞條決定，不能直接切換——選人就是選流派。</small></div>`
+    : `<div class="captain-card">👑 隊長缺位。<b>任命免費</b>；今天結算前沒指派，主神會自動冊封戰力最高者。</div>`;
+  const rows = squadMembers(state)
+    .sort((a, b) => effectivePower(b) - effectivePower(a))
+    .map((s) => {
+      const cs = candidateStyle(s);
+      const isCap = cap?.id === s.id;
+      const pv = cap && !isCap ? replacePreview(state, s.id) : null;
+      const chk = cap && !isCap ? checkReplace(state, s.id) : null;
+      const action = isCap
+        ? `<b>現任</b>`
+        : !cap
+          ? `<button class="primary" data-action="appoint-captain" data-id="${s.id}">任命（免費）</button>`
+          : `<button class="danger" data-action="replace-captain" data-id="${s.id}" ${chk.ok ? "" : `disabled title="${chk.reason}"`}>撤換（${chk.cost} 分＋${chk.crystal}🔮）</button>`;
+      const snub = pv?.snub.length
+        ? `<div class="snub-warning">⚠️ 不服空降：他的戰力（${pv.mine}）不到隊內最強老鳥（${pv.strongest}）的 ${Math.round(CONFIG.squad.snubPowerRatio * 100)}%，${pv.snub.map((o) => o.name).join("、")} 會理智 -${CONFIG.squad.snubSanity}、對他好感 -${CONFIG.squad.snubAffinity}。</div>`
+        : "";
+      return `<div class="option ${isCap ? "selected" : ""}" style="flex-wrap: wrap">${rankBadge(s.rank)}<span class="grow">${s.name}
+          <small>⚔️ ${effectivePower(s)}・🧠 ${s.stats.sanity}・${injuryLabel(s)}</small><br />
+          <span class="style-chip">任命此人將開啟：【${cs.icon} ${cs.name}】</span>${snub}</span>${action}</div>`;
+    })
+    .join("");
+  const babies = state.samsarites.filter((s) => s.location === "pod");
+  const pods = babies.length
+    ? `<h4>🍼 催熟艙</h4>` +
+      babies
+        .map((b) => {
+          const cost = speedUpCost(state, b);
+          return `<div class="option">${rankBadge(b.rank)}<span class="grow">${b.name}（第 ${b.generation ?? 1} 代）<small>還要 ${b.podDaysLeft} 天</small></span><button data-action="speed-pod" data-id="${b.id}">加速出艙（${cost} 分）</button></div>`;
+        })
+        .join("")
+    : "";
+  const sw = `<p><small>撤換令：花公庫 ${CONFIG.squad.replaceBaseCost} × 空間等級 分＋${CONFIG.squad.replaceCrystal} 顆因果結晶。隊長陣亡時依原流派順延；戰力前兩名差距 &lt; ${Math.round(CONFIG.squad.coupGapPct * 100)}% 且（互相討厭或流派不同）會爆發隊長印記爭奪戰。</small></p>`;
+  return `${head}<div class="option-list">${rows}</div>${sw}${pods}`;
+}
+
+function squadArmory() {
+  const list = state.armoryHeirlooms ?? [];
+  if (!list.length) return `<div class="empty">還沒有先人遺物。基因鎖 ${CONFIG.lineage.heirloomMinGene} 階以上的老鳥或現任隊長在副本戰死時，身上最高階的武器／防具會刻上履歷收進這裡（最多 ${CONFIG.lineage.heirloomKeep} 件）。</div>`;
+  return `<div class="option-list">${list
+    .slice()
+    .reverse()
+    .map((h) => {
+      const item = getShopItem(h.itemId);
+      const heirs = heirloomHeirs(state, h).slice(0, 4);
+      return `<div class="option" style="flex-wrap: wrap"><span class="option-icon">${item?.icon ?? "🏺"}</span><span class="grow"><b>${item?.name ?? h.itemId}</b>（${SHOP_SLOT_LABELS[h.slot]}・白值 +${Math.round(CONFIG.lineage.heirloomPct * 100)}%）
+        <br /><small>${h.label}・第 ${h.day} 天入庫</small>
+        <div class="heir-row">${heirs.length ? heirs.map(({ s, kind }) => `<button data-action="bestow-heirloom" data-id="${h.id}" data-who="${s.id}">賞賜給 ${s.name}${HEIR_KIND[kind] ? `（${HEIR_KIND[kind]}）` : ""}</button>`).join("") : "<small>空間裡沒有人可以接手</small>"}</div></span></div>`;
+    })
+    .join("")}</div><p><small>子嗣或好感 ≥ ${CONFIG.lineage.heirloomFriendAffinity} 的摯友穿上遺物會緬懷，理智 +${CONFIG.lineage.heirloomSanity}。賞賜後裝備綁定。</small></p>`;
+}
+
+function squadChronicle() {
+  const list = state.chronicles ?? [];
+  if (!list.length) return `<div class="empty">編年史還是空白的。尾王首通、隊長更迭、元老入碑、二代目誕生、叛徒出走……都會寫在這裡（最多保留最近 ${CONFIG.squad.chronicleMax} 條）。</div>`;
+  return `<div class="chronicle">${list
+    .slice()
+    .reverse()
+    .map((c) => `<div class="chronicle-row k-${c.kind}"><span class="day">第 ${c.day} 天</span><span>${KIND_ICON[c.kind] ?? "•"} ${c.text.replace(/\n/g, "<br />")}</span></div>`)
+    .join("")}</div>`;
+}
+
+function squadRogue() {
+  const list = state.rogueBosses ?? [];
+  if (!list.length) return `<div class="empty">目前沒有叛逃者。長期被壓榨（對隊長淨好感 ≤ ${CONFIG.lineage.rogueAffinity} 且理智 &lt; ${CONFIG.lineage.rogueSanity}）的人才可能出走；隊長、對隊長有好感者、穿主神賞賜綁定裝者都不會叛逃。</div>`;
+  const r = rogueDungeon(state);
+  return `<p>叛逃者會在常規副本的最後一房亂入（每場 ${Math.round(CONFIG.lineage.rogueEncounter * 100)}%）。擊敗可追回賞金與機率掉因果結晶；不敵則全員帶傷撤退。目前章節推估戰力約 <b>${r.recommendedPower}</b>。</p>
+    <div class="option-list">${list.map((b) => `<div class="option">${rankBadge(b.rank)}<span class="grow">${b.name}<small>第 ${b.day} 天出走・基因鎖 ${b.geneLock} 階・帶走 ${b.wallet} 分</small></span><b>👹 通緝中</b></div>`).join("")}</div>`;
 }
 
 /** 英靈碑：名單與目前的全隊戰力加成（只有前 N 名生效） */
@@ -1143,6 +1257,36 @@ const actions = {
   },
   "open-stele"() {
     modal = { name: "stele" };
+  },
+  "open-squad"() {
+    modal = { name: "squad", tab: "command" };
+  },
+  "squad-tab"(el) {
+    modal.tab = el.dataset.id;
+  },
+  "appoint-captain"(el) {
+    const r = appointCaptain(state, Number(el.dataset.id));
+    if (!r.ok) alert(r.reason);
+    saveGame();
+  },
+  "replace-captain"(el) {
+    const id = Number(el.dataset.id);
+    const pv = replacePreview(state, id);
+    const warn = pv.snub.length ? `\n\n⚠️ 不服空降：${pv.snub.map((o) => o.name).join("、")} 會理智 -${CONFIG.squad.snubSanity}、對新隊長好感 -${CONFIG.squad.snubAffinity}。` : "";
+    if (!confirm(`主神強行撤換令：花 ${pv.cost} 分＋${pv.crystal} 顆因果結晶，任命開啟【${pv.style.name}】。${warn}\n\n確定嗎？`)) return;
+    const r = replaceCaptain(state, id);
+    if (!r.ok) alert(r.reason);
+    saveGame();
+  },
+  "bestow-heirloom"(el) {
+    const r = bestowHeirloom(state, el.dataset.id, Number(el.dataset.who));
+    if (!r.ok) alert(r.reason);
+    saveGame();
+  },
+  "speed-pod"(el) {
+    const r = speedUpPod(state, Number(el.dataset.id));
+    if (!r.ok) alert(r.reason);
+    saveGame();
   },
   "open-god"() {
     modal = { name: "godEvent", forced: false };

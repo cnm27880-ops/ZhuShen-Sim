@@ -503,6 +503,8 @@ export const PAUSE_EVENTS = {
   wish: { label: "輪迴者許願（彈窗讓你答應或拒絕）", default: true },
   godEvent: { label: "主神搞事（彈窗讓你照辦或花積分化解）", default: true },
   stele: { label: "有人名字刻上英靈碑", default: false },
+  squad: { label: "隊長異動（冊封、順延、政變、撤換）", default: false },
+  drama: { label: "狗血人際事件（慶功、批鬥、夜襲、修羅場）", default: false },
   mandatory: { label: "主神強制血腥任務（限時派隊，逾時抹殺）", default: true },
   birth: { label: "有小孩出生（進催熟艙）", default: true },
   hatch: { label: "催熟完成（小孩長成輪迴者）", default: true },
