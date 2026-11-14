@@ -6,6 +6,7 @@ import { DUNGEONS } from "../data/dungeons.js";
 import { emit, advanceTick, checkGameOver } from "./core.js";
 import { logText } from "./templates.js";
 import { areEnemies as pairEnemies } from "./relations.js";
+import { activeMission } from "./godEvents.js";
 import { clearChance, partyPower, startRun, stepDueRooms, settleRuns } from "./dungeon.js";
 
 // 兩人是否為仇恨／死敵（關係系統在 engine/relations.js）
@@ -47,14 +48,14 @@ function isBetterPlan(a, b) {
   return a.comfy ? a.power < b.power : a.chance > b.chance;
 }
 
-/** 回傳 { dungeon, party, chance } 或 null（沒有任何組合達標） */
-export function planAutoDispatch(state) {
-  const candidates = autoCandidates(state);
+/** 在 candidates 的所有隊伍組合 × dungeons 裡挑最划算的；mustInclude 有值時，隊伍必須包含他 */
+function bestPlan(state, candidates, dungeons, mustInclude = null) {
   let best = null;
   for (const party of subsets(candidates, CONFIG.partyMax)) {
+    if (mustInclude && !party.includes(mustInclude)) continue;
     if (state.settings.protect.noEnemies && hasEnemyPair(state, party)) continue;
     const power = partyPower(party);
-    for (const dungeon of DUNGEONS) {
+    for (const dungeon of dungeons) {
       const chance = clearChance(state, party, dungeon);
       if (chance < CONFIG.auto.minClearChance) continue;
       const comfy = chance >= CONFIG.auto.targetClearChance;
@@ -63,6 +64,25 @@ export function planAutoDispatch(state) {
     }
   }
   return best;
+}
+
+/**
+ * 回傳 { dungeon, party, chance } 或 null（沒有任何組合達標）。
+ * 主神突襲任務（Phase 3-E）：目標還能被自動派遣時，先找「含他、打任務副本、通關率達標」的方案；
+ * 找不到（他太弱、被鎖定…）才走一般邏輯，所以不會為了任務硬送人去死。
+ */
+export function planAutoDispatch(state) {
+  let candidates = autoCandidates(state);
+  const mission = CONFIG.auto.missionFirst ? activeMission(state) : null;
+  const target = mission ? state.samsarites.find((s) => s.id === mission.samsariteId) : null;
+  const missionDungeon = mission ? DUNGEONS.find((d) => d.id === mission.dungeonId) : null;
+  const usable = target && missionDungeon && target.location === "space" && !target.locked && !(target.vacationDays > 0) && !(state.settings.protect.noInjured && target.injury > 0);
+  if (usable) {
+    if (!candidates.includes(target)) candidates = [...candidates.slice(0, CONFIG.auto.maxCandidates - 1), target]; // 戰力太低被截掉也要算進來
+    const plan = bestPlan(state, candidates, [missionDungeon], target);
+    if (plan) return plan;
+  }
+  return bestPlan(state, candidates, DUNGEONS);
 }
 
 /** 一次排出多隊：每輪挑最划算的一隊，剩下的人再組下一隊，直到沒有達標的組合（人手用完）。回傳派出幾隊 */

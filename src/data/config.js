@@ -87,6 +87,38 @@ export const CONFIG = {
     },
   },
 
+  // ── 主神搞事（Phase 3-E；種類資料在 src/data/godEvents.js，數字全部「計畫未定」）──
+  godEvent: {
+    chance: 0.08, // 每天（沒在冷卻、沒有待回覆事件時）發生的機率
+    cooldownDays: 5, // 發生後至少隔幾天才會再發生
+    answerDays: 1, // 事件彈出後幾天內要回覆，沒回覆就視同「照辦」（突襲任務則視同抗命受罰）
+    // 各種事件的數字。resolveCost = 花積分化解要多少（都比不化解的損失便宜）
+    kinds: {
+      tax: { weight: 30, loss: [60, 120], resolveCost: 40 }, // 臨時開銷稅：扣 loss 範圍內的積分（可扣到負債，不低於高利貸上限）
+      shock: { weight: 30, sanityLoss: 20, resolveCost: 30 }, // 電擊抽查：點名一人理智 -20
+      checkup: {
+        weight: 25,
+        resolveCost: 20,
+        injuryLevels: 1, // 健檢出事：傷勢加重幾級（最高致命傷）
+        rewardPoints: [40, 80], // 健檢補償：拿積分
+        rewardSanity: 15, // 健檢補償：回理智（上限 100）
+        outcomes: [
+          { type: "injury", weight: 40 },
+          { type: "points", weight: 35 },
+          { type: "sanity", weight: 25 },
+        ],
+      },
+      raid: {
+        weight: 15,
+        days: 7, // 接下任務後的期限
+        resolveCost: 80,
+        dungeonPowerCap: 150, // 只會指定推薦戰力不超過這個數字的副本
+        rewardPoints: [150, 250], // 通關獎勵
+        penaltyPoints: 100, // 抗命或超時：扣積分，且被點名的人變「不爽」
+      },
+    },
+  },
+
   // ── 關係系統（Phase 2-B；計畫第 6 節，標「計畫未定」的是暫定值）──
   relations: {
     // 關係等級門檻（好感／仇恨 0~100）
@@ -157,6 +189,7 @@ export const CONFIG = {
     targetClearChance: 0.9, // 通關率到這個數字就算「夠穩」，不再多派人（計畫未定）
     maxCandidates: 14, // 最多拿戰力前幾名來排列組合（避免人太多時算太久）
     dispatchAtTick: 5, // 每天第幾個時段檢查一次自動派遣
+    missionFirst: true, // 有主神突襲任務時，自動派遣優先派任務目標去指定副本（通關率仍要達 minClearChance；Phase 3-E）
   },
 
   runReportMax: 20, // 排隊等玩家看的副本結算摘要最多留幾筆
@@ -196,4 +229,5 @@ export const PAUSE_EVENTS = {
   healed: { label: "有人傷癒", default: false },
   autoIdle: { label: "自動派遣找不到合適隊伍", default: false },
   wish: { label: "輪迴者許願（彈窗讓你答應或拒絕）", default: true },
+  godEvent: { label: "主神搞事（彈窗讓你照辦或花積分化解）", default: true },
 };
