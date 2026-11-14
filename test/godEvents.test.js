@@ -15,6 +15,7 @@ import {
   godAfterRun,
 } from "../src/engine/godEvents.js";
 import { setInjury } from "../src/engine/core.js";
+import { planAutoDispatch, tryAutoDispatch } from "../src/engine/dispatch.js";
 
 const K = () => CONFIG.godEvent.kinds;
 
@@ -433,4 +434,85 @@ test("資料表與日誌：每種事件都有對應的日誌句子、版本 ≥ 
   for (const key of ["godDone_tax", "godDone_shock", "godDone_checkup_injury", "godDone_checkup_points", "godDone_checkup_sanity", "godTimeoutNote", "godRaidStart", "godRaidDone", "godRaidFail", "godRaidIgnore"]) {
     assert.ok(LOGS[key]?.length >= 2, `缺 ${key}`);
   }
+});
+
+// ───────── 自動派遣優先處理突襲任務 ─────────
+
+/** 一支夠強的隊伍（4 個 S）＋一個任務目標；回傳 { state, target } */
+function missionSetup() {
+  const state = createNewGame(31);
+  state.points = 1000;
+  state.samsarites = [];
+  for (let i = 0; i < 4; i++) {
+    const s = createSamsarite(state, "S");
+    s.tags = [];
+    state.samsarites.push(s);
+  }
+  const target = state.samsarites[3];
+  state.god.mission = { samsariteId: target.id, dungeonId: "ghost_village", deadlineDay: 8, reward: 200 };
+  return { state, target };
+}
+
+test("自動派遣：有突襲任務且目標可派，優先派含他的隊伍去指定副本", () => {
+  const { state, target } = missionSetup();
+  const plan = planAutoDispatch(state);
+  assert.equal(plan.dungeon.id, "ghost_village");
+  assert.ok(plan.party.some((s) => s.id === target.id));
+  assert.ok(plan.chance >= CONFIG.auto.minClearChance);
+});
+
+test("自動派遣：任務目標戰力太低被截掉候選名單，也會被算進來", () => {
+  const { state, target } = missionSetup();
+  const saved = CONFIG.auto.maxCandidates;
+  CONFIG.auto.maxCandidates = 2;
+  state.samsarites.forEach((s) => (s.stats.power = 400));
+  target.stats.power = 1;
+  try {
+    const plan = planAutoDispatch(state);
+    assert.ok(plan && plan.party.some((s) => s.id === target.id));
+  } finally {
+    CONFIG.auto.maxCandidates = saved;
+  }
+});
+
+test("自動派遣：目標被鎖定、受傷（保護開著）、放假時不強派；開關關掉也不強派", () => {
+  for (const mutate of [(t) => (t.locked = true), (t) => setInjury(t, 1), (t) => (t.vacationDays = 2)]) {
+    const { state, target } = missionSetup();
+    mutate(target);
+    const plan = planAutoDispatch(state);
+    assert.ok(!plan || !plan.party.some((s) => s.id === target.id), "不該派到他");
+  }
+  const { state } = missionSetup();
+  const saved = CONFIG.auto.missionFirst;
+  CONFIG.auto.missionFirst = false;
+  try {
+    // 關掉時走一般邏輯（不保證含目標，只要不報錯、仍有方案）
+    assert.ok(planAutoDispatch(state));
+  } finally {
+    CONFIG.auto.missionFirst = saved;
+  }
+});
+
+test("自動派遣：目標太弱打不過任務副本就不硬送；沒任務時行為不變", () => {
+  const state = createNewGame(32);
+  state.samsarites = [];
+  for (let i = 0; i < 2; i++) {
+    const s = createSamsarite(state, "C");
+    s.tags = [];
+    state.samsarites.push(s);
+  }
+  const target = state.samsarites[0];
+  state.god.mission = { samsariteId: target.id, dungeonId: "ghost_village", deadlineDay: 8, reward: 200 };
+  const withMission = planAutoDispatch(state);
+  state.god.mission = null;
+  const without = planAutoDispatch(state);
+  assert.deepEqual(withMission?.party.map((s) => s.id), without?.party.map((s) => s.id));
+  assert.equal(withMission?.dungeon.id, without?.dungeon.id);
+});
+
+test("自動派遣：派出任務目標後，通關即領獎", () => {
+  const { state, target } = missionSetup();
+  assert.ok(tryAutoDispatch(state) >= 1);
+  assert.equal(target.location, "dungeon");
+  assert.ok(state.runs.some((r) => r.dungeonId === "ghost_village" && r.partyIds.includes(target.id)));
 });

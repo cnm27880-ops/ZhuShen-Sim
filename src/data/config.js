@@ -189,6 +189,7 @@ export const CONFIG = {
     targetClearChance: 0.9, // 通關率到這個數字就算「夠穩」，不再多派人（計畫未定）
     maxCandidates: 14, // 最多拿戰力前幾名來排列組合（避免人太多時算太久）
     dispatchAtTick: 5, // 每天第幾個時段檢查一次自動派遣
+    missionFirst: true, // 有主神突襲任務時，自動派遣優先派任務目標去指定副本（通關率仍要達 minClearChance；Phase 3-E）
   },
 
   runReportMax: 20, // 排隊等玩家看的副本結算摘要最多留幾筆

@@ -48,7 +48,7 @@
 | `src/engine/core.js` | 狀態（含 `state.god`）、輪迴者、維持費、傷勢、高利貸、回收爐、抽卡、時間 tick、存檔、遊戲結束判定；`spend()` 累積花費並宣布商店解鎖、`shopTier()` 算階層 |
 | `src/engine/shop.js` | 商店引擎：`buyItem`／`checkBuy`（強化、裝備、藥水）、`nextTierInfo`；`collectionEffects`／`collectionPassBonus`（副本特殊獎勵的效果） |
 | `src/engine/dungeon.js` | 副本結算（5 個房間、成功率公式、通關機率）；並行副本：`startRun` 往 `state.runs` 加一場，`stepDueRooms`／`settleRuns` 依開場順序走房間／結算，結算摘要進 `state.runReports` 排隊；首通在結算時判定；掛鉤 `relationBonus` / `tagBonus`（含收藏加成）/ `rewardMultiplier`（含收藏加成）；首通掉特殊獎勵 id 進 `state.collection`；結算尾端掛 `wishesAfterRun`（許願）與 `godAfterRun`（主神突襲任務） |
-| `src/engine/dispatch.js` | 自動派遣（`tryAutoDispatch` 一次排多隊，直到人手用完）、主迴圈一步 `step()`（走各副本該走的房間 → 時間 +1 → 結算）；含 `areEnemies()` 掛鉤 |
+| `src/engine/dispatch.js` | 自動派遣（`tryAutoDispatch` 一次排多隊，直到人手用完；`planAutoDispatch` 有突襲任務時優先派目標，見 3-E）、主迴圈一步 `step()`（走各副本該走的房間 → 時間 +1 → 結算）；含 `areEnemies()` 掛鉤 |
 | `src/ui/main.js` | 畫面層，DOM 操作、CSS transition 滑動、emoji 顯示；含商店面板、主神搞事彈窗（`godEvent()`、`#btn-god`）、視角鎖定（`viewedRun`／`renderDungeonView`／`toggle-follow`／`peek-run`）；`styles.css` 放所有樣式（`#dungeon-view`、`.route-*`、`.run-card`） |
 | `test/` | 測試檔案（Node.js）：`engine`、`relations`、`templates`、`shop`、`wishes`、`parallel`（並行副本）、`godEvents`（主神搞事） |
 | `README.md` | 專案說明 + 待確認的設計問題 |
@@ -91,12 +91,12 @@
 npm test
 ```
 
-109 項測試都要通過。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
+114 項測試都要通過。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
 
 ## 不可違反的規則
 
 1. 這是獨立專案，與舊 AI-TRPG 專案無關；舊專案的規則（六維十技能、Prompt 快取契約等）不適用。
-2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，109 項都要通過。
+2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，114 項都要通過。
 3. 所有可調數字都要放在 `src/data/config.js`，不要寫死在引擎裡。
 4. 引擎不要碰 DOM，畫面邏輯不要寫進引擎。
 5. 機密（Token、金鑰）永遠不能進 git。
@@ -106,7 +106,7 @@ npm test
 - 推上 `main` ＝ 自動部署到 Cloudflare Pages，合併前先確認測試都過。
 - 儲存庫：`ZhuShen-Sim`，子網域待定。
 - Cloudflare Pages 設定：Framework preset 選 None、Build command 留空、Build output directory 填 `/`。
-- 部署前確認 `npm test` 109 項全過。
+- 部署前確認 `npm test` 114 項全過。
 
 ## 開發階段（現在不要做，除非我明確要求）
 
@@ -125,7 +125,7 @@ npm test
 **Phase 3-C（已完成）**：並行副本。`state.run` → `state.runs` 陣列（舊存檔單一 `run` 在 `deserialize` 遷移）；每場有 `id`、`startTick`、隊伍、環境標籤。畫面：主神空間不變，右側「進行中副本」卡片清單（`#run-list`），結算視窗用 `state.runReports` 排隊（一次彈一個，沿用 `runEnd` 暫停事件）。自動派遣一次排多隊。`wishesAfterRun` 本來就依單場的副本／出征名單判斷，並行下仍正確（`test/parallel.test.js` 有驗證）。`#dungeon-view` 與 `.route-*` 樣式由 3-D（視角鎖定）使用。
 
 **Phase 3-D（已完成）**：視角鎖定。名冊卡片的 👁 或詳情視窗的「鎖定視角」按鈕，同時只能鎖定一人，再按取消。鎖定對象在副本時，主畫面自動切到他那場的 `#dungeon-view` 路線圖（5 個房間節點＋小隊滑動＋存活人數／通過率），回家就切回主神空間。沒鎖定時主畫面維持主神空間，點右側 `#run-list` 卡片可手動看那一場，再點一次（或「⬅ 返回」）取消；鎖定對象進／出副本時手動選擇會被清掉。存檔欄位 `state.settings.followId`（`createNewGame` 預設 null，`deserialize` 缺欄位補 null；引擎不讀它，只給畫面用）；`peekRunId` 只存在 UI、不存檔。鎖定的人死了或被回收，`afterChange()` 會自動解除。`renderDungeonView` 骨架每場只建一次，之後只更新節點／位置／隊員（避免重建打斷 CSS 滑動）。
-**Phase 3-E（已完成）**：主神搞事。每天跨日在「許願結算之後、關係事件之前」擲一次（`CONFIG.godEvent.chance` 8%；發生後冷卻 `cooldownDays` 5 天；待回覆事件未處理時不再擲）。**不掛在逐人的特殊事件骰上**（那是每人一次），而是整個空間一次，且用 `state.god.rngState` 獨立亂數流，所以不改變既有種子結果。4 種事件：臨時開銷稅（全體扣積分）、電擊抽查（點名一人理智下降）、強制健檢（點名一人：受傷／積分／理智三選一）、突襲任務（點名一人限時去指定副本，`dungeonPowerCap` 內；通關 +積分並高興，逾期／抗命扣積分並不爽）。只點名／影響留在主神空間的人（全員在副本就這天不擲；突襲任務還要求目標無傷、沒放假、沒有進行中的任務）。玩家可「照辦」或「花積分化解」（`resolveCost`，花的錢算進累積花費）；`answerDays` 天內沒回覆：一般事件視同照辦，突襲任務視同抗命受罰。突襲任務期限內可重打，人死了或被回收就取消（不罰）；期限到時目標還在副本中，等那場結算再算。新暫停事件 `godEvent`（預設開）：事件彈窗強制暫停；關掉則改用 `#btn-god` 手動處理。存檔欄位 `state.god = { rngState, cooldownUntilDay, pending, mission, nextId }`，`deserialize` 缺欄位補預設。**已知設計缺口**：自動派遣不會特別派突襲任務的目標，開自動派遣時任務多半逾期（模擬 5 個種子：10 場任務只完成 1 場），待露葵決定要不要讓自動派遣優先處理任務。
+**Phase 3-E（已完成）**：主神搞事。每天跨日在「許願結算之後、關係事件之前」擲一次（`CONFIG.godEvent.chance` 8%；發生後冷卻 `cooldownDays` 5 天；待回覆事件未處理時不再擲）。**不掛在逐人的特殊事件骰上**（那是每人一次），而是整個空間一次，且用 `state.god.rngState` 獨立亂數流，所以不改變既有種子結果。4 種事件：臨時開銷稅（全體扣積分）、電擊抽查（點名一人理智下降）、強制健檢（點名一人：受傷／積分／理智三選一）、突襲任務（點名一人限時去指定副本，`dungeonPowerCap` 內；通關 +積分並高興，逾期／抗命扣積分並不爽）。只點名／影響留在主神空間的人（全員在副本就這天不擲；突襲任務還要求目標無傷、沒放假、沒有進行中的任務）。玩家可「照辦」或「花積分化解」（`resolveCost`，花的錢算進累積花費）；`answerDays` 天內沒回覆：一般事件視同照辦，突襲任務視同抗命受罰。突襲任務期限內可重打，人死了或被回收就取消（不罰）；期限到時目標還在副本中，等那場結算再算。新暫停事件 `godEvent`（預設開）：事件彈窗強制暫停；關掉則改用 `#btn-god` 手動處理。存檔欄位 `state.god = { rngState, cooldownUntilDay, pending, mission, nextId }`，`deserialize` 缺欄位補預設。**自動派遣優先任務**（`CONFIG.auto.missionFirst`，預設開）：`planAutoDispatch` 在任務目標還能被自動派遣（在家、沒鎖定、沒放假、保護開著時沒受傷）時，先找「含目標、打任務副本、預估通關率 ≥ `minClearChance`」的最佳隊伍，找不到才走一般邏輯，所以不會硬送人去死。**已知限制**：開局的 C 階目標常常家裡沒有健康隊友、通關率達不到門檻，這時任務仍會逾期（5 個種子模擬 10 場任務只完成 1 場，目標全是 C 階、最佳通關率 0～0.54）；要不要讓突襲任務挑得到可行目標，留給露葵決定。
 **Phase 3（還沒做）**：狗血擴充 — 生小孩、員工合同；商店的血統／瞳術／技藝／技能。
 
 **不做**：複雜動畫、音效、背景音樂（MVP 先不要）。
