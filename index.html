@@ -3,31 +3,43 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>主神空間主管模擬器</title>
+    <title>主神空間打工日記</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <!-- 上面：積分、時間、速度控制、暫停 -->
     <header id="topbar">
-      <div class="brand"><span class="brand-orb"></span><span>主神空間<small>主管終端 v0.1</small></span></div>
-      <div class="stat"><span class="stat-label">主神公庫</span><span id="points" class="stat-value">0</span></div>
-      <div class="stat" title="副本結算先抽稅入公庫，剩下由存活隊員平分成私房錢。稅率高：公庫肥但理智下降；稅率低：輪迴者有錢自己逛街、強化。">
-        <span class="stat-label">稅率</span>
-        <span class="tax-ctl"><button data-action="tax-down" title="降低稅率">−</button><span id="tax-rate" class="stat-value small">40%</span><button data-action="tax-up" title="提高稅率">＋</button></span>
+      <div class="brand"><span class="brand-orb"></span><span>主神空間<small>打工日記</small></span></div>
+
+      <!-- 資源 -->
+      <div class="tb-group" aria-label="資源">
+        <div class="stat"><span class="stat-label">主神公庫</span><span id="points" class="stat-value">0</span></div>
+        <div class="stat" title="副本結算先抽稅入公庫，剩下由存活隊員平分成私房錢。稅率高：公庫肥但理智下降；稅率低：輪迴者有錢自己逛街、強化。">
+          <span class="stat-label">稅率</span>
+          <span class="tax-ctl"><button data-action="tax-down" title="降低稅率">−</button><span id="tax-rate" class="stat-value small">40%</span><button data-action="tax-up" title="提高稅率">＋</button></span>
+        </div>
+        <div class="stat"><span class="stat-label">結晶</span><span id="karma" class="stat-value small">0</span></div>
       </div>
-      <div class="stat">
-        <span class="stat-label" id="day-label">第 1 天</span>
-        <div id="day-bar"><div id="day-bar-fill"></div></div>
+
+      <!-- 時間 -->
+      <div class="tb-group" aria-label="時間">
+        <div class="stat">
+          <span class="stat-label" id="day-label">第 1 天</span>
+          <div id="day-bar"><div id="day-bar-fill"></div></div>
+        </div>
+        <div class="stat"><span class="stat-label">空間等級</span><span id="space-level" class="stat-value small">Lv.1</span></div>
+        <div class="stat"><span class="stat-label">每日維持費</span><span id="upkeep" class="stat-value small">0</span></div>
+        <div id="speed-controls"></div>
+        <button id="btn-pause" class="primary" data-action="toggle-pause" title="空白鍵：暫停／繼續">暫停</button>
       </div>
-      <div class="stat"><span class="stat-label">空間等級</span><span id="space-level" class="stat-value small">Lv.1</span></div>
-      <div class="stat"><span class="stat-label">每日維持費</span><span id="upkeep" class="stat-value small">0</span></div>
-      <div class="stat"><span class="stat-label">因果結晶</span><span id="karma" class="stat-value small">🔮 0</span></div>
-      <div id="speed-controls"></div>
-      <button id="btn-pause" data-action="toggle-pause" title="空白鍵：暫停／繼續">⏸ 暫停 [Space]</button>
-      <button id="btn-gossip" data-action="open-gossip" title="《主神八卦日報》：把本局的修羅場、頭條與英靈碑畫成圖卡，可下載 PNG">📰 八卦日報</button>
-      <button id="btn-squad" data-action="open-squad" title="小隊指揮部：隊長、流派、先人遺物、空間編年史">👑 小隊指揮部</button>
-      <button id="btn-guide" data-action="open-guide" title="新任主神上崗手冊">❓ 上崗手冊</button>
-      <button data-action="open-settings" title="設定">⚙️</button>
+
+      <!-- 功能 -->
+      <div class="tb-group tb-tools" aria-label="功能">
+        <button id="btn-gossip" data-action="open-gossip" title="《主神八卦日報》：把本局的修羅場、頭條與英靈碑畫成圖卡，可下載 PNG">八卦</button>
+        <button id="btn-squad" data-action="open-squad" title="小隊指揮部：隊長、流派、先人遺物、空間編年史">小隊</button>
+        <button id="btn-guide" data-action="open-guide" title="新任主神上崗手冊">手冊</button>
+        <button class="icon-btn" data-action="open-settings" title="設定" aria-label="設定"><span class="gear"></span></button>
+      </div>
     </header>
 
     <!-- 自動暫停時顯示原因 -->
@@ -51,18 +63,27 @@
     <!-- 下面：操作按鈕 + 輪迴者列表 -->
     <footer>
       <div id="actions">
-        <button class="primary" data-action="open-dispatch">🚪 派遣</button>
-        <button class="primary" data-action="open-gacha">🎴 抽卡</button>
-        <button data-action="open-relations">💞 關係</button>
-        <button id="btn-wishes" class="primary" data-action="open-wishes" style="display: none">🙏 許願</button>
-        <button id="btn-stele" data-action="open-stele">🪦 英靈碑</button>
-        <button id="btn-mandatory" class="primary" data-action="open-mandatory" style="display: none">☠️ 強制任務</button>
-        <button id="btn-rival" class="primary" data-action="open-rival" style="display: none">⚔️ 洲際碰撞</button>
-        <button id="btn-god" class="primary" data-action="open-god" style="display: none">👁 主神搞事</button>
-        <button class="primary" data-action="open-shop">🛒 商店</button>
-        <button id="btn-inventory" data-action="open-inventory" title="物資面板：倉庫裡的藥品，點一件再點人就能使用，最需要的人排最前面">🎒 物資</button>
-        <button id="btn-facility" data-action="open-facility" title="主神空間永久基建：重力修煉室、生命溫養艙、法則共鳴碑、萬界育嬰堂、星界觀測樞">🏗️ 基建</button>
-        <button id="btn-auto" data-action="open-auto" title="自動小幫手：選一種模式就好，想自己調再開進階自訂">🤖 自動小幫手</button>
+        <!-- 主要操作：放大 -->
+        <div class="act-main">
+          <button class="primary big" data-action="open-dispatch">派遣</button>
+          <button class="primary big" data-action="open-gacha">抽卡</button>
+        </div>
+        <!-- 次要功能 -->
+        <div class="act-sub">
+          <button data-action="open-shop">商店</button>
+          <button id="btn-inventory" data-action="open-inventory" title="物資面板：倉庫裡的藥品，點一件再點人就能使用，最需要的人排最前面">物資</button>
+          <button data-action="open-relations">關係</button>
+          <button id="btn-stele" data-action="open-stele">英靈碑</button>
+          <button id="btn-facility" data-action="open-facility" title="主神空間永久基建：重力修煉室、生命溫養艙、法則共鳴碑、萬界育嬰堂、星界觀測樞">基建</button>
+          <button id="btn-auto" data-action="open-auto" title="自動小幫手：選一種模式就好，想自己調再開進階自訂">自動</button>
+        </div>
+        <!-- 有事件才出現的待辦 -->
+        <div class="act-alert">
+          <button id="btn-wishes" class="alert" data-action="open-wishes" style="display: none">許願</button>
+          <button id="btn-mandatory" class="alert" data-action="open-mandatory" style="display: none">強制任務</button>
+          <button id="btn-rival" class="alert" data-action="open-rival" style="display: none">洲際碰撞</button>
+          <button id="btn-god" class="alert" data-action="open-god" style="display: none">主神搞事</button>
+        </div>
       </div>
       <div id="roster"></div>
     </footer>

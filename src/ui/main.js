@@ -68,11 +68,18 @@ const $ = (id) => document.getElementById(id);
 
 // 房間在俯視圖上的位置（百分比）與待在裡面時頭頂的 emoji
 const ROOMS = {
-  dorm: { label: "宿舍", x: 3, y: 5, w: 44, h: 42, emoji: "💤", decor: [["🛏️", 22, 24], ["🛏️", 42, 24], ["🛏️", 62, 24], ["🛏️", 82, 24], ["🪴", 92, 88]] },
-  canteen: { label: "餐廳", x: 53, y: 5, w: 44, h: 42, emoji: "🍜", decor: [["🍳", 40, 22], ["🍲", 58, 22], ["🥤", 76, 22], ["🪑", 90, 24], ["🍽️", 8, 88]] },
-  training: { label: "訓練場", x: 3, y: 53, w: 30, h: 42, emoji: "💪", decor: [["🏋️", 52, 24], ["🥊", 80, 24], ["🎯", 90, 86]] },
-  shop: { label: "商店", x: 36, y: 53, w: 28, h: 42, emoji: "🛒", decor: [["🧪", 50, 24], ["⚔️", 72, 24], ["🛡️", 90, 24], ["💰", 10, 86]] },
-  portal: { label: "傳送門", x: 67, y: 53, w: 30, h: 42, emoji: "🌀", decor: [], portal: true },
+  dorm: { label: "宿舍", x: 3, y: 5, w: 44, h: 42, emoji: "💤", decor: [
+    ["window", 24, 10], ["window", 62, 10], ["rug", 50, 80],
+    ["bed", 11, 42, "--c:#9bb7d4"], ["nightstand", 21, 34], ["bed", 31, 42, "--c:#e8a8a0"], ["nightstand", 41, 34],
+    ["bed", 51, 42, "--c:#a9cfa4"], ["nightstand", 61, 34], ["bed", 71, 42, "--c:#cdb4e6"], ["wardrobe", 90, 40], ["plant", 92, 84]] },
+  canteen: { label: "餐廳", x: 53, y: 5, w: 44, h: 42, emoji: "🍜", decor: [
+    ["menu", 30, 10], ["counter", 28, 30], ["stove", 62, 30], ["fridge", 90, 34],
+    ["table", 24, 74], ["table", 62, 74], ["stool", 11, 74], ["stool", 37, 74], ["stool", 49, 74], ["stool", 75, 74]] },
+  training: { label: "訓練場", x: 3, y: 53, w: 30, h: 42, emoji: "💪", decor: [
+    ["target", 50, 10], ["rack", 28, 34], ["bag", 74, 36], ["mat", 50, 76], ["bench", 86, 82]] },
+  shop: { label: "商店", x: 36, y: 53, w: 28, h: 42, emoji: "🛒", decor: [
+    ["banner", 22, 6], ["banner", 78, 6], ["shelf", 26, 33], ["shelf", 74, 33], ["counter-shop", 50, 58], ["potion", 14, 84], ["chest", 86, 84]] },
+  portal: { label: "傳送門", x: 67, y: 53, w: 30, h: 42, emoji: "🌀", decor: [["pad", 50, 62], ["rune", 20, 84], ["rune", 80, 84]], portal: true },
 };
 
 let state = loadGame() ?? createNewGame();
@@ -190,14 +197,14 @@ function renderTopbar() {
   const upkeep = state.samsarites.filter((s) => s.location !== "dungeon").reduce((sum, s) => sum + upkeepOf(s, state), 0);
   $("upkeep").textContent = `-${upkeep} / 天`;
   $("space-level").textContent = `Lv.${state.spaceLevel}`;
-  $("karma").textContent = `🔮 ${state.karmaCrystals ?? 0}${erosionUnlocked(state) || (state.erosionCrystals ?? 0) > 0 ? `　🌌 ${state.erosionCrystals ?? 0}` : ""}`;
+  $("karma").textContent = `${state.karmaCrystals ?? 0}${erosionUnlocked(state) || (state.erosionCrystals ?? 0) > 0 ? ` ／ 侵蝕 ${state.erosionCrystals ?? 0}` : ""}`;
   $("karma").title = "因果結晶（神級抽卡）／侵蝕結晶（位面侵蝕通關掉落，升級高階基建用）";
 
   $("speed-controls").innerHTML = CONFIG.speeds
     .map((v) => `<button data-action="set-speed" data-value="${v}" class="${v === state.settings.speed ? "active" : ""}">${v}x</button>`)
     .join("");
   document.body.style.setProperty("--speed", state.settings.speed); // 讓小人滑動速度跟著遊戲速度變快
-  $("btn-pause").textContent = state.settings.paused ? "▶ 繼續 [Space]" : "⏸ 暫停 [Space]";
+  $("btn-pause").textContent = state.settings.paused ? "繼續" : "暫停";
   const taxPct = Math.round(taxRateOf(state) * 100);
   document.querySelector('[data-action="tax-down"]').disabled = taxRateOf(state) <= CONFIG.tax.min + 1e-9; // #34：到上下限就 disabled，不要點了沒反應
   document.querySelector('[data-action="tax-up"]').disabled = taxRateOf(state) >= CONFIG.tax.max - 1e-9;
@@ -208,33 +215,33 @@ function renderTopbar() {
   $("btn-pause").classList.toggle("active", state.settings.paused);
 
   $("banner").style.display = state.settings.paused && bannerText ? "block" : "none";
-  $("banner").innerHTML = `${bannerText}<button data-action="toggle-pause">▶ 繼續</button>`;
+  $("banner").innerHTML = `${bannerText}<button data-action="toggle-pause">繼續</button>`;
 
   const waiting = pendingWishes(state).length;
   $("btn-wishes").style.display = waiting > 0 ? "" : "none";
-  $("btn-wishes").textContent = `🙏 許願 (${waiting})`;
+  $("btn-wishes").textContent = `許願 (${waiting})`;
 
   const godWaiting = Boolean(pendingGodEvent(state));
   $("btn-god").style.display = godWaiting || activeMission(state) ? "" : "none";
   const steleTotal = Math.round(steleBonusOf(state) * 100);
-  $("btn-stele").textContent = `🪦 英靈碑${steleTotal > 0 ? ` +${steleTotal}%` : ""}`;
+  $("btn-stele").textContent = `英靈碑${steleTotal > 0 ? ` +${steleTotal}%` : ""}`;
   const capt = captainOf(state);
   const capStyle = styleOf(state) ? SQUAD_STYLES[styleOf(state)] : null; // 頂欄徽章：現任隊長與流派（4-E-5）
-  $("btn-squad").textContent = capt ? `👑 ${capt.name}・${capStyle?.icon ?? ""}${capStyle?.name ?? ""}` : squadUnlocked(state) ? "👑 隊長缺位" : "👑 小隊指揮部";
+  $("btn-squad").textContent = capt ? `${capt.name}・${capStyle?.name ?? ""}` : squadUnlocked(state) ? "隊長缺位" : "小隊";
   const mand = pendingMandatory(state);
   $("btn-mandatory").style.display = mand ? "" : "none";
-  if (mand) $("btn-mandatory").textContent = `☠️ 強制任務（第 ${mand.deadlineDay} 天前）`;
+  if (mand) $("btn-mandatory").textContent = `強制任務（第 ${mand.deadlineDay} 天前）`;
   const riv = pendingRival(state);
   $("btn-rival").style.display = riv ? "" : "none";
-  if (riv) $("btn-rival").textContent = `⚔️ 洲際碰撞（第 ${riv.deadlineDay} 天前）`;
-  $("btn-facility").textContent = `🏗️ 基建 ${facilityTotal(state)}`;
-  $("btn-god").textContent = godWaiting ? "👁 主神搞事 (1)" : "🚨 突襲任務";
+  if (riv) $("btn-rival").textContent = `洲際碰撞（第 ${riv.deadlineDay} 天前）`;
+  $("btn-facility").textContent = `基建 ${facilityTotal(state)}`;
+  $("btn-god").textContent = godWaiting ? "主神搞事 (1)" : "突襲任務";
 
   const am = currentAutoMode(state);
-  $("btn-auto").textContent = `🤖 自動小幫手：${AUTO_MODES[am]?.label ?? "自訂"}`;
+  $("btn-auto").textContent = `自動：${AUTO_MODES[am]?.label ?? "自訂"}`;
   $("btn-auto").classList.toggle("active", state.settings.autoDispatch);
   const stockTotal = Object.values(state.inventory ?? {}).reduce((n, v) => n + v, 0);
-  $("btn-inventory").textContent = `🎒 物資${stockTotal ? ` (${stockTotal})` : ""}`;
+  $("btn-inventory").textContent = `物資${stockTotal ? ` (${stockTotal})` : ""}`;
 }
 
 function miniHtml(s, emoji) {
@@ -348,8 +355,8 @@ function renderSpace() {
   if (!map.dataset.built) {
     map.innerHTML = Object.entries(ROOMS)
       .map(([id, r]) => {
-        const decor = r.decor.map(([icon, x, y]) => `<span class="decor" style="left:${x}%;top:${y}%">${icon}</span>`).join("");
-        const portal = r.portal ? `<div class="portal-glow"></div><div class="portal-ring"></div>` : "";
+        const decor = r.decor.map(([kind, x, y, vars = ""]) => `<i class="f f-${kind}" style="left:${x}%;top:${y}%;${vars}"></i>`).join("");
+        const portal = r.portal ? `<div class="portal-beam"></div><div class="portal-glow"></div><div class="portal-ring outer"></div><div class="portal-ring"></div>${[0, 1, 2, 3, 4, 5].map((i) => `<b class="spark" style="--i:${i}"></b>`).join("")}` : "";
         return `<div class="room room-${id}" style="left:${r.x}%;top:${r.y}%;width:${r.w}%;height:${r.h}%">
           ${portal}${decor}<span class="room-label">${r.label}</span></div>`;
       })
