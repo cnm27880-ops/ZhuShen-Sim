@@ -71,6 +71,21 @@ export const CONFIG = {
     intelDiscount: 0.85, // 特產綁定的世界情報滿格 → 85 折
   },
 
+  // ── 動態任務榜、突變與奇物（Phase 4-D-4；詞綴資料在 src/data/mutations.js、奇物在 src/data/relics.js）──
+  board: {
+    slots: 3, // 常規任務槽數（尾王常駐、不佔槽）
+    rotateDays: 2, // 每幾天自動輪換（不動已有隊伍出發的槽）；派隊的槽結算後立即補新槽
+    // 抽槽時的章節權重（依「離目前最高已解鎖章」的距離）：同章、前一章、更早每章
+    chapterWeight: { top: 5, prev: 3, older: 1 },
+  },
+  relic: {
+    powerCap: 0.25, // 全部奇物的全隊有效戰力加成總和硬封頂
+    greedyChance: 0.2, // 貪婪探索：通關後追加隱藏房的機率（濃霧走散 ×2）
+    hiddenRMult: 1.35, // 隱藏房推薦戰力 R 倍率
+    dupRewardPct: 0.5, // 已擁有的隱藏奇物 → 轉為額外積分（該副本基礎獎勵 × 這個比例）
+    autoGreedyAt: 0.75, // 自動派遣：預估通關率達到這個數字且情報滿格就啟用貪婪探索
+  },
+
   // ── 輪迴者自主逛街（Phase 4-D-3）──
   shopping: {
     maxActionsPerDay: 2, // 每人每天最多幾次購買／強化動作
@@ -113,6 +128,7 @@ export const CONFIG = {
       { levels: 2, weight: 38 },
       { levels: 3, weight: 17 },
     ],
+    bondLove: 2, // 副本通關後，存活隊員兩兩之間「同行情誼」好感 +N（雙向；吊橋效應 ×1.5；4-D-4）
     firstClearBonusPct: 0.5, // 首次通關額外 + 基礎獎勵 × 50%（舊版固定 +50 分，對後期關卡太少；待 sim 驗證）
     // 獎勵遞減（計畫 5.7）：用「這是第幾次通關」查表，從上往下第一個符合的生效
     rewardTiers: [
@@ -364,9 +380,9 @@ export const CONFIG = {
       { id: "divine", name: "神級池（神格降臨）", spaceLevel: 4, base: 4500, step: 800, crystal: 1, odds: { C: 0, B: 25, A: 65, S: 10 }, pity: { every: 12, minRank: "S" } },
     ],
   },
-  // 因果結晶：只用於神級池。first = 該關首通必掉（關卡編號 = 全域第幾關 1~20）；chapterRoll = 各章「任一副本通關」機率掉 1 顆（首通掉落與機率掉落各自獨立、可疊加）
+  // 因果結晶：只用於神級池。firstClear = 該關首通必掉（4-D-4 起改用副本 id；30 世界後沿用 4-B 的供應量：第 3 章尾王 2 顆，第 4、5 章各取前 3 張常規關與尾王各 1 顆）；chapterRoll = 各章「任一副本通關」機率掉 1 顆（首通掉落與機率掉落各自獨立、可疊加）
   karma: {
-    firstClear: { 12: 2, 13: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 20: 1 },
+    firstClear: { ch3_boss: 2, ch4_01: 1, ch4_02: 1, ch4_03: 1, ch4_boss: 1, ch5_01: 1, ch5_02: 1, ch5_03: 1, ch5_boss: 1 },
     chapterRoll: { 4: 0.15, 5: 0.25 },
   },
 

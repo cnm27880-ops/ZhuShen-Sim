@@ -486,7 +486,8 @@ test("自動派遣：目標被鎖定、受傷（保護開著）、放假時不�
   const saved = CONFIG.auto.missionFirst;
   CONFIG.auto.missionFirst = false;
   try {
-    // 關掉時走一般邏輯（不保證含目標，只要不報錯、仍有方案）
+    // 關掉時走一般邏輯（不保證含目標，只要不報錯、仍有方案）；4-D-4：自動派遣只挑任務榜上的槽，先確保榜上有簡單的副本
+    state.board.slots = [{ id: 900, dungeonId: "ghost_village", mutationId: "calm_wind", running: false, runId: null }];
     assert.ok(planAutoDispatch(state));
   } finally {
     CONFIG.auto.missionFirst = saved;

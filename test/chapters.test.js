@@ -70,14 +70,18 @@ test("過關門檻依章節：5/7/8/10/12 房分別要過 3/4/5/6/7 房", () => 
 
 test("還沒解鎖的章節不能進，自動派遣也不會挑", () => {
   const state = setup();
-  assert.equal(isUnlocked(state, getDungeon("ch2_1")), false);
-  assert.equal(startRun(state, "ch2_1", [state.samsarites[0].id]).ok, false);
+  const board = (...ids) => (state.board.slots = ids.map((dungeonId, i) => ({ id: 100 + i, dungeonId, mutationId: "calm_wind", running: false, runId: null })));
+  assert.equal(isUnlocked(state, getDungeon("ch2_01")), false);
+  assert.equal(startRun(state, "ch2_01", [state.samsarites[0].id]).ok, false);
   assert.ok(unlockedDungeons(state).every((d) => d.chapter === 1));
+  assert.ok(state.board.slots.every((s) => getDungeon(s.dungeonId).chapter === 1 && !getDungeon(s.dungeonId).boss), "Lv.1 的任務榜只會抽到第 1 章常規關");
+  board("ghost_village");
   assert.equal(planAutoDispatch(state).dungeon.chapter, 1);
   state.spaceLevel = 3;
-  assert.equal(planAutoDispatch(state).dungeon.id, "ch3_3", "尾王還沒開放（守門），挑已解鎖中獎勵最高的（第 3 章第 3 關）");
+  board("ghost_village", "ch3_05", "ch2_05"); // 4-D-4：自動派遣只挑「任務榜上的槽」＋已解鎖的尾王
+  assert.equal(planAutoDispatch(state).dungeon.id, "ch3_05", "尾王還沒開放（守門），挑榜上獎勵最高的（第 3 章第 5 關）");
   state.chapterClears[3] = CONFIG.bossGate.requiredClears;
-  assert.equal(planAutoDispatch(state).dungeon.id, "ch3_4", "守門條件達成後，夠強就挑獎勵最高的（第 3 章尾王）");
+  assert.equal(planAutoDispatch(state).dungeon.id, "ch3_boss", "守門條件達成後，夠強就挑獎勵最高的（第 3 章尾王，常駐不佔槽）");
 });
 
 test("首通本章尾王：空間升 1 級、記下第幾天、解鎖下一章；再打一次不會再升", () => {
@@ -85,7 +89,7 @@ test("首通本章尾王：空間升 1 級、記下第幾天、解鎖下一章�
   state.chapterClears[1] = CONFIG.bossGate.requiredClears; // 尾王守門條件（見 gate.test.js）
   let first = null;
   for (let i = 0; i < 20 && !first; i++) {
-    const r = runOnce(state, "ch1_4");
+    const r = runOnce(state, "ch1_boss");
     if (r.success) first = r;
   }
   assert.ok(first, "超強隊伍 20 場內一定會通關");
@@ -93,8 +97,8 @@ test("首通本章尾王：空間升 1 級、記下第幾天、解鎖下一章�
   assert.equal(state.spaceLevel, 2);
   assert.ok(state.chapterClearDay[1] >= 1);
   assert.ok(state.log.some((e) => e.text.includes("Lv.2")));
-  assert.equal(isUnlocked(state, getDungeon("ch2_1")), true);
-  for (let i = 0; i < 5; i++) runOnce(state, "ch1_4");
+  assert.equal(isUnlocked(state, getDungeon("ch2_01")), true);
+  for (let i = 0; i < 5; i++) runOnce(state, "ch1_boss");
   assert.equal(state.spaceLevel, 2, "重打不會再升級");
   // 一般關卡首通不會升級
   const other = setup();
@@ -106,14 +110,14 @@ test("首通第 5 章尾王：主線通關，空間停在 Lv.5", () => {
   const state = setup();
   state.spaceLevel = 5;
   state.chapterClears[5] = CONFIG.bossGate.requiredClears;
-  for (let i = 0; i < 20 && !state.chapterClearDay[5]; i++) runOnce(state, "ch5_4");
+  for (let i = 0; i < 20 && !state.chapterClearDay[5]; i++) runOnce(state, "ch5_boss");
   assert.ok(state.chapterClearDay[5] >= 1);
   assert.equal(state.spaceLevel, 5);
   assert.ok(state.log.some((e) => e.type === "runEnd" && e.text.includes("主線")));
 });
 
 test("副本長度跟房數走：5 房 1 天、7 房 1.4 天、12 房 2.4 天", () => {
-  for (const [id, ticks] of [["ghost_village", 10], ["ch2_1", 14], ["ch5_1", 24]]) {
+  for (const [id, ticks] of [["ghost_village", 10], ["ch2_01", 14], ["ch5_01", 24]]) {
     const state = setup();
     state.spaceLevel = 5;
     startRun(state, id, [state.samsarites[0].id]);
@@ -165,7 +169,7 @@ test("Phase 4-B 校正後的副本曲線：尾王是章內最高 R／獎勵；�
   const byChapter = (ch) => DUNGEONS.filter((d) => d.chapter === ch);
   for (let ch = 1; ch <= 5; ch++) {
     const list = byChapter(ch);
-    assert.equal(list.length, 4, `第 ${ch} 章有 4 關`);
+    assert.equal(list.length, 6, `第 ${ch} 章有 5 張常規 + 1 張尾王`);
     const boss = list.find((d) => d.boss);
     for (const d of list.filter((x) => !x.boss)) {
       assert.ok(boss.recommendedPower > d.recommendedPower, `第 ${ch} 章尾王 R 要比 ${d.id} 高`);

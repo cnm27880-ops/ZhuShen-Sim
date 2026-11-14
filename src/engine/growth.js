@@ -141,13 +141,13 @@ export function breakGene(state, id, opts = null) {
 // ───────── 因果結晶掉落 ─────────
 
 /**
- * 副本通關結算時呼叫（只在成功時）。number = 該副本是全域第幾關（1~20）。
+ * 副本通關結算時呼叫（只在成功時）。number = 該副本是全域第幾關（相容保留，4-D-4 起不再使用）。
  * 掉落有兩種，各自獨立、可疊加：① 首通該關必掉（CONFIG.karma.firstClear）② 該章任一副本通關機率掉 1 顆（chapterRoll）。
  * 機率用獨立亂數流 state.growth.rngState，不動主亂數。回傳這次掉了幾顆。
  */
 export function rollKarmaDrop(state, dungeon, number, firstClear) {
   const K = CONFIG.karma;
-  let n = firstClear ? (K.firstClear[number] ?? 0) : 0;
+  let n = firstClear ? (K.firstClear[dungeon.id] ?? 0) : 0; // 4-D-4：依副本 id（number 參數保留相容，不再使用）
   const chance = K.chapterRoll[dungeon.chapter];
   if (chance && rand(growth(state)) < chance) n += 1;
   if (n > 0) {

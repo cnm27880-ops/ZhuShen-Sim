@@ -6,6 +6,7 @@ import { SURNAMES, GIVEN_NAMES } from "../data/names.js";
 import { rand, randInt, pick, weighted } from "./rng.js";
 import { rollTags, hpRestBonus } from "./tags.js";
 import { findSpecialRewardByName, getSpecialReward } from "../data/dungeons.js";
+import { migrateWorldId } from "../data/worlds.js";
 import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
 import { dailyGod, cancelGodOf, newGodState } from "./godEvents.js"; // 同上（Phase 3-E 主神搞事）
@@ -17,6 +18,8 @@ import { newGrowthState } from "./growth.js"; // 同上（Phase 4-B 基因鎖／
 import { taxSanityDaily, forfeitWallet } from "./wallet.js"; // 同上（Phase 4-D-1 雙錢包）
 import { dailyShopping } from "./shopping.js"; // 同上（Phase 4-D-3 輪迴者自主逛街）
 import { newMarketState, refreshMarket, dailyMarket } from "./market.js"; // 同上（Phase 4-D-2 黑市）
+import { newBoardState, fillBoard, dailyBoard } from "./board.js"; // 同上（Phase 4-D-4 動態任務榜）
+import { relicBonusOf, refreshRelicBonus } from "./relics.js"; // 同上（Phase 4-D-4 奇物圖鑑）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
 // ───────── 事件與日誌 ─────────
@@ -66,6 +69,8 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
     market: newMarketState(seed), // 8 格分槽黑市（含獨立亂數流 market.rngState；見 engine/market.js）
     aiShopRngState: (seed ^ 0x5b0b) | 0, // 輪迴者自主逛街的獨立亂數流（見 engine/shopping.js）
+    board: newBoardState(), // 動態任務榜：3 個常規任務槽，每槽附帶 1 個突變詞綴（見 engine/board.js）
+    relicCodex: [], // 奇物永久圖鑑（奇物 id；見 engine/relics.js，全隊戰力加成封頂 +25%）
     cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
     dungeonStats: {}, // { 副本id: { attempts, clears } }；clears > 0 代表已有該副本情報
     collection: [], // 副本特殊獎勵 id（定義在 data/dungeons.js），永久生效，效果見 engine/shop.js collectionEffects
@@ -90,6 +95,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     state.samsarites.push(createSamsarite(state, CONFIG.startingRank));
   }
   refreshMarket(state, { silent: true }); // 開局先上一批貨（不寫日誌）
+  fillBoard(state); // 開局先貼好 3 張任務榜
   emit(state, "system", logText(state, "start", { n: CONFIG.startingSamsarites }));
   return state;
 }
@@ -122,6 +128,7 @@ export function createSamsarite(state, rank, rng = state) {
     geneLock: 0, // 基因鎖階數 0~4（上限依階級，見 RANKS.maxGene；engine/growth.js）
     enhanceCount: 0, // 個人強化累計次數（上限跟基因鎖階數走）
     insightCount: 0, // 通關頓悟累計次數（上限 = (基因鎖階數 + 1) × 4）
+    relicBonus: relicBonusOf(state), // 奇物圖鑑的全隊戰力加成（4-D-4；圖鑑變動時由 refreshRelicBonus 更新）
     steleBonus: steleBonusOf(state), // 英靈碑的全隊戰力加成（4-C-5；碑變動時由 refreshSteleBonus 更新）
     inheritPower: 0, // 子嗣繼承值（4-E 才會用，先預留；算進本體值、會吃基因鎖乘區）
     gear: {}, // 商店裝備：{ weapon: 商品id, armor: 商品id }
@@ -424,6 +431,7 @@ export function advanceTick(state) {
     endOfDay(state);
     dailyWishes(state); // 心情／休假倒數、許願超時（Phase 3-B）
     dailyMarket(state); // 黑市到期換貨（4-D-2，獨立亂數流）
+    dailyBoard(state); // 任務榜輪換／補槽（4-D-4，獨立亂數流）
     dailyMandatory(state); // 主神強制血腥任務：發布／逾時抹殺（Phase 4-C-4，獨立亂數流）
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
@@ -448,6 +456,26 @@ export function checkGameOver(state) {
 }
 
 // ───────── 存檔 ─────────
+
+/** 舊存檔的副本 id（chN_1～chN_4）→ 新 id（見 data/worlds.js）：統計、進行中的副本、結算摘要、許願與主神突襲任務都要改 */
+function migrateDungeonIds(state) {
+  const fix = (o, key = "dungeonId") => {
+    if (o && o[key]) o[key] = migrateWorldId(o[key]);
+  };
+  for (const [oldId, st] of Object.entries(state.dungeonStats ?? {})) {
+    const id = migrateWorldId(oldId);
+    if (id !== oldId) {
+      state.dungeonStats[id] = st;
+      delete state.dungeonStats[oldId];
+    }
+  }
+  (state.runs ?? []).forEach((r) => fix(r));
+  (state.runReports ?? []).forEach((r) => fix(r));
+  fix(state.lastRun);
+  (state.wishes ?? []).forEach((w) => fix(w.params));
+  fix(state.god?.mission);
+  fix(state.god?.pending?.params);
+}
 
 export function serialize(state) {
   return JSON.stringify({ ...state, events: [] });
@@ -511,10 +539,22 @@ export function deserialize(json) {
   state.nextWishId ??= 1 + Math.max(0, ...state.wishes.map((w) => w.id));
   state.relations ??= {};
   state.cooldowns ??= {};
+  migrateDungeonIds(state); // Phase 4-D-4：舊的 chN_1～chN_4 副本 id 改成 30 世界新 id
   state.market ??= newMarketState(state.rngState); // Phase 4-D-2 之前的存檔沒有黑市／逛街亂數流
   state.market.slots ??= [];
   state.aiShopRngState ??= (state.rngState ^ 0x5b0b) | 0;
   if (state.market.slots.length === 0) refreshMarket(state, { silent: true });
+  state.board ??= newBoardState(); // Phase 4-D-4 之前的存檔沒有任務榜與奇物圖鑑
+  state.board.slots ??= [];
+  for (const slot of state.board.slots) slot.running = state.runs.some((r) => r.slotId === slot.id);
+  fillBoard(state);
+  state.relicCodex ??= [];
+  for (const r of state.runs) {
+    r.mutationId ??= null;
+    r.slotId ??= null;
+    r.greedy ??= false;
+  }
+  refreshRelicBonus(state);
   state.taxRate ??= CONFIG.tax.default; // Phase 4-D-1 之前的存檔沒有稅率與私房錢
   for (const s of state.samsarites) {
     s.wallet ??= 0;
