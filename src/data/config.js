@@ -239,6 +239,75 @@ export const CONFIG = {
     familyLove: 30, // 出生時小孩與兩位家長互相的好感（30 還不到「喜歡」，不會直接加成出征）
   },
 
+  // ── 小隊隊長與五大流派（Phase 4-E；流派資料在 src/data/squadStyles.js，引擎在 engine/squad.js）──
+  // 注意：關係矩陣的 love／hate 各自 0~100、不會是負的，所以規格裡的「好感」一律用「淨好感」= love - hate（-100~100）。
+  squad: {
+    unlockSpaceLevel: 2, // 空間等級達到這個數字（首通第 1 章尾王）才啟用隊長系統
+    captainPowerPct: 0.08, // 現任隊長個人有效戰力 +8%
+    captainFailSanityCut: 1, // 隊長在隊出征時，全隊單房失敗的理智損耗 -1（最少扣 1）
+    replaceBaseCost: 500, // 主神強行撤換令：公庫積分 = 這個數字 × 空間等級
+    replaceCrystal: 1, // 撤換令另外消耗的因果結晶
+    snubPowerRatio: 0.7, // 空降隊長戰力低於隊內最強老鳥的這個比例 → 不服空降
+    snubSanity: 15, // 不服空降：戰力高於新隊長的老鳥理智 -15
+    snubAffinity: 20, // 不服空降：對新隊長好感 -20
+    coupGapPct: 0.15, // 雙強奪權：隊內戰力前兩名差距 < 15%
+    coupAffinity: -15, // …而且雙方淨好感都 < -15（或兩人流派不同）
+    coupLoserInjury: 1, // 奪權敗者 injury +1
+    coupLoserSanity: 10, // 奪權敗者理智 -10
+    seniorityLoveWeight: 2, // 和平順延（共產／羈絆）：分數 = 資歷天數 + 隊內平均好感 × 這個權重
+    chronicleMax: 100, // 空間編年史最多留幾條
+    // 流派機制（4-E-2）
+    communal: { defenseBonus: 0.08, donatePct: 0.5, subsidyReserve: 0 },
+    bond: { woundedWeight: 1.25, guardAffinity: 45, guardChance: 0.5, guardLove: 10, clearSanity: 4, steleMult: 1.5 },
+    farming: { captainShare: 0.8, guardFeePct: 0.35, rookieUpkeepMult: 0.5, pigDeathReward: 0.2, pigStacks: 2, pigPowerPct: 0.12, dailyAffinity: -2, dailySanity: -1 },
+    elite: { powerExp: 1.4, bossPowerMult: 1.15, failSanityMult: 2 },
+    mercenary: { premium: 0.18, marketDiscount: 0.95, clashMult: 0.2, bondLoveMult: 0.5, worthBase: 100 },
+  },
+
+  // ── 5:2:1 人際與狗血修羅場（Phase 4-E-3；事件資料在 src/data/dramaEvents.js）──
+  drama: {
+    dailyChance: 0.25, // 每天結算時觸發一則空間日常人際事件的機率
+    runChance: 0.3, // 副本成功結算（存活 2 人以上）時穿插一則人際事件的機率
+    groupWeights: { bond: 5, friction: 2, melee: 1 }, // 熱血羈絆：派系摩擦：八點檔修羅場 = 5:2:1
+    cooldownDays: 6, // 同一則事件同一組人的冷卻
+    partnerAt: 65, // 淨好感雙向 >= 這個數字才會結成生死搭檔
+    pairPowerPct: 0.04, // 生死搭檔同隊出征：雙方有效戰力各 +4%
+    mentorSanity: 10, // 老鳥指導菜鳥：菜鳥理智回復
+    feastSanity: 6, // 慶功宴：全體理智回復
+    heirloomSanity: 8, // 擦拭遺物：理智回復
+    tauntSanity: 6, // 強者嘲諷：弱者理智損失
+    struggleWalletMin: 200, // 批鬥大會：私房錢超過這個數字才算「私藏小金庫」
+    struggleConfiscate: 0.5, // 批鬥大會：充公比例（入互助金）
+    coupTrigger: { affinity: -40, minConspirators: 2, win: 1.2 }, // 噬主夜襲：淨好感 <= -40 的成員 >= 2 人；隊長戰力 ×1.2 計算勝率
+    contrabandWindowDays: 12, // 黑貨事發對質：只翻這幾天內的黑貨紀錄
+    contrabandKeep: 6, // 黑貨紀錄最多留幾筆
+  },
+
+  // ── 跨代子嗣、先人遺物、叛逃野生 Boss（Phase 4-E-4；引擎在 engine/lineage.js）──
+  lineage: {
+    pairAffinity: 75, // 雙向淨好感 >= 75（而且都不是重傷以上）才有機會孕育
+    birthChance: 0.05, // 符合條件的一對，每天孕育機率
+    cooldownDays: 30, // 同一對孕育冷卻
+    podDays: 7, // 培育期
+    speedUpCostPerDay: 60, // 加速培育：每剩 1 天花公庫的積分 = 這個數字 × 空間等級
+    talentPerGene: 0.05, // 天賦白值加成：家長平均基因鎖每 1 階 +5% 的子嗣基礎戰力
+    talentFromParent: 0.5, // …加上家長自己的天賦比例 × 這個係數（代代相傳，但整體封頂）
+    talentCap: 0.25, // 無論傳承幾代，天賦加成總上限（占子嗣基礎戰力的比例）硬封頂 +25%
+    heirloomMinGene: 2, // 戰死時 geneLock >= 2（或現任隊長）才會留下遺物
+    heirloomKeep: 8, // 遺物倉庫最多留幾件
+    heirloomPct: 0.1, // 穿遺物：裝備白值 +10%
+    heirloomFriendAffinity: 60, // 摯友門檻（淨好感）
+    heirloomSanity: 10, // 子嗣／摯友穿上遺物：緬懷，理智 +10
+    rogueMax: 5, // 叛逃野生 Boss 上限
+    rogueAffinity: -55, // 叛逃條件：對隊長淨好感 <= -55
+    rogueSanity: 25, // 且理智 < 25
+    rogueChance: 0.15, // 符合條件者每天叛逃機率
+    rogueEncounter: 0.1, // 常規副本出征遭遇叛逃 Boss 的機率
+    rogueRMult: 1.0, // 叛逃 Boss 戰力 = 該章常規關平均 R × 這個倍率
+    rogueBountyPct: 0.5, // 擊敗賞金 = 該章一般關平均獎勵 × 這個比例（另加叛逃者帶走的私房錢）
+    rogueCrystalChance: 0.35, // 擊敗後掉因果結晶機率
+  },
+
   // ── 主神搞事（Phase 3-E；種類資料在 src/data/godEvents.js，數字全部「計畫未定」）──
   godEvent: {
     chance: 0.08, // 每天（沒在冷卻、沒有待回覆事件時）發生的機率

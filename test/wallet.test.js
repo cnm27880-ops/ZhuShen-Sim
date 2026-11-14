@@ -10,6 +10,8 @@ import { enhance, checkEnhance, breakGene } from "../src/engine/growth.js";
 import { startRun } from "../src/engine/dungeon.js";
 import { step } from "../src/engine/dispatch.js";
 
+const core = ({ tax, share, members }) => ({ tax, share, members }); // 4-E 起回傳多了 shares／style，這裡只比對核心三欄
+
 function setup(n = 3, seed = 3) {
   const state = createNewGame(seed);
   state.samsarites = [];
@@ -36,22 +38,22 @@ test("分潤：先抽稅入公庫，其餘由存活隊員平分；零頭歸公�
   const [a, b, c] = state.samsarites;
   const before = state.points;
   const r = distributeLoot(state, [a, b, c], 1000); // 稅 400、剩 600 → 每人 200
-  assert.deepEqual(r, { tax: 400, share: 200, members: 3 });
+  assert.deepEqual(core(r), { tax: 400, share: 200, members: 3 });
   assert.equal(state.points, before + 400);
   assert.deepEqual([a.wallet, b.wallet, c.wallet], [200, 200, 200]);
   const r2 = distributeLoot(state, [a, b], 1001); // 稅 round(400.4)=400、剩 601 → 每人 300、零頭 1 歸公庫
-  assert.deepEqual(r2, { tax: 401, share: 300, members: 2 });
+  assert.deepEqual(core(r2), { tax: 401, share: 300, members: 2 });
   assert.equal(a.wallet, 500);
 });
 
 test("分潤：全滅則全歸公庫；稅率可覆寫（給 4-E 流派用）", () => {
   const state = setup(2);
   const before = state.points;
-  assert.deepEqual(distributeLoot(state, [], 500), { tax: 500, share: 0, members: 0 });
+  assert.deepEqual(core(distributeLoot(state, [], 500)), { tax: 500, share: 0, members: 0 });
   assert.equal(state.points, before + 500);
   const [a] = state.samsarites;
   const r = distributeLoot(state, [a], 1000, { rate: 0.2 });
-  assert.deepEqual(r, { tax: 200, share: 800, members: 1 });
+  assert.deepEqual(core(r), { tax: 200, share: 800, members: 1 });
 });
 
 test("副本結算：總積分 = 入公庫稅額 + 存活隊員私房錢；摘要帶 tax／share", () => {

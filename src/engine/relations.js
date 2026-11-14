@@ -47,6 +47,22 @@ export function addLove(state, a, b, delta) {
   r.love = clamp(r.love + delta);
 }
 
+/** 淨好感（4-E）：A 對 B 的 love - hate（-100~100）。love／hate 各自 0~100，所以「好感 < 0」要用這個才說得通 */
+export function affinity(state, a, b) {
+  const r = getRel(state, a, b);
+  return r.love - r.hate;
+}
+
+/** 調整 A 對 B 的淨好感：加分走 love；扣分先扣 love，扣光了剩下的轉成 hate（4-E 的「好感 -N」） */
+export function shiftAffinity(state, a, b, delta) {
+  if (delta >= 0) return addLove(state, a, b, delta);
+  const r = ensureRel(state, a, b);
+  const fromLove = Math.min(r.love, -delta);
+  r.love -= fromLove;
+  const left = -delta - fromLove;
+  if (left > 0) addHate(state, a, b, left);
+}
+
 /** 仇恨增加；滿了就結成死敵（兩個方向都是死敵） */
 export function addHate(state, a, b, delta) {
   const r = ensureRel(state, a, b);
