@@ -147,7 +147,7 @@ export function planAutoDispatch(state) {
   const target = mission ? state.samsarites.find((s) => s.id === mission.samsariteId) : null;
   const found = mission ? DUNGEONS.find((d) => d.id === mission.dungeonId) : null;
   const missionDungeon = found && isUnlocked(state, found) ? found : null;
-  const usable = target && missionDungeon && target.location === "space" && !target.locked && !(target.vacationDays > 0) && !(state.settings.protect.noInjured && target.injury > 0);
+  const usable = target && missionDungeon && target.location === "space" && !target.locked && !(target.vacationDays > 0) && !(target.podLockDays > 0) && !(state.settings.protect.noInjured && target.injury > 0);
   if (usable) {
     if (!candidates.includes(target)) candidates = [...candidates.slice(0, CONFIG.auto.maxCandidates - 1), target]; // 戰力太低被截掉也要算進來
     const plan = bestPlan(state, candidates, [{ dungeon: missionDungeon, slotId: null, mutation: null, reward: missionDungeon.reward }], target);

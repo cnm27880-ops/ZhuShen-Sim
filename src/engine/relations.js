@@ -82,9 +82,13 @@ export function softenHate(state, a, b, { reduce = 0, clear = false } = {}) {
   const r = state.relations?.[`${a.id}>${b.id}`];
   if (!r) return;
   r.hate = clear ? 0 : Math.max(0, r.hate - reduce);
-  if (clear || r.hate < R().nemesisAt) {
-    if (clear && r.status === "nemesis") r.status = undefined;
-    if (clear) r.revenge = false;
+  const back = state.relations?.[`${b.id}>${a.id}`];
+  // #13：雙方仇恨都降到死敵門檻以下（或直接清零）時，死敵狀態與復仇標記一併解除（死敵狀態是成對設的，所以兩個方向一起清）
+  if (clear || (r.hate < R().nemesisAt && (back?.hate ?? 0) < R().nemesisAt)) {
+    if (r.status === "nemesis") r.status = undefined;
+    if (back?.status === "nemesis") back.status = undefined;
+    r.revenge = false;
+    if (back) back.revenge = false;
   }
 }
 
