@@ -7,6 +7,7 @@ import { CONFIG } from "../data/config.js";
 import { emit, currentDay } from "./core.js"; // 循環引用：只在執行時呼叫，載入時不碰
 import { logText } from "./templates.js";
 import { squadSteleMult } from "./squad.js";
+import { addChronicle } from "./lineage.js";
 
 /** 這個人死的時候夠不夠格入碑：基因鎖 ≥ 1 或生涯出戰 ≥ 15 場 */
 export function qualifiesForStele(s) {
@@ -38,6 +39,8 @@ export function enshrine(state, s, kind) {
   if (list.length > CONFIG.stele.keep) list.length = CONFIG.stele.keep;
   refreshSteleBonus(state);
   const after = steleBonusOf(state);
-  emit(state, "stele", logText(state, "steleAdd", { A: s, gene: entry.geneLock, before: Math.round(before * 100), after: Math.round(after * 100) }));
+  const text = logText(state, "steleAdd", { A: s, gene: entry.geneLock, before: Math.round(before * 100), after: Math.round(after * 100) });
+  emit(state, "stele", text);
+  addChronicle(state, "stele", text); // 元老戰死入碑，寫進編年史（4-E-5）
   return entry;
 }

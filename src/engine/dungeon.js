@@ -27,6 +27,8 @@ import { addLove } from "./relations.js";
 import { failSanityLoss, squadBossPowerMult, squadClashMult, squadBondMult, squadDefenseBonus, squadAfterClear, bondGuard, farmingPigDied, farmingRewardMult } from "./squad.js";
 import { addChronicle } from "./lineage.js";
 import { dramaAfterRun } from "./drama.js";
+import { rollRogueEncounter, rogueBossOf, rogueDungeon, resolveRogueFight } from "./lineage.js";
+import { squadRng } from "./squad.js";
 
 /** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
 export function relationBonus(state, party) {
@@ -201,6 +203,7 @@ export function startRun(state, dungeonId, partyIds, opts = {}) {
   const firstTime = mandatory ? false : !hasIntel(state, dungeon);
   const mutationId = slot?.mutationId ?? null;
   const run = { id: state.nextRunId++, startTick: state.tick, dungeonId, mutationId, slotId: slot?.id ?? null, greedy: !!opts.greedy, envId: env?.id ?? null, firstTime, intel, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
+  if (!mandatory) run.rogueId = rollRogueEncounter(state); // 常規副本 10% 遭遇叛逃野生 Boss 亂入最後一房（4-E-4）
   if (mandatory) {
     run.mandatory = true;
     run.dungeonDef = dungeon; // 開場快照：R 與獎勵不隨之後名冊變動
@@ -381,7 +384,15 @@ function finishRun(state, run) {
   const dungeon = dungeonOfRun(run);
   const survivors = partyOf(state, run);
   const passedCount = run.results.filter(Boolean).length;
-  const success = survivors.length > 0 && passedCount >= roomsToClear(dungeon);
+  let success = survivors.length > 0 && passedCount >= roomsToClear(dungeon);
+  // 叛逃野生 Boss 亂入最後一房（4-E-4）：擊敗追回賞金；不敵則全員帶傷撤退（這場算失敗）
+  let rogue = null;
+  const rogueBoss = run.rogueId && survivors.length > 0 ? rogueBossOf(state, run.rogueId) : null;
+  if (rogueBoss) {
+    const win = rand(squadRng(state)) < roomPassRate(state, survivors, rogueDungeon(state), null, 0, 0);
+    rogue = resolveRogueFight(state, rogueBoss, survivors, win);
+    if (!win) success = false;
+  }
   let reward = 0;
   let specialReward = null;
   let dropDesc = "";
@@ -455,6 +466,7 @@ function finishRun(state, run) {
     // 失敗但活著回來：一定帶傷
     for (const s of survivors) if (s.injury === 0) setInjury(s, 1);
   }
+  if (rogue?.win) loot.rogueBounty = distributeLoot(state, survivors, rogue.bounty, { run, dungeon }).tax; // 賞金也走流派分潤（4-E-4）
   for (const s of survivors) {
     s.location = "space";
     s.runBuff = null; // 單場 buff 用完即止（4-D-2）
@@ -473,6 +485,7 @@ function finishRun(state, run) {
     greedy: !!run.greedy,
     hidden: run.hidden ? (run.hidden.passed ? "passed" : "failed") : null, // 貪婪探索：沒開隱藏房 = null
     relics,
+    rogue, // 叛逃 Boss 對決結果 { name, win, bounty, crystal } 或 null（4-E-4）
     tax: loot.tax,
     share: loot.share,
     firstClear,

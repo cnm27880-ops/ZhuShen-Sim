@@ -20,6 +20,7 @@ import { dailyShopping } from "./shopping.js"; // 同上（Phase 4-D-3 輪迴者
 import { newMarketState, refreshMarket, dailyMarket } from "./market.js"; // 同上（Phase 4-D-2 黑市）
 import { newBoardState, fillBoard, dailyBoard } from "./board.js"; // 同上（Phase 4-D-4 動態任務榜）
 import { relicBonusOf, refreshRelicBonus } from "./relics.js"; // 同上（Phase 4-D-4 奇物圖鑑）
+import { leaveHeirloom, dailyLineage } from "./lineage.js"; // 同上（Phase 4-E-4 遺物、子嗣、叛逃）
 import { dailyDrama } from "./drama.js"; // 同上（Phase 4-E-3 5:2:1 狗血事件）
 import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, communalInherit } from "./squad.js"; // 同上（Phase 4-E 小隊隊長與流派）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
@@ -161,6 +162,7 @@ export function createSamsarite(state, rank, rng = state) {
     tempPowerPct: 0, // 單場臨時戰力加成（養殖流：肉豬陣亡的隊長；副本結算清掉）
     captainNo: null, // 他是第幾任隊長（遺物履歷用）
     maxBossChapter: 0, // 他參與討伐過的最高章節尾王（遺物履歷用）
+    talentPct: 0, // 子嗣天賦白值占基礎戰力的比例（4-E-4，總封頂 +25%；inheritPower = round(stats.power × talentPct)）
   };
 }
 
@@ -190,6 +192,7 @@ export function setInjury(s, level) {
 
 /** killer：被同伴害死時的兇手（怪物殺的就不傳）。連鎖反應在 relations.js 的 afterDeath，由呼叫端接著呼叫 */
 export function killSamsarite(state, s, cause, killer = null, stele = null) {
+  if (stele === "dungeon") leaveHeirloom(state, s); // 副本戰死：老鳥／隊長的最高階裝備不消失，存進遺物庫（要在移出名冊前，4-E-4）
   state.samsarites = state.samsarites.filter((x) => x.id !== s.id);
   cancelWishesOf(state, s.id);
   cancelGodOf(state, s.id);
@@ -455,6 +458,7 @@ export function advanceTick(state) {
     dailyNursery(state); // 催熟倒數、戀人懷孕（Phase 3-F；放在關係事件之後，剛升級的靈魂伴侶今天就有機會）
     dailyDrama(state); // 5:2:1 人際事件：熱血羈絆／派系摩擦／八點檔修羅場（Phase 4-E-3，獨立亂數流）
     dailySquad(state); // 自動冊封／隊長缺位繼任／養殖流怨氣（Phase 4-E-1，獨立亂數流）
+    dailyLineage(state); // 叛逃判定、子嗣孕育（Phase 4-E-4，獨立亂數流）
   }
 }
 
@@ -580,6 +584,7 @@ export function deserialize(json) {
     s.tempPowerPct ??= 0;
     s.captainNo ??= null;
     s.maxBossChapter ??= 0;
+    s.talentPct ??= 0;
   }
   refreshCaptainBonus(state);
   state.board ??= newBoardState(); // Phase 4-D-4 之前的存檔沒有任務榜與奇物圖鑑

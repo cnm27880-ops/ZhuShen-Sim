@@ -14,6 +14,7 @@ import { rand, pick } from "./rng.js";
 import { emit, currentDay, createSamsarite, getSamsarite } from "./core.js";
 import { pairStatus, addLove } from "./relations.js";
 import { logText } from "./templates.js";
+import { applyLineage, addChronicle } from "./lineage.js"; // 世代、天賦封頂、編年史（4-E-4；循環引用只在執行時呼叫）
 
 const C = () => CONFIG.child;
 
@@ -59,11 +60,14 @@ export function dailyNursery(state) {
   }
 }
 
-/** 兩位家長生出一個嬰兒，放進催熟艙（測試可以直接呼叫） */
-export function giveBirth(state, a, b) {
-  const g = nursery(state);
+/**
+ * 兩位家長生出一個嬰兒，放進催熟艙（測試可以直接呼叫）。
+ * opts（4-E-4 跨代子嗣用）：rng 亂數流（預設催熟艙自己的）、podDays 培育天數、cooldownDays 同一對冷卻、lineage 為 true 時保證繼承一個家長性格詞條
+ */
+export function giveBirth(state, a, b, opts = {}) {
+  const g = opts.rng ?? nursery(state);
   state.cooldowns ??= {};
-  state.cooldowns[`birth:${pairKey(a, b)}`] = currentDay(state) + C().cooldownDays;
+  state.cooldowns[`birth:${pairKey(a, b)}`] = currentDay(state) + (opts.cooldownDays ?? C().cooldownDays);
 
   // 階級：隨機一位家長的階級，有機會再升一階（最高 S）
   const ranks = Object.keys(RANKS);
@@ -74,9 +78,10 @@ export function giveBirth(state, a, b) {
   child.tags = inheritTags(g, child.tags, [a, b]);
   child.inheritedTags = child.tags.filter((t) => a.tags.includes(t) || b.tags.includes(t));
   child.location = "pod";
-  child.podDaysLeft = C().podDays;
+  child.podDaysLeft = opts.podDays ?? C().podDays;
   child.parents = [a.id, b.id];
   child.joinedDay = currentDay(state);
+  applyLineage(state, child, [a, b], g, !!opts.lineage); // 世代、天賦白值（總封頂 +25%）、保證繼承性格詞條（4-E-4）
   state.samsarites.push(child);
 
   // 家人之間有一點好感（不到「喜歡」，不會直接變成出征加成）
@@ -84,9 +89,9 @@ export function giveBirth(state, a, b) {
     addLove(state, p, child, C().familyLove);
     addLove(state, child, p, C().familyLove);
   }
-  emit(state, "birth", logText(state, "birth", { A: a, B: b, C: child, rank: child.rank, days: C().podDays }), {
-    samsariteId: child.id,
-  });
+  const text = logText(state, "birth", { A: a, B: b, C: child, rank: child.rank, days: child.podDaysLeft });
+  emit(state, "birth", text, { samsariteId: child.id });
+  addChronicle(state, "birth", `第 ${child.generation} 代：${text}`);
   return child;
 }
 
@@ -104,7 +109,7 @@ function inheritTags(g, rolled, parents) {
 }
 
 /** 催熟完成：嬰兒長成 18 歲青壯年，成為可用的輪迴者 */
-function hatch(state, baby) {
+export function hatch(state, baby) {
   baby.location = "space";
   baby.podDaysLeft = 0;
   const names = (baby.inheritedTags ?? []).map(tagName).map((n) => `【${n}】`);
