@@ -67,6 +67,14 @@ function setPairStatus(state, a, b, status) {
   ensureRel(state, b, a).status = status;
 }
 
+/** 忘情水（4-D-2）：兩人雙向的好感、仇恨歸零，戀人／靈魂伴侶／死敵狀態與復仇標記一併解除 */
+export function resetPair(state, a, b) {
+  for (const [x, y] of [[a, b], [b, a]]) {
+    const r = state.relations?.[`${x.id}>${y.id}`];
+    if (r) Object.assign(r, { love: 0, hate: 0, status: undefined, revenge: false });
+  }
+}
+
 /** 兩人的關係等級：soulmate / adore / like / neutral / dislike / hate / nemesis */
 export function pairLevel(state, a, b) {
   const status = pairStatus(state, a, b);
@@ -391,7 +399,8 @@ export function afterDeath(state, dead, killer = null, teammates = null) {
  *  backstab：背刺成癮者
  * 沒有仇人、沒有背刺標籤時完全不消耗亂數。
  */
-export function pickClash(state, party, roomIndex) {
+/** mult：突變詞綴（分贓誘惑）的內鬥／背刺機率倍率，預設 1（4-D-4） */
+export function pickClash(state, party, roomIndex, mult = 1) {
   for (let i = 0; i < party.length; i++) {
     for (let j = 0; j < party.length; j++) {
       if (i !== j && roomIndex === 0 && getRel(state, party[i], party[j]).revenge) {
@@ -404,7 +413,7 @@ export function pickClash(state, party, roomIndex) {
       const level = pairLevel(state, party[i], party[j]);
       const base = R().infightChance[level];
       const lower = (party[i].stats.sanity ?? 100) <= (party[j].stats.sanity ?? 100) ? party[i] : party[j];
-      const chance = base ? Math.min(1, base * sanityClashMult(lower)) : 0; // 理智低 → 內鬥更容易發生（4-C-2）
+      const chance = base ? Math.min(1, base * sanityClashMult(lower) * mult) : 0; // 理智低 → 內鬥更容易發生（4-C-2）
       if (chance && rand(state) < chance) {
         const iHates = getRel(state, party[i], party[j]).hate >= getRel(state, party[j], party[i]).hate;
         return { attacker: iHates ? party[i] : party[j], victim: iHates ? party[j] : party[i], kind: "enemy" };
@@ -413,7 +422,7 @@ export function pickClash(state, party, roomIndex) {
   }
   if (party.length > 1) {
     for (const s of party) {
-      if (hasTag(s, "backstabber") && rand(state) < Math.min(1, R().backstabChance * sanityClashMult(s))) {
+      if (hasTag(s, "backstabber") && rand(state) < Math.min(1, R().backstabChance * sanityClashMult(s) * mult)) {
         return { attacker: s, victim: pick(state, party.filter((o) => o.id !== s.id)), kind: "backstab" };
       }
     }

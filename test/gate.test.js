@@ -43,21 +43,21 @@ function runOnce(state, dungeonId, ids = null) {
   return state.lastRun;
 }
 
-test("關卡編號：陣列順序 = 第 1~20 關，每章第 4 關是尾王", () => {
-  assert.equal(DUNGEONS.length, 20);
+test("關卡編號：陣列順序 = 第 1~30 關，每章第 6 關是尾王", () => {
+  assert.equal(DUNGEONS.length, 30);
   DUNGEONS.forEach((d, i) => {
     assert.equal(dungeonNumber(d), i + 1);
-    assert.equal(!!d.boss, (i + 1) % 4 === 0, `第 ${i + 1} 關`);
+    assert.equal(!!d.boss, (i + 1) % 6 === 0, `第 ${i + 1} 關`);
   });
 });
 
 test("尾王守門：前 3 關合計成功結算滿 8 次才開放；失敗不算、尾王本身不算", () => {
   const state = setup(1);
-  const boss = getDungeon("ch1_4");
+  const boss = getDungeon("ch1_boss");
   assert.equal(CONFIG.bossGate.requiredClears, 8);
   assert.deepEqual(bossGateInfo(state, boss), { applies: true, have: 0, need: 8, open: false });
   assert.equal(isUnlocked(state, boss), false);
-  const denied = startRun(state, "ch1_4", [state.samsarites[0].id]);
+  const denied = startRun(state, "ch1_boss", [state.samsarites[0].id]);
   assert.equal(denied.ok, false);
   assert.match(denied.reason, /0\/8/);
   assert.equal(state.samsarites[0].location, "space", "被拒絕不會讓人進副本");
@@ -102,7 +102,7 @@ test("尾王守門：失敗的結算不算次數", () => {
 
 test("尾王守門：每章獨立；已首通過的尾王不再受鎖（舊存檔相容）", () => {
   const state = setup(3);
-  const ch3boss = getDungeon("ch3_4");
+  const ch3boss = getDungeon("ch3_boss");
   state.chapterClears[1] = 99; // 別章的次數不影響第 3 章
   assert.equal(isUnlocked(state, ch3boss), false);
   state.chapterClears[3] = 8;
@@ -114,24 +114,25 @@ test("尾王守門：每章獨立；已首通過的尾王不再受鎖（舊存�
   delete old.chapterClears;
   const loaded = deserialize(serialize(old));
   assert.deepEqual(loaded.chapterClears, {});
-  assert.equal(isUnlocked(loaded, getDungeon("ch1_4")), true, "第 1 章尾王首通過了");
-  assert.equal(isUnlocked(loaded, getDungeon("ch2_4")), false, "第 2 章尾王還沒");
-  loaded.dungeonStats.ch2_4 = { attempts: 1, clears: 1 };
-  assert.equal(isUnlocked(loaded, getDungeon("ch2_4")), true, "有通關紀錄也算");
+  assert.equal(isUnlocked(loaded, getDungeon("ch1_boss")), true, "第 1 章尾王首通過了");
+  assert.equal(isUnlocked(loaded, getDungeon("ch2_boss")), false, "第 2 章尾王還沒");
+  loaded.dungeonStats.ch2_boss = { attempts: 1, clears: 1 };
+  assert.equal(isUnlocked(loaded, getDungeon("ch2_boss")), true, "有通關紀錄也算");
 });
 
 test("尾王守門：空間等級還不夠的章節，即使次數夠也不能進", () => {
   const state = setup(1);
   state.chapterClears[2] = 99;
-  assert.equal(isUnlocked(state, getDungeon("ch2_4")), false);
-  assert.equal(startRun(state, "ch2_4", [state.samsarites[0].id]).ok, false);
+  assert.equal(isUnlocked(state, getDungeon("ch2_boss")), false);
+  assert.equal(startRun(state, "ch2_boss", [state.samsarites[0].id]).ok, false);
 });
 
-test("因果結晶：第 12 關首通掉 2 顆、第 13~20 關首通各 1 顆，第 1~11 關首通不掉", () => {
+test("因果結晶：第 3 章尾王首通掉 2 顆、第 4／5 章前 3 張常規關與尾王各 1 顆（30 世界沿用 4-B 供應量），其餘首通不掉", () => {
   const K = CONFIG.karma;
-  assert.equal(K.firstClear[12], 2);
-  for (let n = 13; n <= 20; n++) assert.equal(K.firstClear[n], 1, `第 ${n} 關`);
-  for (let n = 1; n <= 11; n++) assert.equal(K.firstClear[n], undefined);
+  assert.equal(K.firstClear.ch3_boss, 2);
+  for (const id of ["ch4_01", "ch4_02", "ch4_03", "ch4_boss", "ch5_01", "ch5_02", "ch5_03", "ch5_boss"]) assert.equal(K.firstClear[id], 1, id);
+  assert.equal(Object.values(K.firstClear).reduce((n, v) => n + v, 0), 10, "首通必掉總供應量 = 4-B 的 10 顆");
+  for (const d of DUNGEONS.filter((x) => x.chapter < 3 || ["ch3_01", "ch3_05", "ch4_05", "ch5_05"].includes(x.id))) assert.equal(K.firstClear[d.id], undefined, d.id);
 
   const saved = { ...K.chapterRoll };
   K.chapterRoll[4] = 0;
@@ -140,19 +141,19 @@ test("因果結晶：第 12 關首通掉 2 顆、第 13~20 關首通各 1 顆，
     const state = setup(5);
     openGates(state);
     assert.equal(state.karmaCrystals, 0);
-    let r = runOnce(state, "ch3_3"); // 第 11 關首通：不掉
+    let r = runOnce(state, "ch3_05"); // 第 11 關首通：不掉
     assert.equal(r.success, true);
     assert.equal(r.karma, 0);
-    r = runOnce(state, "ch3_4"); // 第 12 關首通：2 顆
+    r = runOnce(state, "ch3_boss"); // 第 12 關首通：2 顆
     assert.equal(r.success && r.firstClear, true);
     assert.equal(r.karma, 2);
     assert.equal(state.karmaCrystals, 2);
-    r = runOnce(state, "ch3_4"); // 重打：不掉
+    r = runOnce(state, "ch3_boss"); // 重打：不掉
     assert.equal(r.karma, 0);
     assert.equal(state.karmaCrystals, 2);
-    r = runOnce(state, "ch4_1"); // 第 13 關首通：1 顆
+    r = runOnce(state, "ch4_01"); // 第 13 關首通：1 顆
     assert.equal(r.karma, 1);
-    r = runOnce(state, "ch5_4"); // 第 20 關首通：1 顆
+    r = runOnce(state, "ch5_boss"); // 第 20 關首通：1 顆
     assert.equal(r.karma, 1);
     assert.equal(state.karmaCrystals, 4);
     assert.ok(state.events.some((e) => e.type === "karma"));
@@ -168,11 +169,11 @@ test("因果結晶：第 4 章任一副本通關 15%、第 5 章 25% 機率掉 1
   K.chapterRoll[4] = 1;
   try {
     const state = setup(5);
-    let r = runOnce(state, "ch4_1"); // 首通必掉 1 + 機率 1 = 2
+    let r = runOnce(state, "ch4_01"); // 首通必掉 1 + 機率 1 = 2
     assert.equal(r.karma, 2);
-    r = runOnce(state, "ch4_1"); // 重打：只剩機率掉落
+    r = runOnce(state, "ch4_01"); // 重打：只剩機率掉落
     assert.equal(r.karma, 1);
-    r = runOnce(state, "ch3_3"); // 第 3 章沒有機率掉落
+    r = runOnce(state, "ch3_05"); // 第 3 章沒有機率掉落
     assert.equal(r.karma, 0);
     assert.equal(state.karmaCrystals, 3);
   } finally {
@@ -181,10 +182,10 @@ test("因果結晶：第 4 章任一副本通關 15%、第 5 章 25% 機率掉 1
 
   // 實際機率：第 5 章 25%（重打同一關，扣掉首通那一場）
   const state = setup(5);
-  runOnce(state, "ch5_1");
+  runOnce(state, "ch5_01");
   state.karmaCrystals = 0;
   const N = 400;
-  for (let i = 0; i < N; i++) runOnce(state, "ch5_1");
+  for (let i = 0; i < N; i++) runOnce(state, "ch5_01");
   assert.ok(state.karmaCrystals / N > 0.17 && state.karmaCrystals / N < 0.33, `實際 ${(state.karmaCrystals / N).toFixed(3)}`);
 });
 
@@ -204,7 +205,7 @@ test("失敗的副本不掉結晶、不頓悟", () => {
       s.tags = [];
       s.stats.power = 1;
       state.samsarites.push(s);
-      const r = runOnce(state, "ch4_1");
+      const r = runOnce(state, "ch4_01");
       if (r.success) continue;
       sawFail = true;
       assert.equal(r.karma, 0);

@@ -51,7 +51,7 @@ function possibleWishes(state, s) {
       if (options.length > 0) out.push({ def, weight: k.weight, params: { dungeonId: pick(state, options).id } });
     } else if (def.mode === "gear") {
       const tier = shopTier(state);
-      const options = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.tier <= tier && s.gear?.[i.slot] !== i.id);
+      const options = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard" && i.tier <= tier && s.gear?.[i.slot] !== i.id);
       if (options.length > 0) out.push({ def, weight: k.weight, params: { itemId: pick(state, options).id } });
     }
   }

@@ -14,16 +14,24 @@
 //   6. 主神強制任務：交給引擎的自動派遣（優先派最強的 4 人）；逾時被抹殺的人數另外統計
 //   7. 其他（許願、主神搞事）不理會：許願會超時、主神搞事視同照辦
 //   派遣交給引擎的自動派遣（通關率 ≥ CONFIG.auto.minClearChance 才出門；尾王守門由引擎處理）
+//
+// Phase 4-D-6 活體雙錢包經濟：副本結算先抽稅（預設 taxRate 0.40，--tax=0.5 可覆寫）入公庫，其餘由存活隊員平分成私房錢；
+//   輪迴者每天自己逛街、強化（engine/shopping.js，亂數用獨立流）；派遣走 3 槽動態任務榜＋尾王區（engine/dispatch.js 的 autoTargets），
+//   情報滿格且勝率 ≥ 0.75 時自動貪婪探索。機器人（玩家）只負責公庫的決策：招募、賞賜制式裝備、補助強化／突破、人口控制。
+//   報表多了：公庫期末均值、輪迴者總消費（私房錢）、公庫總支出、奇物收集數。
 
 import { CONFIG } from "../src/data/config.js";
 import { DUNGEONS } from "../src/data/dungeons.js";
-import { SHOP_ITEMS } from "../src/data/shop.js";
+import { SHOP_ITEMS } from "../src/data/shopItems.js";
 import { createNewGame, currentDay, canAfford, pullGacha, checkGacha, upkeepOf, recycle } from "../src/engine/core.js";
 import { popLimit } from "../src/engine/mandatory.js";
 import { step } from "../src/engine/dispatch.js";
 import { effectivePower } from "../src/engine/tags.js";
 import { buyItem, checkBuy } from "../src/engine/shop.js";
 import { enhance, checkEnhance, breakGene, checkBreakGene } from "../src/engine/growth.js";
+import { setTaxRate } from "../src/engine/wallet.js";
+import { marketOf, buyMarketSlot, checkMarketBuy, slotPrice } from "../src/engine/market.js";
+import { getShopItem } from "../src/data/shopItems.js";
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {
@@ -47,6 +55,7 @@ for (const d of DUNGEONS) {
 }
 if (args.minClear) CONFIG.auto.minClearChance = args.minClear;
 if (args.mpower) CONFIG.forcedMission.powerMult = args.mpower;
+const TAX = args.tax ?? CONFIG.tax.default; // --tax=0.4：公庫稅率
 const GROW_RESERVE_DAYS = args.growReserve ?? 8;
 const SEEDS = args.seeds || 100;
 const DAYS = args.days || 120;
@@ -94,12 +103,22 @@ function botDay(state) {
   }
   // 2. 裝備（只幫在家的核心 4 人買）
   const home = core4(state).filter((s) => s.location === "space");
-  const gear = SHOP_ITEMS.filter((i) => i.kind === "gear").sort((a, b) => (b.effect.power ?? 0) - (a.effect.power ?? 0));
+  const gear = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard").sort((a, b) => (b.effect.power ?? 0) - (a.effect.power ?? 0));
   for (const s of home) {
     for (const slot of ["weapon", "armor"]) {
       const best = gear.find((i) => i.slot === slot && checkBuy(state, i, s).ok && canSpare(state, i.price));
       if (best && gearPower(best.id) > gearPower(s.gear?.[slot])) buyItem(state, best.id, s.id);
     }
+  }
+  // 2.5 黑市賞賜：公庫替核心 4 人買黑市的特產武防／血統（比身上的強才買；賞賜會綁定）
+  const slotValue = (item) => (item ? (item.slot === "bloodline" ? (item.effect.powerPct ?? 0) * 1000 : item.effect.power ?? 0) : -1);
+  for (const s of home) {
+    marketOf(state).slots.forEach((slot, index) => {
+      const item = getShopItem(slot.itemId);
+      if (!item || slot.sold || item.kind !== "gear") return;
+      if (slotValue(item) <= slotValue(getShopItem(s.gear?.[item.slot]))) return;
+      if (checkMarketBuy(state, index, s.id).ok && canSpare(state, slotPrice(state, slot).price)) buyMarketSlot(state, index, s.id);
+    });
   }
   // 3. 養成：每次挑「最便宜、買得起」的一步（強化或突破基因鎖），直到沒有為止
   for (let guard = 0; guard < 200; guard++) {
@@ -128,17 +147,26 @@ function botDay(state) {
 
 function playOne(seed) {
   const state = createNewGame(seed);
+  setTaxRate(state, TAX);
   state.settings.autoDispatch = true;
   const botTick = CONFIG.auto.dispatchAtTick - 1; // 自動派遣前一個時段做決策
   let bankruptDay = null;
   let lowestPoints = state.points;
   let income = 0;
+  let walletSpent = 0; // 輪迴者自己逛街、強化花掉的私房錢（step 內 totalSpent 的增量；機器人自己的公庫支出不算）
+  let botSpent = 0; // 機器人（玩家）的公庫支出
   let seenReport = null;
   const byChapter = {}; // { 章: { runs, wins, deaths } }
   const mand = { runs: 0, wins: 0, deaths: 0 }; // 強制任務
   while (currentDay(state) <= DAYS && !state.gameOver) {
-    if (state.tick % CONFIG.ticksPerDay === botTick) botDay(state);
+    if (state.tick % CONFIG.ticksPerDay === botTick) {
+      const before = state.totalSpent;
+      botDay(state);
+      botSpent += state.totalSpent - before;
+    }
+    const spentBefore = state.totalSpent;
     step(state);
+    walletSpent += state.totalSpent - spentBefore; // 輪迴者自主逛街發生在跨日結算（沒有別的花費會在 step 裡發生）
     lowestPoints = Math.min(lowestPoints, state.points);
     if (seed === TRACE && args.events) {
       for (const ev of state.events) if (["runStart", "runEnd", "death", "gacha"].includes(ev.type)) console.log(`  [D${currentDay(state)}] ${ev.text.split("\n")[0].slice(0, 110)}`);
@@ -187,6 +215,10 @@ function playOne(seed) {
     totalSpent: state.totalSpent,
     crystals: state.karmaCrystals,
     income,
+    walletSpent,
+    botSpent,
+    relics: state.relicCodex.length,
+    wallets: state.samsarites.reduce((n, s) => n + (s.wallet ?? 0), 0),
     byChapter,
     topPower: Math.max(0, ...people.map(effectivePower)),
     maxGene: Math.max(0, ...people.map((s) => s.geneLock ?? 0)),
@@ -216,7 +248,7 @@ if (args.json) {
     const days = results.map((r) => r.clearDay[ch]).filter(Boolean);
     return { ch, frac: days.length / SEEDS, median: days.length ? pctl(days, 0.5) : null, p25: days.length ? pctl(days, 0.25) : null, p75: days.length ? pctl(days, 0.75) : null };
   });
-  console.log(JSON.stringify({ chapters, purged: avg(results.map((r) => r.purged)), mandRuns: avg(results.map((r) => r.mand.runs)), mandWinRate: results.reduce((n, r) => n + r.mand.wins, 0) / Math.max(1, results.reduce((n, r) => n + r.mand.runs, 0)), alive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), income: avg(results.map((r) => r.income / DAYS)), bankrupt: results.filter((r) => r.bankruptDay).length / SEEDS }));
+  console.log(JSON.stringify({ chapters, purged: avg(results.map((r) => r.purged)), mandRuns: avg(results.map((r) => r.mand.runs)), mandWinRate: results.reduce((n, r) => n + r.mand.wins, 0) / Math.max(1, results.reduce((n, r) => n + r.mand.runs, 0)), alive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), income: avg(results.map((r) => r.income / DAYS)), points: avg(results.map((r) => r.points)), walletSpent: avg(results.map((r) => r.walletSpent)), relics: avg(results.map((r) => r.relics)), bankrupt: results.filter((r) => r.bankruptDay).length / SEEDS }));
   process.exit(0);
 }
 console.log(`\n主神空間平衡模擬：${SEEDS} 組種子 × 最多 ${DAYS} 天（${((Date.now() - t0) / 1000).toFixed(1)} 秒）\n`);
@@ -237,6 +269,8 @@ console.log(`最終空間等級分布：${[1, 2, 3, 4, 5].map((lv) => `Lv.${lv}�
 console.log(`最終最高基因鎖分布：${[0, 1, 2, 3, 4].map((g) => `${g}階×${results.filter((r) => r.maxGene === g).length}`).join("　")}`);
 console.log(`平均最強戰力：${avg(results.map((r) => r.topPower))}　平均剩餘因果結晶：${avg(results.map((r) => r.crystals))}`);
 console.log(`平均總收入（副本獎勵）：${avg(results.map((r) => r.income))}　每天約 ${avg(results.map((r) => r.income / DAYS))}`);
+console.log(`雙錢包（稅率 ${TAX}）：公庫期末均值 ${avg(results.map((r) => r.points))}（中位數 ${pctl(results.map((r) => r.points), 0.5)}）・輪迴者總消費 ${avg(results.map((r) => r.walletSpent))}・公庫（機器人）總支出 ${avg(results.map((r) => r.botSpent))}・期末私房錢合計 ${avg(results.map((r) => r.wallets))}`);
+console.log(`奇物收集：平均 ${avg(results.map((r) => r.relics))} / 60（中位數 ${pctl(results.map((r) => r.relics), 0.5)}）`);
 const mandRuns = results.reduce((n, r) => n + r.mand.runs, 0);
 console.log(`強制任務（每局平均）：出征 ${(mandRuns / SEEDS).toFixed(1)} 場 / 通關率 ${mandRuns ? Math.round((results.reduce((n, r) => n + r.mand.wins, 0) / mandRuns) * 100) : 0}% / 戰死 ${avg(results.map((r) => r.mand.deaths))} 人；被主神抹殺 ${avg(results.map((r) => r.purged))} 人；英靈碑 ${avg(results.map((r) => r.stele))} 筆`);
 console.log("各章（每局平均）：出征場數 / 通關率 / 死亡人數");

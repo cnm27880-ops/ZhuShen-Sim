@@ -9,9 +9,16 @@
 //   獎勵倍率回調（相對 4-B 的值）第 2～5 章 ×1／0.6／0.4／0.4（即相對 4-A 原始表 ×2.5／2.7／3.6／3.2）；
 //   R 再乘：第 2 章 ×1.1、第 3 章一般 ×1.6／尾王 ×2.2、第 4 章 ×1.6、第 5 章 ×1.4（積分不再是瓶頸，進度由 R 決定）。
 // 第 1 章前 3 關沿用舊的 3 個副本；其他 17 關目前是佔位資料（名字、房間文字、特殊獎勵之後再補，只改這個檔案）。
+// Phase 4-D-6：雙錢包（輪迴者私房錢自己換裝／強化）、血統、奇物（全隊 +最多 25%）讓後期變強太快，依 npm run sim -- --seeds=30 --days=900 把
+//   第 2～5 章 R 再乘（常規／尾王）：第 2 章 ×1.3／1.5、第 3 章 ×0.9／0.9、第 4 章 ×1.4／1.5、第 5 章 ×1.8／2.4；
+//   獎勵再乘第 3～5 章 ×0.85／0.5／0.45（讓公庫期末不再堆積上千萬，約 3 百萬；第 1、2 章不動，見下方 CHAPTER_ANCHOR）。
+// Phase 4-D-4：擴編成 30 個世界（每章 5 張常規 + 1 張尾王，id 清單見 data/worlds.js）。第 1 章的 3 個真實世界保留 R／獎勵，
+//   其餘常規關由「該章 4-C 校正好的最低 R／獎勵」到「最高 R／獎勵」等比內插成 5 關；尾王維持原 R 與獎勵（bossGate 仍是該章常規關累計 8 次）。
+//   舊 id（chN_1～chN_4）的存檔遷移見 data/worlds.js 的 LEGACY_WORLD_IDS 與 engine/core.js deserialize。
 // 全部是原創世界觀。
 
 import { CONFIG } from "./config.js";
+import { WORLD_LIST } from "./worlds.js";
 
 // 佔位房間：n 間通用文字，最後一間是首領房
 function placeholderRooms(n) {
@@ -24,11 +31,11 @@ function placeholderRooms(n) {
 
 const PLACEHOLDER_GENRES = ["靈異", "科幻", "奇幻"];
 
-// 佔位副本：章節、第幾關（1~4，第 4 關是尾王）、推薦戰力、基礎獎勵
-function placeholder(chapter, slot, recommendedPower, reward) {
-  const boss = slot === 4;
+// 佔位副本：世界 id（見 data/worlds.js）、第幾關（1~5 常規，0 = 尾王）、推薦戰力、基礎獎勵
+function placeholder(id, chapter, slot, recommendedPower, reward) {
+  const boss = slot === 0;
   return {
-    id: `ch${chapter}_${slot}`,
+    id,
     name: boss ? `第 ${chapter} 章尾王（待命名）` : `第 ${chapter} 章・第 ${slot} 關（待命名）`,
     chapter,
     boss,
@@ -42,7 +49,17 @@ function placeholder(chapter, slot, recommendedPower, reward) {
   };
 }
 
-export const DUNGEONS = [
+// 各章「一般關」由最低到最高等比內插成 5 關（4-C 校正好的 R／獎勵錨點：[最低, 最高]）與尾王
+const CHAPTER_ANCHOR = {
+  1: { r: [90, 185], reward: [95, 165], boss: [468, 230] },
+  2: { r: [543, 1087], reward: [850, 1500], boss: [4158, 2050] }, // R：4-C 錨點 [418, 836]／尾王 2772 × 1.3／1.5（4-D-6 依 sim 校正）
+  3: { r: [2232, 4464], reward: [2639, 4590], boss: [21780, 6197] }, // R ×0.9；獎勵 ×0.85
+  4: { r: [14336, 28672], reward: [6480, 11520], boss: [86400, 15480] }, // R ×1.4／1.5；獎勵 ×0.5
+  5: { r: [39312, 78624], reward: [16560, 28800], boss: [157248, 40320] }, // R ×1.8／2.4；獎勵 ×0.45
+};
+const spread = ([lo, hi], i) => Math.round(lo * (hi / lo) ** (i / 4));
+
+const REAL_WORLDS = [
   {
     id: "ghost_village",
     name: "霧隱荒村",
@@ -112,24 +129,17 @@ export const DUNGEONS = [
       { name: "塔頂核心", pass: "核心水晶碎裂，三百年的戰爭少了一座塔。", fail: "核心暴走，{name}被魔力洪流正面吞沒。" },
     ],
   },
-  placeholder(1, 4, 468, 230),
-  placeholder(2, 1, 418, 850),
-  placeholder(2, 2, 594, 1125),
-  placeholder(2, 3, 836, 1500),
-  placeholder(2, 4, 2772, 2050),
-  placeholder(3, 1, 2480, 3105),
-  placeholder(3, 2, 3520, 4050),
-  placeholder(3, 3, 4960, 5400),
-  placeholder(3, 4, 24200, 7290),
-  placeholder(4, 1, 10240, 12960),
-  placeholder(4, 2, 14560, 17280),
-  placeholder(4, 3, 20480, 23040),
-  placeholder(4, 4, 57600, 30960),
-  placeholder(5, 1, 21840, 36800),
-  placeholder(5, 2, 31080, 48000),
-  placeholder(5, 3, 43680, 64000),
-  placeholder(5, 4, 65520, 89600),
 ];
+
+// 依 WORLD_LIST 順序組成最終的 30 張：有真實內容的（第 1 章前 3 個世界）直接用，其餘產生佔位資料
+const REAL = new Map(REAL_WORLDS.map((d) => [d.id, d]));
+export const DUNGEONS = WORLD_LIST.map((w) => {
+  if (REAL.has(w.id)) return REAL.get(w.id);
+  const a = CHAPTER_ANCHOR[w.chapter];
+  if (w.boss) return placeholder(w.id, w.chapter, 0, a.boss[0], a.boss[1]);
+  const slot = WORLD_LIST.filter((x) => x.chapter === w.chapter && !x.boss).findIndex((x) => x.id === w.id); // 0~4
+  return placeholder(w.id, w.chapter, slot + 1, spread(a.r, slot), spread(a.reward, slot));
+});
 
 export function getDungeon(id) {
   return DUNGEONS.find((d) => d.id === id);

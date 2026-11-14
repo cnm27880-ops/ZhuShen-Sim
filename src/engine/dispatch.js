@@ -10,6 +10,8 @@ import { activeMission } from "./godEvents.js";
 import { MANDATORY_ID, pendingMandatory } from "./mandatory.js";
 import { effectivePower } from "./tags.js";
 import { clearChance, partyPower, startRun, stepDueRooms, settleRuns, unlockedDungeons, isUnlocked } from "./dungeon.js";
+import { boardTargets } from "./board.js";
+import { intelFull } from "./market.js";
 
 // 兩人是否為仇恨／死敵（關係系統在 engine/relations.js）
 export function areEnemies(state, a, b) {
@@ -28,7 +30,7 @@ export function autoCandidates(state) {
   const reserved = reservedForMandatory(state);
   return state.samsarites
     .filter((s) => !reserved.has(s.id))
-    .filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0))
+      .filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0) && !(s.podLockDays > 0))
     .filter((s) => !(state.settings.protect.noInjured && s.injury > 0))
     .sort((a, b) => effectivePower(b) - effectivePower(a))
     .slice(0, CONFIG.auto.maxCandidates);
@@ -51,27 +53,40 @@ function hasEnemyPair(state, party) {
   return false;
 }
 
+/**
+ * 自動派遣可以選的目標（4-D-4）：任務榜上還沒人出發的槽（含突變詞綴的 R 倍率與獎勵加成）＋已解鎖的各章尾王（常駐）。
+ * 每個目標 = { dungeon（已套詞綴的 R）, slotId（尾王為 null）, mutation, reward（含詞綴的結算積分加成，只用來比較） }
+ */
+export function autoTargets(state) {
+  const out = boardTargets(state)
+    .filter((t) => !t.slot.running && isUnlocked(state, t.dungeon))
+    .map((t) => ({ dungeon: t.dungeon, slotId: t.slot.id, mutation: t.mutation, reward: t.dungeon.reward * (1 + (t.mutation?.rewardPct ?? 0)) }));
+  for (const d of unlockedDungeons(state)) if (d.boss) out.push({ dungeon: d, slotId: null, mutation: null, reward: d.reward });
+  return out;
+}
+
 // 比較兩個方案：獎勵高的副本優先；同副本時「夠穩」（達到目標通關率）的優先；
 // 都夠穩就挑總戰力低的（不浪費戰力），都不夠穩就挑通關率高的（不讓人白白送死）。
 function isBetterPlan(a, b) {
-  if (a.dungeon.reward !== b.dungeon.reward) return a.dungeon.reward > b.dungeon.reward;
+  if (a.reward !== b.reward) return a.reward > b.reward;
   if (a.comfy !== b.comfy) return a.comfy;
   return a.comfy ? a.power < b.power : a.chance > b.chance;
 }
 
-/** 在 candidates 的所有隊伍組合 × dungeons 裡挑最划算的；mustInclude 有值時，隊伍必須包含他 */
-function bestPlan(state, candidates, dungeons, mustInclude = null) {
+/** 在 candidates 的所有隊伍組合 × targets（autoTargets 的項目）裡挑最划算的；mustInclude 有值時，隊伍必須包含他 */
+function bestPlan(state, candidates, targets, mustInclude = null) {
   let best = null;
   for (const party of subsets(candidates, CONFIG.partyMax)) {
     if (mustInclude && !party.includes(mustInclude)) continue;
     if (state.settings.protect.noEnemies && hasEnemyPair(state, party)) continue;
     const power = partyPower(party);
-    for (const dungeon of dungeons) {
+    for (const target of targets) {
+      const { dungeon } = target;
       const chance = clearChance(state, party, dungeon);
       if (chance < CONFIG.auto.minClearChance) continue;
       const comfy = chance >= CONFIG.auto.targetClearChance;
-      const better = !best || isBetterPlan({ dungeon, chance, power, comfy }, best);
-      if (better) best = { dungeon, party, chance, power, comfy };
+      const plan = { dungeon, party, chance, power, comfy, reward: target.reward, slotId: target.slotId, mutation: target.mutation };
+      if (!best || isBetterPlan(plan, best)) best = plan;
     }
   }
   return best;
@@ -91,10 +106,10 @@ export function planAutoDispatch(state) {
   const usable = target && missionDungeon && target.location === "space" && !target.locked && !(target.vacationDays > 0) && !(state.settings.protect.noInjured && target.injury > 0);
   if (usable) {
     if (!candidates.includes(target)) candidates = [...candidates.slice(0, CONFIG.auto.maxCandidates - 1), target]; // 戰力太低被截掉也要算進來
-    const plan = bestPlan(state, candidates, [missionDungeon], target);
+    const plan = bestPlan(state, candidates, [{ dungeon: missionDungeon, slotId: null, mutation: null, reward: missionDungeon.reward }], target);
     if (plan) return plan;
   }
-  return bestPlan(state, candidates, unlockedDungeons(state));
+  return bestPlan(state, candidates, autoTargets(state));
 }
 
 /**
@@ -109,7 +124,7 @@ export function autoMandatory(state) {
   const topAway = [...reservedForMandatory(state)].some((id) => state.samsarites.find((s) => s.id === id)?.location !== "space");
   const lastChance = currentDay(state) >= pending.deadlineDay - 1;
   if (CONFIG.auto.holdForMandatory && topAway && !lastChance) return 0;
-  const pool = state.samsarites.filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0));
+  const pool = state.samsarites.filter((s) => s.location === "space" && !s.locked && !(s.vacationDays > 0) && !(s.podLockDays > 0));
   const party = [...pool].sort((a, b) => (a.injury > 0) - (b.injury > 0) || effectivePower(b) - effectivePower(a)).slice(0, CONFIG.partyMax);
   if (party.length === 0) return 0;
   return startRun(state, MANDATORY_ID, party.map((s) => s.id)).ok ? 1 : 0;
@@ -121,7 +136,9 @@ export function tryAutoDispatch(state) {
   for (;;) {
     const plan = planAutoDispatch(state);
     if (!plan) break;
-    const result = startRun(state, plan.dungeon.id, plan.party.map((s) => s.id));
+    // 貪婪探索（4-D-4）：預估通關率夠高而且該副本情報滿格就帶上
+    const greedy = plan.chance >= CONFIG.relic.autoGreedyAt && intelFull(state, plan.dungeon.id);
+    const result = startRun(state, plan.dungeon.id, plan.party.map((s) => s.id), { slotId: plan.slotId, greedy });
     if (!result.ok) break;
     sent += 1;
   }

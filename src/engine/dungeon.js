@@ -6,17 +6,24 @@
 
 import { CONFIG, INJURIES } from "../data/config.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
+import { getMutation } from "../data/mutations.js";
+import { firstRelicOf, hiddenRelicOf } from "../data/relics.js";
 import { ENV_TAGS, getEnvTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
 import { wishesAfterRun } from "./wishes.js";
 import { godAfterRun } from "./godEvents.js";
 import { rollInsights, rollKarmaDrop } from "./growth.js";
-import { effectivePower, moodPassBonus, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf, defenseChance, speedSaveChance, luckRewardPct } from "./tags.js";
+import { effectivePower, worldPassBonus, moodPassBonus, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf, defenseChance, speedSaveChance, luckRewardPct } from "./tags.js";
 import { partyRelationBonus, pickClash, clashText, afterClash, afterDeath, findProtector } from "./relations.js";
 import { logText } from "./templates.js";
 import { emit, setInjury, killSamsarite, checkGameOver, currentDay } from "./core.js";
-import { collectionEffects, collectionPassBonus } from "./shop.js";
+import { collectionEffects, collectionPassBonus, consumeRunBuffs } from "./shop.js";
 import { MANDATORY_ID, buildMandatoryDungeon } from "./mandatory.js";
+import { distributeLoot } from "./wallet.js";
+import { grantRelic } from "./relics.js";
+import { afterRunBoard, boardOf } from "./board.js";
+import { intelFull, marketOf } from "./market.js";
+import { addLove } from "./relations.js";
 
 /** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
 export function relationBonus(state, party) {
@@ -25,7 +32,7 @@ export function relationBonus(state, party) {
 
 /** 標籤與環境相性：標籤加成（含類型、環境相性）+ 環境本身的修正 + 副本特殊獎勵（收藏）的加成 */
 export function tagBonus(state, party, dungeon, env = null) {
-  return tagPassBonus(party, dungeon, env) + (env?.passMod ?? 0) + collectionPassBonus(state, dungeon);
+  return tagPassBonus(party, dungeon, env) + (env?.passMod ?? 0) + collectionPassBonus(state, dungeon) + worldPassBonus(party, dungeon);
 }
 
 /** 這個副本有沒有通關過（沒通關過 = 首次開荒：傷勢表較重；首通在結算時判定） */
@@ -49,11 +56,20 @@ export function roomsToClear(dungeon) {
 }
 /** 這場副本的定義：強制任務是開場快照（run.dungeonDef），一般副本查資料表 */
 export function dungeonOfRun(run) {
-  return run.dungeonDef ?? getDungeon(run.dungeonId);
+  return run.dungeonDef ?? applyMutation(getDungeon(run.dungeonId), run.mutationId);
 }
-/** 這個副本是全域第幾關（1~20；DUNGEONS 陣列順序就是關卡編號） */
+/** 套上突變詞綴對副本本身的修正（目前只有血月狂躁的 R 倍率）；回傳新物件，不動資料表 */
+export function applyMutation(dungeon, mutationId) {
+  const m = getMutation(mutationId);
+  return m?.rMult ? { ...dungeon, recommendedPower: Math.round(dungeon.recommendedPower * m.rMult) } : dungeon;
+}
+/** 這場副本要走幾個房間：一般房間數 + 貪婪探索追加的隱藏房（4-D-4） */
+export function runRoomTotal(run) {
+  return roomCount(dungeonOfRun(run)) + (run.hidden ? 1 : 0);
+}
+/** 這個副本是全域第幾關（1~30；DUNGEONS 陣列順序就是關卡編號；用 id 找，所以套了突變的副本副本也能查） */
 export function dungeonNumber(dungeon) {
-  return DUNGEONS.indexOf(dungeon) + 1;
+  return DUNGEONS.findIndex((d) => d.id === dungeon.id) + 1;
 }
 
 /**
@@ -132,7 +148,7 @@ function partyOf(state, run) {
 }
 
 /** 出發。回傳 { ok, reason } */
-export function startRun(state, dungeonId, partyIds) {
+export function startRun(state, dungeonId, partyIds, opts = {}) {
   const mandatory = dungeonId === MANDATORY_ID; // 主神強制任務（4-C-4）：動態副本，不看章節解鎖、守門、情報條
   if (mandatory && !state.mandatory?.pending) return { ok: false, reason: "目前沒有主神強制任務" };
   const dungeon = mandatory ? buildMandatoryDungeon(state) : getDungeon(dungeonId); // 要在隊員離開主神空間前算（R 看名冊戰力）
@@ -144,6 +160,15 @@ export function startRun(state, dungeonId, partyIds) {
       return { ok: false, reason: `尾王還沒開放：要先在第 ${dungeon.chapter} 章前 3 關合計通關滿 ${gate.need} 次（目前 ${gate.have}/${gate.need}）` };
     }
   }
+  // 動態任務榜（4-D-4）：帶 slotId 出發 = 接榜上那一槽（附帶突變詞綴）；沒帶 = 照舊直接指定副本（主神突襲任務、許願、測試）
+  let slot = null;
+  if (opts.slotId != null && !mandatory) {
+    slot = boardOf(state).slots.find((s) => s.id === opts.slotId);
+    if (!slot) return { ok: false, reason: "這個任務已經不在榜上了" };
+    if (slot.dungeonId !== dungeonId) return { ok: false, reason: "任務榜資料不符" };
+    if (slot.running) return { ok: false, reason: "這個任務已經有隊伍出發了" };
+  }
+  if (opts.greedy && (mandatory || !intelFull(state, dungeonId))) return { ok: false, reason: "要情報滿格才能貪婪探索" };
   if (partyIds.length < 1 || partyIds.length > CONFIG.partyMax) {
     return { ok: false, reason: `一隊要 1~${CONFIG.partyMax} 人` };
   }
@@ -151,9 +176,12 @@ export function startRun(state, dungeonId, partyIds) {
   if (party.some((s) => !s || s.location !== "space")) return { ok: false, reason: "有隊員不在主神空間" };
   const resting = party.find((s) => (s.vacationDays ?? 0) > 0);
   if (resting) return { ok: false, reason: `${resting.name} 正在放假（還要 ${resting.vacationDays} 天）` };
+  const lockedIn = party.find((s) => (s.podLockDays ?? 0) > 0);
+  if (lockedIn) return { ok: false, reason: `${lockedIn.name} 被鎖在私人休眠艙裡（還要 ${lockedIn.podLockDays} 天）` };
 
   const enteredInjury = {};
   for (const s of party) {
+    consumeRunBuffs(s); // 出征耗材套用成單場 buff（4-D-2）
     s.location = "dungeon";
     s.runs += 1;
     enteredInjury[s.id] = s.injury; // 記住「帶傷出征」的等級，用來算死亡率加成
@@ -166,14 +194,20 @@ export function startRun(state, dungeonId, partyIds) {
 
   const env = mandatory ? null : pick(state, ENV_TAGS); // 每次進副本隨機抽一個環境標籤（強制任務沒有）
   const firstTime = mandatory ? false : !hasIntel(state, dungeon);
-  const run = { id: state.nextRunId++, startTick: state.tick, dungeonId, envId: env?.id ?? null, firstTime, intel, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
+  const mutationId = slot?.mutationId ?? null;
+  const run = { id: state.nextRunId++, startTick: state.tick, dungeonId, mutationId, slotId: slot?.id ?? null, greedy: !!opts.greedy, envId: env?.id ?? null, firstTime, intel, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
   if (mandatory) {
     run.mandatory = true;
     run.dungeonDef = dungeon; // 開場快照：R 與獎勵不隨之後名冊變動
     run.extraInjury = dungeon.failInjuryExtra;
     state.mandatory.pending = null; // 派出去了，任務不再逾時
   }
+  if (slot) {
+    slot.running = true;
+    slot.runId = run.id;
+  }
   state.runs.push(run);
+  const shown = applyMutation(dungeon, mutationId); // 血月狂躁：顯示加成後的 R
   emit(
     state,
     "runStart",
@@ -181,9 +215,11 @@ export function startRun(state, dungeonId, partyIds) {
       names: party.map((s) => s.name).join("、"),
       dungeon: dungeon.name,
       power: partyPower(party),
-      rec: dungeon.recommendedPower,
+      rec: shown.recommendedPower,
     })
   );
+  if (mutationId) emit(state, "mutation", logText(state, "runMutation", { mutation: getMutation(mutationId).name, desc: getMutation(mutationId).desc }));
+  if (run.greedy) emit(state, "greedy", logText(state, "runGreedy"));
   if (env) emit(state, "env", logText(state, "env", { env: env.name, desc: env.desc }));
   if (firstTime) emit(state, "intel", logText(state, "intel"));
   if (state.runs.length > 1) emit(state, "runParallel", logText(state, "runParallel", { n: state.runs.length, dungeon: dungeon.name }));
@@ -192,34 +228,67 @@ export function startRun(state, dungeonId, partyIds) {
 
 /** 這場副本此刻該不該走下一個房間（每 roomTicks 個時段走一間，所有副本共用同一個時間） */
 export function roomDue(state, run) {
-  return run.roomIndex < roomCount(dungeonOfRun(run)) && state.tick >= run.startTick + run.roomIndex * CONFIG.roomTicks;
+  return run.roomIndex < runRoomTotal(run) && state.tick >= run.startTick + run.roomIndex * CONFIG.roomTicks;
 }
 
 /** 走一個房間（= 0.2 天）。只結算房間，不推進時間；時間由 dispatch.js 的 step() 統一推進。 */
 export function stepRun(state, run = state.runs[0]) {
   if (!run) return;
   const dungeon = dungeonOfRun(run);
+  if (run.roomIndex >= roomCount(dungeon)) return stepHiddenRoom(state, run, dungeon); // 貪婪探索追加的隱藏房
+  const mut = getMutation(run.mutationId);
   const room = dungeon.rooms[run.roomIndex];
   const party = partyOf(state, run);
   const env = getEnvTag(run.envId) ?? null;
   const progress = `[${dungeon.name}・${Math.round(((run.roomIndex + 1) / roomCount(dungeon)) * 100)}%・${room.name}]`;
-  const clash = pickClash(state, party, run.roomIndex); // 仇人／背刺者：先打自己人，這個房間算失敗
+  const clash = pickClash(state, party, run.roomIndex, mut?.clashMult ?? 1); // 仇人／背刺者：先打自己人，這個房間算失敗
   const passed = clash ? false : rand(state) < roomPassRate(state, party, dungeon, env, tagSwing(state, party), run.intel);
 
   if (clash) {
     emit(state, "clash", `${progress} ${clashText(state, clash)}`);
     afterClash(state, clash);
-    loseSanityOf(clash.victim, CONFIG.sanity.roomFailLoss);
+    loseSanityOf(clash.victim, CONFIG.sanity.roomFailLoss + (mut?.failSanity ?? 0));
     hurt(state, run, clash.victim, dungeon, clash.attacker);
   } else if (passed) {
     emit(state, "roomPass", `${progress} ${room.pass}`);
   } else {
     const victim = pick(state, party);
     emit(state, "roomFail", `${progress} ${room.fail.replace("{name}", victim.name)}`);
-    loseSanityOf(victim, CONFIG.sanity.roomFailLoss); // 單房失敗：受害者理智 -5（4-C-2）
+    loseSanityOf(victim, CONFIG.sanity.roomFailLoss + (mut?.failSanity ?? 0)); // 單房失敗：受害者理智 -5（4-C-2）；斷電黑夜再 -3
     hurt(state, run, victim, dungeon);
   }
   run.results.push(passed);
+  run.roomIndex += 1;
+  maybeOpenHiddenRoom(state, run, dungeon, mut, party);
+}
+
+/** 貪婪探索：通關門檻已達、走完最後一個一般房間後，有機率（20%，濃霧走散 ×2）追加 1 間 R×1.35 的隱藏房。用獨立亂數流 market.rngState */
+function maybeOpenHiddenRoom(state, run, dungeon, mut, party) {
+  if (!run.greedy || run.hidden || run.roomIndex !== roomCount(dungeon) || party.length === 0) return;
+  if (run.results.filter(Boolean).length < roomsToClear(dungeon)) return;
+  const chance = Math.min(1, CONFIG.relic.greedyChance * (mut?.relicChanceMult ?? 1));
+  if (rand(marketOf(state)) < chance) {
+    run.hidden = { passed: null };
+    emit(state, "greedy", logText(state, "hiddenOpen", { dungeon: dungeon.name }));
+  }
+}
+
+/** 隱藏房：只看這一間的過關（不計入通關門檻）；通過掉隱藏奇物，失敗照樣受傷、可能戰死 */
+function stepHiddenRoom(state, run, dungeon) {
+  const party = partyOf(state, run);
+  const env = getEnvTag(run.envId) ?? null;
+  const hardR = { ...dungeon, recommendedPower: Math.round(dungeon.recommendedPower * CONFIG.relic.hiddenRMult) };
+  const passed = rand(state) < roomPassRate(state, party, hardR, env, tagSwing(state, party), run.intel);
+  const progress = `[${dungeon.name}・隱藏房]`;
+  if (passed) {
+    emit(state, "roomPass", `${progress} ${logText(state, "hiddenPass")}`);
+  } else {
+    const victim = pick(state, party);
+    emit(state, "roomFail", `${progress} ${logText(state, "hiddenFail", { A: victim })}`);
+    loseSanityOf(victim, CONFIG.sanity.roomFailLoss + (getMutation(run.mutationId)?.failSanity ?? 0));
+    hurt(state, run, victim, dungeon);
+  }
+  run.hidden.passed = passed;
   run.roomIndex += 1;
 }
 
@@ -229,7 +298,7 @@ function loseSanityOf(s, amount) {
 
 /** 這場副本是否結束：時間到（房數 × roomTicks；全滅的也要等時間過完才結算，剩下的房間不用走） */
 export function runIsOver(state, run) {
-  return state.tick >= run.startTick + roomCount(dungeonOfRun(run)) * CONFIG.roomTicks;
+  return state.tick >= run.startTick + runRoomTotal(run) * CONFIG.roomTicks;
 }
 
 /** 依開場順序，讓所有「該走房間」的副本各走一間（順序固定，亂數才可重現） */
@@ -285,7 +354,7 @@ export function hurt(state, run, victim, dungeon, attacker = null) {
     dies = false; // 健康免猝死鐵律：最重只會落入致命傷
     newLevel = Math.min(newLevel, INJURIES.length - 1);
   }
-  if (dies && rand(state) < speedSaveChance(victim)) {
+  if (dies && rand(state) < Math.max(0, speedSaveChance(victim) + (getMutation(run.mutationId)?.speedSaveMod ?? 0))) { // 濃霧走散：鎖血率 -5%
     // 速度：極限閃避鎖血，免於死亡，改落致命傷
     setInjury(victim, INJURIES.length - 1);
     emit(state, "injury", logText(state, "speedSave", { A: victim }));
@@ -310,6 +379,9 @@ function finishRun(state, run) {
   let specialReward = null;
   let dropDesc = "";
   let levelUp = null;
+  const mut = getMutation(run.mutationId);
+  const relics = []; // 這場取得的奇物 [{ name, kind, dup }]（4-D-4）
+  let loot = { tax: 0, share: 0, members: 0 }; // 結算分潤：入公庫多少、每人私房錢分到多少（4-D-1）
   // 情報條：不論成敗，每結算一場就累積（同副本多場依結算順序各加一次）
   const stats = run.mandatory ? null : state.dungeonStats[run.dungeonId]; // 強制任務沒有情報條與通關統計
   const ic = CONFIG.dungeon.intel;
@@ -323,9 +395,11 @@ function finishRun(state, run) {
       // 血腥撫卹：每戰死 1 名隊友，存活者總積分 +25%（加算）；標籤／收藏／氣運加成照常，沒有獎勵遞減
       const bonus = 1 + run.deaths.length * CONFIG.forcedMission.deathRewardPct;
       reward = Math.round(dungeon.reward * bonus * (1 + tagRewardPct(survivors) + collectionEffects(state).rewardPct) * (1 + luckRewardPct(survivors)));
-    } else reward = Math.round(dungeon.reward * rewardMultiplier(state, dungeon, survivors, env));
+    } else reward = Math.round(dungeon.reward * rewardMultiplier(state, dungeon, survivors, env) * (1 + (mut?.rewardPct ?? 0))); // 突變詞綴的結算積分加成（4-D-4）
     if (firstClear) {
       reward += Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct);
+      const first = firstRelicOf(run.dungeonId); // 首通奇物（4-D-4）：首次通關必得
+      if (first) relics.push({ name: first.name, kind: "first", dup: grantRelic(state, first)?.dup ?? false });
       if (dungeon.specialRewards?.length) {
         const drop = pick(state, dungeon.specialRewards);
         specialReward = drop.name;
@@ -341,7 +415,21 @@ function finishRun(state, run) {
         }
       }
     }
-    state.points += reward;
+    if (run.hidden?.passed) {
+      // 貪婪探索成功：掉該關隱藏奇物；已擁有則轉成額外積分
+      const hid = hiddenRelicOf(run.dungeonId);
+      const got = grantRelic(state, hid);
+      if (got) {
+        relics.push({ name: hid.name, kind: "hidden", dup: got.dup });
+        if (got.dup) reward += Math.round(dungeon.reward * CONFIG.relic.dupRewardPct);
+      }
+    }
+    if (survivors.length >= 2) {
+      // 同行情誼：存活隊員兩兩好感 +bondLove（吊橋效應 ×1.5），不消耗亂數
+      const bond = Math.round(CONFIG.dungeon.bondLove * (mut?.loveMult ?? 1));
+      for (const a of survivors) for (const b of survivors) if (a.id !== b.id) addLove(state, a, b, bond);
+    }
+    loot = distributeLoot(state, survivors, reward); // 先抽稅入公庫，其餘由存活隊員平分進私房錢（4-D-1）
     if (stats) stats.clears += 1;
     // 尾王守門：只算該章前 3 關（常規副本）的成功結算次數，含首通與重打
     if (!dungeon.boss && !run.mandatory) {
@@ -354,6 +442,7 @@ function finishRun(state, run) {
   }
   for (const s of survivors) {
     s.location = "space";
+    s.runBuff = null; // 單場 buff 用完即止（4-D-2）
     s.sabotaged = false; // 沒被打中就沒用到，動過手腳的裝備回家後已被檢查
   }
 
@@ -364,6 +453,12 @@ function finishRun(state, run) {
     dungeonName: dungeon.name,
     success,
     reward,
+    mutation: mut ? { id: mut.id, name: mut.name, icon: mut.icon } : null,
+    greedy: !!run.greedy,
+    hidden: run.hidden ? (run.hidden.passed ? "passed" : "failed") : null, // 貪婪探索：沒開隱藏房 = null
+    relics,
+    tax: loot.tax,
+    share: loot.share,
     firstClear,
     specialReward,
     envName: getEnvTag(run.envId)?.name ?? null,
@@ -397,6 +492,7 @@ function finishRun(state, run) {
     if (!run.mandatory) report.karma = rollKarmaDrop(state, dungeon, dungeonNumber(dungeon), firstClear); // 因果結晶（獨立亂數流；強制任務不掉）
     report.insights = rollInsights(state, survivors); // 存活隊員各自擲頓悟（獨立亂數流）
   }
+  afterRunBoard(state, run); // 任務榜：出發的那一槽移除並立即補新槽（4-D-4）
   wishesAfterRun(state, run.dungeonId, success, partyIds, survivors.map((s) => s.id)); // 想去這個副本的許願結算
   godAfterRun(state, run.dungeonId, success, partyIds, survivors.map((s) => s.id)); // 主神突襲任務結算
   checkGameOver(state);

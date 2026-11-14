@@ -208,7 +208,7 @@ test("一場副本剛好過 1 天，而且出征的人不扣維持費", () => {
   while (state.runs.length && guard++ < 30) step(state);
   assert.equal(state.tick, CONFIG.ticksPerDay);
   assert.equal(state.runs.length, 0);
-  assert.equal(state.points, before - upkeepOf(stay) + state.lastRun.reward);
+  assert.equal(state.points, before - upkeepOf(stay) + state.lastRun.tax);
   assert.ok(state.samsarites.every((s) => s.location === "space"));
 });
 
@@ -318,14 +318,14 @@ test("開著自動派遣放著跑 60 天不會壞掉，存檔讀回來一模一�
   assert.equal(serialize(deserialize(serialize(state))), serialize(state));
 });
 
-test("副本資料完整：五章各 4 關、第 4 關是尾王、房數等於該章設定、推薦戰力逐關上升", () => {
-  assert.equal(DUNGEONS.length, 20);
-  assert.equal(new Set(DUNGEONS.map((d) => d.id)).size, 20);
+test("副本資料完整：五章各 6 關（5 常規 + 最後 1 張尾王）、房數等於該章設定、推薦戰力逐關上升", () => {
+  assert.equal(DUNGEONS.length, 30);
+  assert.equal(new Set(DUNGEONS.map((d) => d.id)).size, 30);
   for (let ch = 1; ch <= 5; ch++) {
     const list = DUNGEONS.filter((d) => d.chapter === ch);
-    assert.equal(list.length, 4, `第 ${ch} 章`);
-    assert.deepEqual(list.map((d) => d.boss), [false, false, false, true]);
-    for (let i = 1; i < 4; i++) assert.ok(list[i].recommendedPower > list[i - 1].recommendedPower);
+    assert.equal(list.length, 6, `第 ${ch} 章`);
+    assert.deepEqual(list.map((d) => d.boss), [false, false, false, false, false, true]);
+    for (let i = 1; i < 5; i++) assert.ok(list[i].recommendedPower > list[i - 1].recommendedPower);
     for (const d of list) {
       assert.equal(d.rooms.length, CONFIG.dungeon.chapters[ch - 1].rooms, d.id);
       assert.ok(d.reward > 0 && d.genre && d.name, d.id);

@@ -51,7 +51,7 @@ test("統一時間：兩場同時進行，一場副本 = 1 天；主神空間照
   assert.equal(state.tick, CONFIG.ticksPerDay, "兩場同時跑，總共只過 1 天");
   assert.equal(state.runs.length, 0);
   assert.equal(state.runReports.length, 2, "兩份結算摘要排隊");
-  const rewards = state.runReports.reduce((sum, r) => sum + r.reward, 0);
+  const rewards = state.runReports.reduce((sum, r) => sum + r.tax, 0);
   assert.equal(state.points, before - upkeepOf(c) + rewards);
   assert.ok(state.samsarites.every((s) => s.location === "space"));
 });

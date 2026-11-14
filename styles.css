@@ -331,3 +331,34 @@ table.stats td:first-child { color: var(--muted); width: 34%; }
 .tag-SR { border-color: #a066d3; color: #7a3fb0; background: #f5eefb; }
 .tag-SSR { border-color: #e0a020; color: #a06a00; background: #fff6df; }
 .tag-UR { border-color: #e04040; color: #b02020; background: #fdecec; }
+
+/* ── Phase 4-D-7：狀態摘要、風險警告、上崗手冊 ── */
+.status-panel { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; background: #fafbfd; }
+.status-panel summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.status-row { display: flex; gap: 10px; align-items: center; font-size: 12px; padding: 2px 0; }
+.status-row .grow { flex: 1; }
+.status-row.risky { color: var(--bad); font-weight: 600; }
+.risk-warning { margin-top: 8px; padding: 8px 12px; border-radius: 10px; background: #fff5f5; border: 1px solid #ffa8a8; color: var(--bad); font-size: 13px; line-height: 1.7; }
+.guide-card { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; line-height: 1.75; }
+.guide-card h4 { margin: 0 0 4px; }
+#btn-guide.pulse { animation: blink 1.4s steps(2) infinite; border-color: var(--accent); }
+/* ── Phase 4-D-5：稅率控制、商店分頁、黑市格子、任務榜、奇物圖鑑 ── */
+.tax-ctl { display: flex; align-items: center; gap: 4px; }
+.tax-ctl button { padding: 0 7px; line-height: 1.5; min-width: 24px; }
+.tabs { display: flex; gap: 6px; margin: 8px 0 4px; flex-wrap: wrap; }
+.tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.slot { border: 1.5px solid var(--line); border-radius: 12px; padding: 9px 12px; display: flex; flex-direction: column; gap: 4px; }
+.slot.sold { opacity: 0.45; }
+.slot.locked-slot { border-color: var(--accent); background: #edf2ff; }
+.slot .slot-head { display: flex; align-items: center; gap: 8px; }
+.slot .slot-head .grow { flex: 1; }
+.slot .slot-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.mut-chip { display: inline-block; padding: 1px 7px; border-radius: 9px; font-size: 11px; background: #fff3bf; border: 1px solid #ffd43b; color: #7a5b00; }
+.mut-chip.calm_wind { background: #e6fcf5; border-color: #96f2d7; color: #0b7a56; }
+.badge-bound { font-size: 11px; color: var(--warn); }
+.relic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.relic { border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; font-size: 12px; }
+.relic.have { background: #fff9db; border-color: #ffd43b; }
+.relic:not(.have) { opacity: 0.45; filter: grayscale(1); }
+.shop-log { font-size: 12px; color: var(--muted); line-height: 1.6; }

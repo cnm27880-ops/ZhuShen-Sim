@@ -6,6 +6,7 @@ import { SURNAMES, GIVEN_NAMES } from "../data/names.js";
 import { rand, randInt, pick, weighted } from "./rng.js";
 import { rollTags, hpRestBonus } from "./tags.js";
 import { findSpecialRewardByName, getSpecialReward } from "../data/dungeons.js";
+import { migrateWorldId } from "../data/worlds.js";
 import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
 import { dailyGod, cancelGodOf, newGodState } from "./godEvents.js"; // 同上（Phase 3-E 主神搞事）
@@ -14,6 +15,11 @@ import { enshrine, refreshSteleBonus, steleBonusOf } from "./memorial.js"; // �
 import { dailyMandatory, newMandatoryState } from "./mandatory.js"; // 同上（Phase 4-C-4 主神強制任務）
 import { dailySanity, newSanityState } from "./sanity.js"; // 同上（Phase 4-C-2 理智暴走）
 import { newGrowthState } from "./growth.js"; // 同上（Phase 4-B 基因鎖／強化／頓悟；growth.js 也會 import 這個檔案）
+import { taxSanityDaily, forfeitWallet } from "./wallet.js"; // 同上（Phase 4-D-1 雙錢包）
+import { dailyShopping } from "./shopping.js"; // 同上（Phase 4-D-3 輪迴者自主逛街）
+import { newMarketState, refreshMarket, dailyMarket } from "./market.js"; // 同上（Phase 4-D-2 黑市）
+import { newBoardState, fillBoard, dailyBoard } from "./board.js"; // 同上（Phase 4-D-4 動態任務榜）
+import { relicBonusOf, refreshRelicBonus } from "./relics.js"; // 同上（Phase 4-D-4 奇物圖鑑）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
 // ───────── 事件與日誌 ─────────
@@ -41,7 +47,8 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     rngState: seed | 0,
     tick: 0,
     points: CONFIG.startingPoints,
-    totalSpent: 0, // 累積花費（Phase 3 商店階級解鎖會用到）
+    totalSpent: 0, // 累積花費（商店階級解鎖用；公庫與輪迴者私房錢在商店／黑市／強化的消費一律累加，4-D-1）
+    taxRate: CONFIG.tax.default, // 公庫稅率：副本結算總積分先抽這個比例入公庫，其餘由存活隊員平分（4-D-1）
     spaceLevel: 1, // 空間等級 Lv.1~5（Phase 4-A）：每首通一章尾王 +1，決定維持費、破產線、解鎖到第幾章
     chapterClearDay: {}, // { 章節: 首通尾王是第幾天 }（npm run sim 統計用）
     chapterClears: {}, // { 章節: 該章前 3 關合計成功結算幾次 }，尾王守門用（CONFIG.bossGate，見 engine/dungeon.js）
@@ -60,6 +67,11 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     airdrop: newAirdropState(seed), // 絕境空投：連續天數與獨立亂數流（見下方 dailyAirdrop）
     sanity: newSanityState(seed), // 理智暴走：獨立亂數流（見 engine/sanity.js）
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
+    market: newMarketState(seed), // 8 格分槽黑市（含獨立亂數流 market.rngState；見 engine/market.js）
+    aiShopRngState: (seed ^ 0x5b0b) | 0, // 輪迴者自主逛街的獨立亂數流（見 engine/shopping.js）
+    squad: { captainId: null, style: null }, // 預留（4-E 隊長與五大小隊流派，目前不實裝邏輯）
+    board: newBoardState(), // 動態任務榜：3 個常規任務槽，每槽附帶 1 個突變詞綴（見 engine/board.js）
+    relicCodex: [], // 奇物永久圖鑑（奇物 id；見 engine/relics.js，全隊戰力加成封頂 +25%）
     cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
     dungeonStats: {}, // { 副本id: { attempts, clears } }；clears > 0 代表已有該副本情報
     collection: [], // 副本特殊獎勵 id（定義在 data/dungeons.js），永久生效，效果見 engine/shop.js collectionEffects
@@ -72,6 +84,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
       speed: 1,
       paused: false,
       autoDispatch: false,
+      guideSeen: false, // 新任主神上崗手冊讀過了沒（4-D-7，讀過就不再自動彈出）
       followId: null, // 視角鎖定的輪迴者 id（只給畫面用，引擎不讀）；null = 沒鎖定
       protect: { noInjured: true, noEnemies: true },
       pauseOn,
@@ -83,6 +96,8 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
   for (let i = 0; i < CONFIG.startingSamsarites; i++) {
     state.samsarites.push(createSamsarite(state, CONFIG.startingRank));
   }
+  refreshMarket(state, { silent: true }); // 開局先上一批貨（不寫日誌）
+  fillBoard(state); // 開局先貼好 3 張任務榜
   emit(state, "system", logText(state, "start", { n: CONFIG.startingSamsarites }));
   return state;
 }
@@ -115,6 +130,7 @@ export function createSamsarite(state, rank, rng = state) {
     geneLock: 0, // 基因鎖階數 0~4（上限依階級，見 RANKS.maxGene；engine/growth.js）
     enhanceCount: 0, // 個人強化累計次數（上限跟基因鎖階數走）
     insightCount: 0, // 通關頓悟累計次數（上限 = (基因鎖階數 + 1) × 4）
+    relicBonus: relicBonusOf(state), // 奇物圖鑑的全隊戰力加成（4-D-4；圖鑑變動時由 refreshRelicBonus 更新）
     steleBonus: steleBonusOf(state), // 英靈碑的全隊戰力加成（4-C-5；碑變動時由 refreshSteleBonus 更新）
     inheritPower: 0, // 子嗣繼承值（4-E 才會用，先預留；算進本體值、會吃基因鎖乘區）
     gear: {}, // 商店裝備：{ weapon: 商品id, armor: 商品id }
@@ -123,6 +139,15 @@ export function createSamsarite(state, rank, rng = state) {
     mood: null, // 心情狀態 { kind: "happy"|"upset", daysLeft }（見 engine/wishes.js）
     vacationDays: 0, // 許願放假：剩幾天不能派遣
     sabotaged: false, // 裝備被人動了手腳（借刀殺人），下次出征會倒楣
+    wallet: 0, // 私房錢（4-D-1）：副本分潤進來，輪迴者自己逛街、強化用（見 engine/shopping.js）；戰死 50% 充公，回收 100% 歸公庫
+    consumables: [], // 出征耗材緩衝區：商品 id 陣列，下次出發時全部套用成單場 runBuff（4-D-2）
+    runBuff: null, // 單場 buff { injuryShield, defense, speed }，出征時由 consumables 轉成、回家清空
+    lastDramaDay: null, // 上次偷買黑貨是第幾天（4-D-7：10 天冷卻）
+    customProfile: null, // 預留（未來自訂姓名／頭像與分享卡片，目前不實裝邏輯）
+    shopLog: [], // 最近的自主購買紀錄 [{ day, text }]（4-D-3，UI 查閱用）
+    lockedInPodBy: null, // 被誰鎖進私人休眠艙（0 = 主管）；podLockDays 倒數，期間不能派遣、不能逛街（4-D-2 狗血黑貨）
+    podLockDays: 0,
+    soulbound: {}, // 公庫賞賜的裝備綁定 { weapon: true, … }：輪迴者自己逛街時不會覆蓋（4-D-1）
   };
 }
 
@@ -156,6 +181,7 @@ export function killSamsarite(state, s, cause, killer = null, stele = null) {
   cancelWishesOf(state, s.id);
   cancelGodOf(state, s.id);
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null });
+  forfeitWallet(state, s, CONFIG.wallet.deathForfeitPct); // 私房錢 50% 充公、50% 消散（4-D-1）
   if (stele) enshrine(state, s, stele); // 副本戰死／主神抹殺才入碑（4-C-5）
   emit(state, "death", logText(state, "death", { A: s, rank: s.rank, cause }), { samsariteId: s.id, killerId: killer?.id ?? null });
 }
@@ -193,17 +219,30 @@ export function shopTier(state) {
   return tier;
 }
 
-export function spend(state, cost) {
-  if (!canAfford(state, cost)) return false;
-  const wasInDebt = state.points < 0;
+/** 累加累積花費（公庫與私房錢的消費都走這裡），跨過商店階層門檻就宣布解鎖 */
+export function addSpent(state, cost) {
   const tierBefore = shopTier(state);
-  state.points -= cost;
   state.totalSpent += cost;
-  announceDebtIfNew(state, wasInDebt);
   const tierAfter = shopTier(state);
   if (tierAfter > tierBefore) {
     emit(state, "shopTier", logText(state, "shopTier", { tier: tierAfter, spent: state.totalSpent }), { tier: tierAfter });
   }
+}
+
+export function spend(state, cost) {
+  if (!canAfford(state, cost)) return false;
+  const wasInDebt = state.points < 0;
+  state.points -= cost;
+  announceDebtIfNew(state, wasInDebt);
+  addSpent(state, cost);
+  return true;
+}
+
+/** 輪迴者用私房錢付帳：不能欠債，花費同樣累加進 totalSpent */
+export function spendWallet(state, s, cost) {
+  if ((s.wallet ?? 0) < cost) return false;
+  s.wallet -= cost;
+  addSpent(state, cost);
   return true;
 }
 
@@ -222,6 +261,8 @@ export function endOfDay(state) {
   for (const s of atHome) {
     cost += upkeepOf(s, state); // 先用「今天的傷勢」算錢，再結算休息
     s.stats.sanity = Math.min(100, s.stats.sanity + CONFIG.sanity.restRecover); // 人在空間（含帶傷休養）每日自然恢復理智（4-C-2）
+    taxSanityDaily(state, s); // 稅率高壓／低稅的每日理智影響（4-D-1）
+    if (s.podLockDays > 0 && --s.podLockDays <= 0) s.lockedInPodBy = null; // 私人休眠艙倒數（4-D-2）
     if (s.injury > 0) {
       s.restDaysLeft -= 1;
       if (s.restDaysLeft <= 0) {
@@ -248,6 +289,7 @@ export function endOfDay(state) {
 
   emit(state, "dayEnd", logText(state, "dayEnd", { day, home: atHome.length, cost }));
   announceDebtIfNew(state, wasInDebt);
+  dailyShopping(state); // 輪迴者用私房錢自主逛街、強化（維持費與休養之後，4-D-3）
   dailyAirdrop(state);
 
   if (state.points < 0 && state.samsarites.length > 0) {
@@ -297,6 +339,7 @@ export function recycle(state, id) {
   cancelWishesOf(state, id);
   cancelGodOf(state, id);
   const refund = RANKS[s.rank].recycleRefund; // 依階級返還（C 30／B 80／A 250／S 800）
+  forfeitWallet(state, s, 1); // 主動回收：私房錢 100% 歸公庫（4-D-1）
   state.points += refund;
   for (const other of state.samsarites) loseSanity(other, CONFIG.recycle.sanityLoss);
   emit(
@@ -391,6 +434,8 @@ export function advanceTick(state) {
     dailySanity(state); // 理智歸零的人暴走（要在 endOfDay 補理智之前，Phase 4-C-2）
     endOfDay(state);
     dailyWishes(state); // 心情／休假倒數、許願超時（Phase 3-B）
+    dailyMarket(state); // 黑市到期換貨（4-D-2，獨立亂數流）
+    dailyBoard(state); // 任務榜輪換／補槽（4-D-4，獨立亂數流）
     dailyMandatory(state); // 主神強制血腥任務：發布／逾時抹殺（Phase 4-C-4，獨立亂數流）
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
@@ -415,6 +460,26 @@ export function checkGameOver(state) {
 }
 
 // ───────── 存檔 ─────────
+
+/** 舊存檔的副本 id（chN_1～chN_4）→ 新 id（見 data/worlds.js）：統計、進行中的副本、結算摘要、許願與主神突襲任務都要改 */
+function migrateDungeonIds(state) {
+  const fix = (o, key = "dungeonId") => {
+    if (o && o[key]) o[key] = migrateWorldId(o[key]);
+  };
+  for (const [oldId, st] of Object.entries(state.dungeonStats ?? {})) {
+    const id = migrateWorldId(oldId);
+    if (id !== oldId) {
+      state.dungeonStats[id] = st;
+      delete state.dungeonStats[oldId];
+    }
+  }
+  (state.runs ?? []).forEach((r) => fix(r));
+  (state.runReports ?? []).forEach((r) => fix(r));
+  fix(state.lastRun);
+  (state.wishes ?? []).forEach((w) => fix(w.params));
+  fix(state.god?.mission);
+  fix(state.god?.pending?.params);
+}
 
 export function serialize(state) {
   return JSON.stringify({ ...state, events: [] });
@@ -478,6 +543,36 @@ export function deserialize(json) {
   state.nextWishId ??= 1 + Math.max(0, ...state.wishes.map((w) => w.id));
   state.relations ??= {};
   state.cooldowns ??= {};
+  migrateDungeonIds(state); // Phase 4-D-4：舊的 chN_1～chN_4 副本 id 改成 30 世界新 id
+  state.market ??= newMarketState(state.rngState); // Phase 4-D-2 之前的存檔沒有黑市／逛街亂數流
+  state.market.slots ??= [];
+  state.aiShopRngState ??= (state.rngState ^ 0x5b0b) | 0;
+  if (state.market.slots.length === 0) refreshMarket(state, { silent: true });
+  state.squad ??= { captainId: null, style: null }; // 預留欄位（4-E）
+  state.board ??= newBoardState(); // Phase 4-D-4 之前的存檔沒有任務榜與奇物圖鑑
+  state.board.slots ??= [];
+  for (const slot of state.board.slots) slot.running = state.runs.some((r) => r.slotId === slot.id);
+  fillBoard(state);
+  state.relicCodex ??= [];
+  for (const r of state.runs) {
+    r.mutationId ??= null;
+    r.slotId ??= null;
+    r.greedy ??= false;
+  }
+  refreshRelicBonus(state);
+  state.taxRate ??= CONFIG.tax.default; // Phase 4-D-1 之前的存檔沒有稅率與私房錢
+  for (const s of state.samsarites) {
+    s.wallet ??= 0;
+    s.soulbound ??= {};
+    s.consumables ??= [];
+    s.shopLog ??= [];
+    s.customProfile ??= null;
+    s.lastDramaDay ??= null;
+    s.runBuff ??= null;
+    s.lockedInPodBy ??= null;
+    s.podLockDays ??= 0;
+  }
+  state.settings.guideSeen ??= false; // 4-D-7 上崗手冊：舊存檔當作還沒看過
   state.settings.followId ??= null; // 舊存檔沒有視角鎖定欄位，當沒鎖定
   // 之後新增的暫停事件種類，舊存檔沒有就補上預設值
   for (const [key, def] of Object.entries(PAUSE_EVENTS)) {
