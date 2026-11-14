@@ -569,6 +569,7 @@ export function deserialize(json) {
   if (state.market.slots.length === 0) refreshMarket(state, { silent: true });
   // Phase 4-E：舊存檔補齊小隊擴充欄位、編年史、遺物庫、叛逃 Boss 與獨立亂數流
   state.squad ??= newSquadState();
+  state.squad.counters ??= {};
   Object.assign(state.squad, { communalFund: state.squad.communalFund ?? 0, captainSeq: state.squad.captainSeq ?? 0, appointedDay: state.squad.appointedDay ?? null, contraband: state.squad.contraband ?? [] });
   state.squad.captainId ??= null;
   state.squad.style ??= null;

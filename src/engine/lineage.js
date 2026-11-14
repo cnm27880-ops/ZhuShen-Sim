@@ -20,7 +20,7 @@ import { effectivePower } from "./tags.js";
 import { affinity } from "./relations.js";
 import { giveBirth, hatch, podBabies } from "./children.js";
 import { popLimit } from "./mandatory.js";
-import { squadRng, squadOf, squadUnlocked, captainOf, squadMembers } from "./squad.js";
+import { squadRng, squadOf, squadUnlocked, captainOf, squadMembers, bump } from "./squad.js";
 import { logText } from "./templates.js";
 
 const L = () => CONFIG.lineage;
@@ -84,6 +84,7 @@ export function lineageBlock(state, a, b) {
 /** 孕育道具／黑貨的接口：跳過機率直接受孕（仍受條件限制，除非 opts.force）。回傳孩子或 null */
 export function inducePregnancy(state, a, b, opts = {}) {
   if (!opts.force && lineageBlock(state, a, b)) return null;
+  bump(state, "birth");
   return giveBirth(state, a, b, { rng: squadRng(state), podDays: L().podDays, cooldownDays: L().cooldownDays, lineage: true });
 }
 
@@ -150,6 +151,7 @@ export function leaveHeirloom(state, s) {
   const text = logText(state, "heirloomLeft", { A: s, item: g.item.name, label: entry.label });
   emit(state, "social", text);
   addChronicle(state, "heirloom", text);
+  bump(state, "heirloom");
   return entry;
 }
 
@@ -211,6 +213,7 @@ export function defect(state, s) {
   const text = logText(state, "rogueDefect", { A: s, wallet: boss.wallet });
   emit(state, "relation", text, { samsariteId: s.id });
   addChronicle(state, "defect", text);
+  bump(state, "defect");
   return boss;
 }
 
@@ -268,6 +271,7 @@ export function resolveRogueFight(state, boss, survivors, win) {
     const text = logText(state, "rogueSlain", { A: { name: boss.name }, bounty, crystal: crystal ? "，還掉出 1 顆因果結晶" : "" });
     emit(state, "social", text);
     addChronicle(state, "slain", text);
+    bump(state, "slain");
     return { name: boss.name, win: true, bounty, crystal };
   }
   for (const s of survivors) setInjury(s, Math.min(3, s.injury + 1));

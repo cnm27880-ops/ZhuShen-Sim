@@ -242,6 +242,7 @@ export const CONFIG = {
   // ── 小隊隊長與五大流派（Phase 4-E；流派資料在 src/data/squadStyles.js，引擎在 engine/squad.js）──
   // 注意：關係矩陣的 love／hate 各自 0~100、不會是負的，所以規格裡的「好感」一律用「淨好感」= love - hate（-100~100）。
   squad: {
+    forceStyle: null, // 測試／sim 專用：不是 null 時，所有隊長都強制開啟這個流派（communal／bond／farming／elite／mercenary）
     unlockSpaceLevel: 2, // 空間等級達到這個數字（首通第 1 章尾王）才啟用隊長系統
     captainPowerPct: 0.08, // 現任隊長個人有效戰力 +8%
     captainFailSanityCut: 1, // 隊長在隊出征時，全隊單房失敗的理智損耗 -1（最少扣 1）
@@ -259,7 +260,7 @@ export const CONFIG = {
     // 流派機制（4-E-2）
     communal: { defenseBonus: 0.08, donatePct: 0.5, subsidyReserve: 0 },
     bond: { woundedWeight: 1.25, guardAffinity: 45, guardChance: 0.5, guardLove: 10, clearSanity: 4, steleMult: 1.5 },
-    farming: { captainShare: 0.8, guardFeePct: 0.35, rookieUpkeepMult: 0.5, pigDeathReward: 0.2, pigStacks: 2, pigPowerPct: 0.12, dailyAffinity: -2, dailySanity: -1 },
+    farming: { captainShare: 0.8, guardFeePct: 0.35, rookieUpkeepMult: 0.5, pigDeathReward: 0.2, pigStacks: 2, pigPowerPct: 0.12, dailyAffinity: -1, dailySanity: -1 },
     elite: { powerExp: 1.4, bossPowerMult: 1.15, failSanityMult: 2 },
     mercenary: { premium: 0.18, marketDiscount: 0.95, clashMult: 0.2, bondLoveMult: 0.5, worthBase: 100 },
   },

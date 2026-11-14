@@ -12,7 +12,7 @@ import { rand, pick, weighted } from "./rng.js";
 import { emit, currentDay, setInjury, getSamsarite } from "./core.js";
 import { effectivePower } from "./tags.js";
 import { affinity, shiftAffinity, addLove, addHate } from "./relations.js";
-import { styleOf, captainOf, squadRng, squadOf, squadUnlocked, seizeCaptain } from "./squad.js";
+import { styleOf, captainOf, squadRng, squadOf, squadUnlocked, seizeCaptain, bump } from "./squad.js";
 import { addChronicle } from "./lineage.js";
 import { logText } from "./templates.js";
 
@@ -167,6 +167,7 @@ export function applyEvent(state, ev, cast, pool = []) {
   if (fx.exposed && cast.rec) cast.rec.exposed = true;
 
   const text = logText(state, ev.texts, vars);
+  bump(state, "drama");
   emit(state, "drama", text, { samsariteId: A.id });
   if (ev.chronicle) addChronicle(state, "drama", text);
   if (fx.special === "coupNight") resolveCoupNight(state, cast);

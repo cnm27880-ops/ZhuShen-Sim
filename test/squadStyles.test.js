@@ -154,7 +154,7 @@ test("養殖流：隊長留守仍強抽稅後獎金 35% 保護費，其餘存活
   assert.equal(r.tax, 400);
 });
 
-test("養殖流：零階新人維持費 -50%；每日全隊非隊長對隊長好感 -2、理智 -1", () => {
+test("養殖流：零階新人維持費 -50%；每日全隊非隊長對隊長好感 -1（校正值）、理智 -1", () => {
   const state = squad("farming", 3);
   const [cap, a, b] = state.samsarites;
   const base = createNewGame(1);
@@ -167,8 +167,9 @@ test("養殖流：零階新人維持費 -50%；每日全隊非隊長對隊長好
   shiftAffinity(state, a, cap, 5);
   const san = b.stats.sanity;
   dailySquad(state);
-  assert.equal(affinity(state, a, cap), 3);
-  assert.equal(affinity(state, b, cap), -2);
+  const d = CONFIG.squad.farming.dailyAffinity; // 校正後 -1（4-E-6）
+  assert.equal(affinity(state, a, cap), 5 + d);
+  assert.equal(affinity(state, b, cap), d);
   assert.equal(b.stats.sanity, san - 1);
   assert.equal(affinity(state, cap, a), 0, "隊長不恨手下");
 });

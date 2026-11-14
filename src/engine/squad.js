@@ -24,7 +24,7 @@ const S = () => CONFIG.squad;
 // ───────── 狀態與亂數流 ─────────
 
 export function newSquadState() {
-  return { captainId: null, style: null, communalFund: 0, captainSeq: 0, appointedDay: null, contraband: [] };
+  return { captainId: null, style: null, communalFund: 0, captainSeq: 0, appointedDay: null, contraband: [], counters: {} };
 }
 
 /** 把 state.squadRngState 包成 rand() 吃得下的亂數物件（讀寫都落回 state） */
@@ -40,6 +40,11 @@ export function squadRng(state) {
 }
 
 export const squadOf = (state) => (state.squad ??= newSquadState());
+/** 累計次數（政變 coup／叛逃 defect／討伐 slain／子嗣 birth／遺物 heirloom／人際事件 drama／空降不服 snub）：sim 與 UI 統計用，編年史只留 100 條不夠數 */
+export function bump(state, key, n = 1) {
+  const c = (squadOf(state).counters ??= {});
+  c[key] = (c[key] ?? 0) + n;
+}
 export const squadUnlocked = (state) => (state.spaceLevel ?? 1) >= S().unlockSpaceLevel;
 /** 名冊（不含催熟艙嬰兒） */
 export const squadMembers = (state) => state.samsarites.filter((s) => s.location !== "pod");
@@ -90,12 +95,13 @@ export function refreshCaptainBonus(state) {
 function setCaptain(state, s, how) {
   const sq = squadOf(state);
   sq.captainId = s.id;
-  sq.style = deriveSquadStyle(s);
+  sq.style = CONFIG.squad.forceStyle ?? deriveSquadStyle(s);
   sq.captainSeq = (sq.captainSeq ?? 0) + 1;
   s.captainNo = sq.captainSeq; // 第幾任隊長（遺物履歷用）
   sq.appointedDay = currentDay(state);
   refreshCaptainBonus(state);
   const style = SQUAD_STYLES[sq.style];
+  if (how === "coup") bump(state, "coup");
   const key = { first: "squadAppoint", auto: "squadAuto", peace: "squadPeace", coup: "squadCoup", force: "squadForce" }[how];
   const text = logText(state, key, { A: s, style: style.name, icon: style.icon });
   emit(state, "squad", text, { samsariteId: s.id });
@@ -167,6 +173,7 @@ export function replaceCaptain(state, id) {
     shiftAffinity(state, o, s, -S().snubAffinity);
   }
   if (preview.snub.length > 0) {
+    bump(state, "snub");
     const text = logText(state, "squadSnub", { A: s, B: preview.snub[0], n: preview.snub.length, san: S().snubSanity });
     emit(state, "squad", text);
     addChronicle(state, "snub", text);

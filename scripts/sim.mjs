@@ -31,6 +31,7 @@ import { buyItem, checkBuy } from "../src/engine/shop.js";
 import { enhance, checkEnhance, breakGene, checkBreakGene } from "../src/engine/growth.js";
 import { setTaxRate } from "../src/engine/wallet.js";
 import { marketOf, buyMarketSlot, checkMarketBuy, slotPrice } from "../src/engine/market.js";
+import { styleOf } from "../src/engine/squad.js";
 import { getShopItem } from "../src/data/shopItems.js";
 
 const args = Object.fromEntries(
@@ -56,6 +57,9 @@ for (const d of DUNGEONS) {
 if (args.minClear) CONFIG.auto.minClearChance = args.minClear;
 if (args.mpower) CONFIG.forcedMission.powerMult = args.mpower;
 const TAX = args.tax ?? CONFIG.tax.default; // --tax=0.4：公庫稅率
+// Phase 4-E-6：--forceStyle=communal|bond|farming|elite|mercenary 強制所有隊長都開啟同一個小隊流派（測試單一流派的極端表現）；沒傳 = 依隊長性格自然演化
+const FORCE_STYLE = process.argv.find((a) => a.startsWith("--forceStyle="))?.split("=")[1] ?? null;
+if (FORCE_STYLE) CONFIG.squad.forceStyle = FORCE_STYLE;
 const GROW_RESERVE_DAYS = args.growReserve ?? 8;
 const SEEDS = args.seeds || 100;
 const DAYS = args.days || 120;
@@ -158,6 +162,8 @@ function playOne(seed) {
   let seenReport = null;
   const byChapter = {}; // { 章: { runs, wins, deaths } }
   const mand = { runs: 0, wins: 0, deaths: 0 }; // 強制任務
+  const styleDays = {}; // 每個流派在位的天數（4-E-6）
+  let lastDay = 0;
   while (currentDay(state) <= DAYS && !state.gameOver) {
     if (state.tick % CONFIG.ticksPerDay === botTick) {
       const before = state.totalSpent;
@@ -168,6 +174,11 @@ function playOne(seed) {
     step(state);
     walletSpent += state.totalSpent - spentBefore; // 輪迴者自主逛街發生在跨日結算（沒有別的花費會在 step 裡發生）
     lowestPoints = Math.min(lowestPoints, state.points);
+    if (currentDay(state) !== lastDay) {
+      lastDay = currentDay(state);
+      const st = styleOf(state);
+      if (st) styleDays[st] = (styleDays[st] ?? 0) + 1;
+    }
     if (seed === TRACE && args.events) {
       for (const ev of state.events) if (["runStart", "runEnd", "death", "gacha"].includes(ev.type)) console.log(`  [D${currentDay(state)}] ${ev.text.split("\n")[0].slice(0, 110)}`);
     }
@@ -218,6 +229,15 @@ function playOne(seed) {
     walletSpent,
     botSpent,
     relics: state.relicCodex.length,
+    counters: state.squad.counters ?? {}, // 政變／叛逃／討伐／子嗣／遺物／人際事件（4-E-6）
+    styleDays,
+    fund: state.squad.communalFund ?? 0,
+    captainChanges: state.squad.captainSeq ?? 0,
+    heirloomsLeft: state.armoryHeirlooms.length,
+    rogueLeft: state.rogueBosses.length,
+    gen2: state.samsarites.filter((s) => (s.generation ?? 1) > 1).length,
+    maxGen: Math.max(1, ...state.samsarites.map((s) => s.generation ?? 1)),
+    chronicles: state.chronicles.length,
     wallets: state.samsarites.reduce((n, s) => n + (s.wallet ?? 0), 0),
     byChapter,
     topPower: Math.max(0, ...people.map(effectivePower)),
@@ -279,5 +299,12 @@ for (let ch = 1; ch <= 5; ch++) {
   const runs = rows.reduce((n, r) => n + r.runs, 0);
   const wins = rows.reduce((n, r) => n + r.wins, 0);
   console.log(`  第 ${ch} 章：${(runs / SEEDS).toFixed(1)} 場 / ${runs ? Math.round((wins / runs) * 100) : 0}% / ${(rows.reduce((n, r) => n + r.deaths, 0) / SEEDS).toFixed(1)} 人`);
+}
+{
+  const sum = (key) => results.reduce((n, r) => n + (r.counters[key] ?? 0), 0) / SEEDS;
+  const totalDays = results.reduce((n, r) => n + Object.values(r.styleDays).reduce((a, b) => a + b, 0), 0) || 1;
+  const dist = ["communal", "bond", "farming", "elite", "mercenary"].map((k) => `${k} ${Math.round((results.reduce((n, r) => n + (r.styleDays[k] ?? 0), 0) / totalDays) * 100)}%`).join("　");
+  console.log(`\n小隊（4-E${FORCE_STYLE ? `，強制流派 ${FORCE_STYLE}` : "，自然演化"}，每局平均）：隊長異動 ${avg(results.map((r) => r.captainChanges))} 次・政變 ${sum("coup").toFixed(1)}・空降不服 ${sum("snub").toFixed(1)}・叛逃 ${sum("defect").toFixed(1)}・討伐叛徒 ${sum("slain").toFixed(1)}・子嗣 ${sum("birth").toFixed(1)}（期末二代以上 ${avg(results.map((r) => r.gen2))} 人、最高第 ${avg(results.map((r) => r.maxGen))} 代）・遺物 ${sum("heirloom").toFixed(1)}（期末庫存 ${avg(results.map((r) => r.heirloomsLeft))}）・人際事件 ${sum("drama").toFixed(1)}・互助金期末 ${avg(results.map((r) => r.fund))}`);
+  console.log(`流派分佈（占有隊長的天數）：${dist}`);
 }
 console.log(`平均名冊階級：${["C", "B", "A", "S"].map((k) => `${k}×${avg(results.map((r) => r.ranks[k] ?? 0))}`).join("　")}\n`);
