@@ -27,6 +27,7 @@ import { pendingGodEvent, activeMission, checkResolve, acceptGodEvent, resolveGo
 import { getGodEvent } from "../data/godEvents.js";
 import { renderTemplate } from "../engine/templates.js";
 import { pairSummary, moodOf, partyRelationBonus } from "../engine/relations.js";
+import { parentNames } from "../engine/children.js";
 import { LEVEL_LABELS, STATUS_LABELS } from "../data/relations.js";
 
 const SAVE_KEY = "zhushen-sim-save-v1";
@@ -131,7 +132,7 @@ function renderTopbar() {
   $("points").classList.toggle("debt", state.points < 0);
   $("day-label").textContent = `第 ${currentDay(state)} 天`;
   $("day-bar-fill").style.width = `${((state.tick % CONFIG.ticksPerDay) / CONFIG.ticksPerDay) * 100}%`;
-  const upkeep = state.samsarites.filter((s) => s.location === "space").reduce((sum, s) => sum + upkeepOf(s), 0);
+  const upkeep = state.samsarites.filter((s) => s.location !== "dungeon").reduce((sum, s) => sum + upkeepOf(s), 0);
   $("upkeep").textContent = `-${upkeep} / 天`;
 
   $("speed-controls").innerHTML = CONFIG.speeds
@@ -169,6 +170,7 @@ function randomSpot(roomId) {
 }
 
 function pickRoom(s) {
+  if (s.location === "pod") return "dorm"; // 催熟艙的嬰兒待在宿舍
   if (s.injury > 0) return Math.random() < 0.8 ? "dorm" : "canteen"; // 受傷的人多半躺在宿舍
   const ids = Object.keys(ROOMS);
   return ids[Math.floor(Math.random() * ids.length)];
@@ -306,7 +308,7 @@ function renderSpace() {
       mini.el.style.top = `${spot.y}%`;
     }
     const mood = moodOf(state, s); // 有戀人 ❤️、在家有仇人 😡
-    const emoji = s.injury > 0 ? "🩹" : s.locked ? "🔒" : mood === "love" ? "❤️" : mood === "anger" ? "😡" : ROOMS[mini.room].emoji;
+    const emoji = s.location === "pod" ? "🍼" : s.injury > 0 ? "🩹" : s.locked ? "🔒" : mood === "love" ? "❤️" : mood === "anger" ? "😡" : ROOMS[mini.room].emoji;
     mini.el.querySelector(".mini-emoji").textContent = emoji;
     mini.el.classList.toggle("injured", s.injury > 0);
     mini.el.classList.toggle("followed", s.id === state.settings.followId);
@@ -370,6 +372,13 @@ function statusExtras(s) {
   return parts.length ? `<br /><small>${parts.join("・")}</small>` : "";
 }
 
+/** 名冊卡片的位置／傷勢文字：副本中、催熟艙、或在家的傷勢 */
+function locationLabel(s) {
+  if (s.location === "dungeon") return "🚪 副本中";
+  if (s.location === "pod") return `🍼 催熟艙（${s.podDaysLeft} 天）`;
+  return injuryLabel(s);
+}
+
 function rankBadge(rank) {
   return `<span class="rank rank-${rank}">${rank}</span>`;
 }
@@ -390,12 +399,12 @@ function renderRoster() {
   $("roster").innerHTML = state.samsarites
     .map(
       (s) => `
-      <div class="card rank-border-${s.rank} ${s.location === "dungeon" ? "away" : ""}" data-action="open-detail" data-id="${s.id}">
+      <div class="card rank-border-${s.rank} ${s.location === "dungeon" ? "away" : s.location === "pod" ? "pod" : ""}" data-action="open-detail" data-id="${s.id}">
         <div class="card-top">${rankBadge(s.rank)}<span class="grow">${s.name}</span><span>${s.locked ? "🔒" : ""}</span><span class="follow-btn ${s.id === state.settings.followId ? "on" : ""}" data-action="toggle-follow" data-id="${s.id}" title="${s.id === state.settings.followId ? "取消鎖定視角" : "鎖定視角（他下副本時畫面跟著切）"}">👁</span></div>
         <div class="card-meta"><span>⚔️ ${effectivePower(s)}</span><span>🧠 ${s.stats.sanity}</span><span>💸 ${upkeepOf(s)}/天</span></div>
         <div class="tags">${tagChips(s)}</div>
         <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
-        <div class="card-status">${s.location === "dungeon" ? "🚪 副本中" : injuryLabel(s)}${statusExtras(s)}</div>
+        <div class="card-status">${locationLabel(s)}${statusExtras(s)}</div>
       </div>`
     )
     .join("");
@@ -581,7 +590,8 @@ function detail() {
   const home = s.location === "space";
   return `<h3>${rankBadge(s.rank)} ${s.name}</h3>
     <table class="stats">
-      <tr><td>狀態</td><td>${home ? "主神空間" : "副本中"}・${injuryLabel(s)}</td></tr>
+      <tr><td>狀態</td><td>${s.location === "pod" ? `🍼 催熟艙（還要 ${s.podDaysLeft} 天）` : `${home ? "主神空間" : "副本中"}・${injuryLabel(s)}`}</td></tr>
+      ${s.parents ? `<tr><td>家長</td><td>${parentNames(state, s).join("、") || "（已不在世）"}${s.inheritedTags?.length ? `<br /><small>繼承標籤：${s.inheritedTags.map((id) => getTag(id)?.name ?? id).join("、")}</small>` : ""}</td></tr>` : ""}
       ${s.mood || s.vacationDays > 0 || wishesOf(state, s.id).length ? `<tr><td>心情／許願</td><td>${statusExtras(s).replace("<br />", "")}</td></tr>` : ""}
       <tr><td>生命</td><td>${s.stats.hp}</td></tr>
       <tr><td>戰力</td><td>${effectivePower(s)}（基礎 ${s.stats.power}，含強化、裝備、標籤）</td></tr>
@@ -589,7 +599,7 @@ function detail() {
       <tr><td>速度</td><td>${s.stats.speed}</td></tr>
       <tr><td>理智</td><td>${s.stats.sanity}</td></tr>
       <tr><td>運氣</td><td>${s.stats.luck}</td></tr>
-      <tr><td>維持費</td><td>${upkeepOf(s)} 分 / 天（基礎 ${CONFIG.upkeepBase} + 階級 ${RANKS[s.rank].upkeep} + 傷勢 ${INJURIES[s.injury].upkeep}）</td></tr>
+      <tr><td>維持費</td><td>${upkeepOf(s)} 分 / 天${s.location === "pod" ? "（催熟艙固定費用）" : `（基礎 ${CONFIG.upkeepBase} + 階級 ${RANKS[s.rank].upkeep} + 傷勢 ${INJURIES[s.injury].upkeep}）`}</td></tr>
       <tr><td>資歷</td><td>第 ${s.joinedDay} 天加入・出征 ${s.runs} 次</td></tr>
       <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}`).join("・")}${s.upgrades?.power || s.upgrades?.dodge ? `<br /><small>強化：戰力 +${s.upgrades.power ?? 0}${s.upgrades.dodge ? `、閃避 +${Math.round(s.upgrades.dodge * 100)}%` : ""}</small>` : ""}</td></tr>
       <tr><td>標籤</td><td>${(s.tags ?? [])
