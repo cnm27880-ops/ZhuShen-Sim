@@ -32,7 +32,7 @@ export function createApp({ fetch: doFetch = (...a) => globalThis.fetch(...a), n
 
     if (path === "/api/leaderboard" && method === "GET") {
       const me = await currentUser(request, env, now);
-      const data = await leaderboard(env, url.searchParams.get("board") ?? "score", me?.id ?? null, now());
+      const data = await leaderboard(env, url.searchParams.get("board") ?? "level", me?.id ?? null, now());
       return data ? json(data) : bad("bad_board");
     }
 

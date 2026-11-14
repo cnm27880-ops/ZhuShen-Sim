@@ -28,7 +28,7 @@
 > CREATE INDEX IF NOT EXISTS idx_scores_power ON scores(best_power DESC);
 > CREATE INDEX IF NOT EXISTS idx_scores_life ON scores(longest_life DESC);
 > ```
-> 還沒執行過的人直接貼整份 `schema.sql` 就好。
+> 還沒執行過的人直接貼整份 `schema.sql` 就好。舊版若已建過 `score` 欄位，留著不用管，後端不再讀寫它。
 
 1. Cloudflare 後台 → 左側「儲存空間與資料庫」→ D1 SQL 資料庫 →「建立資料庫」（需驗證）。
 2. 名稱填 `zhushen-sim`，建立。
@@ -70,9 +70,9 @@
 | `POST /api/logout` | 登出 |
 | `GET /api/save`、`GET /api/save?meta=1` | 讀雲端存檔／只讀版本號 |
 | `PUT /api/save` | 寫存檔，`{data, baseUpdatedAt, force?}`；版本對不上回 409 |
-| `PUT /api/score` | 更新成績，`{score, level, roster, clears, power, powerName, life, lifeName}`，每項只增不減，30 秒內不能重送。`power`／`powerName` = 歷來最強輪迴者的戰力與名字；`life`／`lifeName` = 歷來最長壽輪迴者的存活天數與名字 |
+| `PUT /api/score` | 更新成績，`{level, roster, clears, power, powerName, life, lifeName}`，每項只增不減，30 秒內不能重送。`power`／`powerName` = 歷來最強輪迴者的戰力與名字；`life`／`lifeName` = 歷來最長壽輪迴者的存活天數與名字 |
 | `PUT /api/settings` | `{hidden: true}` = 不上排行榜 |
-| `GET /api/leaderboard?board=score\|level\|clears\|power\|life` | 五個榜單（總積分、空間等級、副本通關數、最強輪迴者、最長壽輪迴者）：前 20 名＋自己的名次＋相對昨天的升降 |
+| `GET /api/leaderboard?board=level\|clears\|power\|life` | 四個榜單（空間等級、副本通關數、最強輪迴者、最長壽輪迴者；總積分榜已取消）：前 20 名＋自己的名次＋相對昨天的升降 |
 
 ## 已知限制
 

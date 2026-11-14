@@ -9,12 +9,12 @@ const cleanName = (v) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007
 /** 成績的基本合理性檢查。回傳整理過的物件，不合理回 null。 */
 export function cleanScore(body) {
   const c = LIMITS.caps;
-  if (!body || !isInt(body.score, 0, c.score) || !isInt(body.level, 1, c.level) || !isInt(body.roster, 0, c.roster) || !isInt(body.clears, 0, c.clears)) return null;
+  if (!body || !isInt(body.level, 1, c.level) || !isInt(body.roster, 0, c.roster) || !isInt(body.clears, 0, c.clears)) return null;
   if (!isInt(body.power, 0, c.power) || !isInt(body.life, 0, c.life)) return null;
   const powerName = cleanName(body.powerName);
   const lifeName = cleanName(body.lifeName);
   if (powerName === null || lifeName === null) return null;
-  return { score: body.score, level: body.level, roster: body.roster, clears: body.clears, power: body.power, powerName, life: body.life, lifeName };
+  return { level: body.level, roster: body.roster, clears: body.clears, power: body.power, powerName, life: body.life, lifeName };
 }
 
 /** 只增不減：重開新局不會把最佳紀錄洗掉。回傳 false = 更新太頻繁。 */
@@ -22,15 +22,15 @@ export async function submitScore(env, userId, s, nowMs) {
   const row = await env.DB.prepare("SELECT updated_at FROM scores WHERE user_id = ?").bind(userId).first();
   if (row && nowMs - row.updated_at < LIMITS.scoreMinIntervalMs) return false;
   await env.DB.prepare(
-    `INSERT INTO scores (user_id, score, level, roster, clears, best_power, best_power_name, longest_life, longest_life_name, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO scores (user_id, level, roster, clears, best_power, best_power_name, longest_life, longest_life_name, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET
-       score = MAX(score, excluded.score), level = MAX(level, excluded.level), roster = MAX(roster, excluded.roster), clears = MAX(clears, excluded.clears),
+       level = MAX(level, excluded.level), roster = MAX(roster, excluded.roster), clears = MAX(clears, excluded.clears),
        best_power_name = CASE WHEN excluded.best_power > best_power THEN excluded.best_power_name ELSE best_power_name END,
        best_power = MAX(best_power, excluded.best_power),
        longest_life_name = CASE WHEN excluded.longest_life > longest_life THEN excluded.longest_life_name ELSE longest_life_name END,
        longest_life = MAX(longest_life, excluded.longest_life),
        updated_at = excluded.updated_at`
-  ).bind(userId, s.score, s.level, s.roster, s.clears, s.power, s.powerName, s.life, s.lifeName, nowMs).run();
+  ).bind(userId, s.level, s.roster, s.clears, s.power, s.powerName, s.life, s.lifeName, nowMs).run();
   return true;
 }
 
@@ -57,7 +57,7 @@ export async function leaderboard(env, board, meId, nowMs) {
 
   const rows = (await env.DB.prepare(
     `SELECT * FROM (
-       SELECT u.id AS id, u.name AS name, u.picture AS picture, s.score AS score, s.level AS level, s.roster AS roster, s.clears AS clears,
+       SELECT u.id AS id, u.name AS name, u.picture AS picture, s.level AS level, s.roster AS roster, s.clears AS clears,
               s.best_power AS power, s.best_power_name AS powerName, s.longest_life AS life, s.longest_life_name AS lifeName,
               RANK() OVER (ORDER BY s.${col} DESC) AS rank
        FROM scores s JOIN users u ON u.id = s.user_id WHERE u.hidden = 0
@@ -68,16 +68,16 @@ export async function leaderboard(env, board, meId, nowMs) {
   const entries = [];
   for (const r of rows) {
     const prev = await prevOf(r.id);
-    entries.push({ rank: r.rank, name: r.name, picture: r.picture, score: r.score, level: r.level, roster: r.roster, clears: r.clears, power: r.power, powerName: r.powerName, life: r.life, lifeName: r.lifeName, me: r.id === meId, change: prev == null ? null : prev - r.rank });
+    entries.push({ rank: r.rank, name: r.name, picture: r.picture, level: r.level, roster: r.roster, clears: r.clears, power: r.power, powerName: r.powerName, life: r.life, lifeName: r.lifeName, me: r.id === meId, change: prev == null ? null : prev - r.rank });
   }
 
   let me = null;
   if (meId) {
-    const mine = await env.DB.prepare("SELECT s.score AS score, s.level AS level, s.roster AS roster, s.clears AS clears, s.best_power AS power, s.best_power_name AS powerName, s.longest_life AS life, s.longest_life_name AS lifeName, s.best_power AS best_power, s.longest_life AS longest_life, u.hidden AS hidden FROM scores s JOIN users u ON u.id = s.user_id WHERE s.user_id = ?").bind(meId).first();
+    const mine = await env.DB.prepare("SELECT s.level AS level, s.roster AS roster, s.clears AS clears, s.best_power AS power, s.best_power_name AS powerName, s.longest_life AS life, s.longest_life_name AS lifeName, s.best_power AS best_power, s.longest_life AS longest_life, u.hidden AS hidden FROM scores s JOIN users u ON u.id = s.user_id WHERE s.user_id = ?").bind(meId).first();
     if (mine && !mine.hidden) {
       const rank = (await env.DB.prepare(`SELECT COUNT(*) + 1 AS r FROM scores s JOIN users u ON u.id = s.user_id WHERE u.hidden = 0 AND s.${col} > ?`).bind(mine[col]).first()).r;
       const prev = await prevOf(meId);
-      me = { rank, score: mine.score, level: mine.level, roster: mine.roster, clears: mine.clears, power: mine.power, powerName: mine.powerName, life: mine.life, lifeName: mine.lifeName, change: prev == null ? null : prev - rank };
+      me = { rank, level: mine.level, roster: mine.roster, clears: mine.clears, power: mine.power, powerName: mine.powerName, life: mine.life, lifeName: mine.lifeName, change: prev == null ? null : prev - rank };
     }
   }
   return { board, entries, me };

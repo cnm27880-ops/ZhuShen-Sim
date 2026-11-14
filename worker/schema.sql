@@ -25,7 +25,6 @@ CREATE TABLE IF NOT EXISTS saves (
 
 CREATE TABLE IF NOT EXISTS scores (
   user_id TEXT PRIMARY KEY,
-  score INTEGER NOT NULL DEFAULT 0,
   level INTEGER NOT NULL DEFAULT 1,
   roster INTEGER NOT NULL DEFAULT 0,
   clears INTEGER NOT NULL DEFAULT 0,
@@ -35,7 +34,6 @@ CREATE TABLE IF NOT EXISTS scores (
   longest_life_name TEXT NOT NULL DEFAULT '',
   updated_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_scores_score ON scores(score DESC);
 CREATE INDEX IF NOT EXISTS idx_scores_level ON scores(level DESC);
 CREATE INDEX IF NOT EXISTS idx_scores_clears ON scores(clears DESC);
 CREATE INDEX IF NOT EXISTS idx_scores_power ON scores(best_power DESC);
