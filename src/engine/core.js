@@ -9,6 +9,7 @@ import { findSpecialRewardByName, getSpecialReward } from "../data/dungeons.js";
 import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
 import { dailyGod, cancelGodOf, newGodState } from "./godEvents.js"; // 同上（Phase 3-E 主神搞事）
+import { dailyNursery, newNurseryState, podCost } from "./children.js"; // 同上（Phase 3-F 生小孩）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
 // ───────── 事件與日誌 ─────────
@@ -43,6 +44,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     relations: {}, // 關係矩陣（見 engine/relations.js）
     wishes: [], // 進行中的許願（見 engine/wishes.js）
     nextWishId: 1,
+    nursery: newNurseryState(seed), // 生小孩：獨立亂數流（見 engine/children.js）
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
     cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
     dungeonStats: {}, // { 副本id: { attempts, clears } }；clears > 0 代表已有該副本情報
@@ -73,12 +75,13 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
 
 // ───────── 輪迴者 ─────────
 
-export function createSamsarite(state, rank) {
+/** rng：抽數值／名字／標籤用的亂數來源，預設是主亂數；生小孩傳入獨立亂數流，才不會動到既有種子結果 */
+export function createSamsarite(state, rank, rng = state) {
   const r = RANKS[rank];
-  const roll = ([min, max]) => randInt(state, min, max);
+  const roll = ([min, max]) => randInt(rng, min, max);
   return {
     id: state.nextId++,
-    name: pick(state, SURNAMES) + pick(state, GIVEN_NAMES),
+    name: pick(rng, SURNAMES) + pick(rng, GIVEN_NAMES),
     rank,
     stats: {
       hp: roll(r.hp),
@@ -91,8 +94,10 @@ export function createSamsarite(state, rank) {
     injury: 0, // 0 無傷 / 1 輕傷 / 2 重傷 / 3 致命傷
     restDaysLeft: 0,
     locked: false, // 🔒 鎖定後不參與自動派遣
-    location: "space", // "space" 主神空間 / "dungeon" 副本中
-    tags: rollTags(state), // 標籤 id 陣列，資料在 src/data/tags.js
+    location: "space", // "space" 主神空間 / "dungeon" 副本中 / "pod" 催熟艙（嬰兒，不能派遣、不參與日常事件）
+    podDaysLeft: 0, // 催熟艙剩幾天（location "pod" 才有意義）
+    parents: null, // 小孩才有：[家長id, 家長id]
+    tags: rollTags(rng), // 標籤 id 陣列，資料在 src/data/tags.js
     upgrades: {}, // 商店強化累積的數值：{ power, dodge… }（見 data/shop.js）
     gear: {}, // 商店裝備：{ weapon: 商品id, armor: 商品id }
     bought: {}, // 每種強化買過幾次：{ 商品id: 次數 }
@@ -110,6 +115,7 @@ export function getSamsarite(state, id) {
 
 /** 每日維持費 = 基礎 + 階級加成 + 傷勢加成 */
 export function upkeepOf(s) {
+  if (s.location === "pod") return CONFIG.child.podUpkeep; // 催熟艙的嬰兒只吃固定的小額
   return CONFIG.upkeepBase + RANKS[s.rank].upkeep + INJURIES[s.injury].upkeep;
 }
 
@@ -192,6 +198,7 @@ export function endOfDay(state) {
     }
   }
 
+  cost += podCost(state); // 催熟艙裡的嬰兒也要吃飯
   const wasInDebt = state.points < 0;
   state.points -= cost;
   const hitLimit = state.points < CONFIG.debtLimit;
@@ -257,6 +264,7 @@ export function advanceTick(state) {
     dailyWishes(state); // 心情／休假倒數、許願超時（Phase 3-B）
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
+    dailyNursery(state); // 催熟倒數、戀人懷孕（Phase 3-F；放在關係事件之後，剛升級的靈魂伴侶今天就有機會）
   }
 }
 
@@ -307,6 +315,11 @@ export function deserialize(json) {
   state.god ??= newGodState(state.rngState); // 舊存檔沒有主神搞事欄位（Phase 3-E）
   state.god.pending ??= null;
   state.god.mission ??= null;
+  state.nursery ??= newNurseryState(state.rngState); // 舊存檔沒有生小孩欄位（Phase 3-F）
+  for (const s of state.samsarites) {
+    s.podDaysLeft ??= 0;
+    s.parents ??= null;
+  }
   state.wishes ??= [];
   state.nextWishId ??= 1 + Math.max(0, ...state.wishes.map((w) => w.id));
   state.relations ??= {};

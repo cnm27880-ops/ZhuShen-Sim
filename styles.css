@@ -256,6 +256,7 @@ footer { background: rgba(255, 255, 255, 0.9); border-top: 1px solid var(--line)
   transition: transform 0.12s, box-shadow 0.15s;
 }
 .card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(31, 36, 48, 0.1); }
+.card.pod { background: #fff8ec; border-style: dashed; }
 .card.away { opacity: 0.55; background: repeating-linear-gradient(-45deg, #fff, #fff 8px, #f4f5f9 8px, #f4f5f9 16px); }
 .card.rank-border-C { --rank-color: var(--rank-C); } .card.rank-border-B { --rank-color: var(--rank-B); }
 .card.rank-border-A { --rank-color: var(--rank-A); } .card.rank-border-S { --rank-color: var(--rank-S); }

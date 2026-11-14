@@ -87,6 +87,18 @@ export const CONFIG = {
     },
   },
 
+  // ── 生小孩與主神催熟艙（Phase 3-F；計畫書 §7，機率與繼承比例都是「計畫未定」的暫定值，需驗證）──
+  child: {
+    chance: { lover: 0.03, soulmate: 0.05 }, // 戀人／靈魂伴侶「雙方都在主神空間」時，每天懷上小孩的機率
+    cooldownDays: 10, // 同一對生完後至少隔幾天才會再生
+    maxInPod: 2, // 催熟艙同時最多幾個嬰兒（滿了就不再生）
+    podDays: 3, // 催熟艙時間（計畫 §7.4）
+    podUpkeep: 5, // 催熟期間每天維持費（計畫 §7.4）
+    inheritChance: 0.7, // 每個標籤欄位改成「照抄父母同類標籤」的機率（其餘照一般抽卡隨機）
+    rankUpChance: 0.1, // 小孩階級 = 隨機一位家長的階級，有這個機率再升一階（最高 S）
+    familyLove: 30, // 出生時小孩與兩位家長互相的好感（30 還不到「喜歡」，不會直接加成出征）
+  },
+
   // ── 主神搞事（Phase 3-E；種類資料在 src/data/godEvents.js，數字全部「計畫未定」）──
   godEvent: {
     chance: 0.08, // 每天（沒在冷卻、沒有待回覆事件時）發生的機率
@@ -230,4 +242,6 @@ export const PAUSE_EVENTS = {
   autoIdle: { label: "自動派遣找不到合適隊伍", default: false },
   wish: { label: "輪迴者許願（彈窗讓你答應或拒絕）", default: true },
   godEvent: { label: "主神搞事（彈窗讓你照辦或花積分化解）", default: true },
+  birth: { label: "有小孩出生（進催熟艙）", default: true },
+  hatch: { label: "催熟完成（小孩長成輪迴者）", default: true },
 };
