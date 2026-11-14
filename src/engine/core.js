@@ -20,6 +20,7 @@ import { dailyShopping } from "./shopping.js"; // 同上（Phase 4-D-3 輪迴者
 import { newMarketState, refreshMarket, dailyMarket } from "./market.js"; // 同上（Phase 4-D-2 黑市）
 import { newBoardState, fillBoard, dailyBoard } from "./board.js"; // 同上（Phase 4-D-4 動態任務榜）
 import { relicBonusOf, refreshRelicBonus } from "./relics.js"; // 同上（Phase 4-D-4 奇物圖鑑）
+import { dailyDrama } from "./drama.js"; // 同上（Phase 4-E-3 5:2:1 狗血事件）
 import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, communalInherit } from "./squad.js"; // 同上（Phase 4-E 小隊隊長與流派）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
@@ -452,6 +453,7 @@ export function advanceTick(state) {
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
     dailyNursery(state); // 催熟倒數、戀人懷孕（Phase 3-F；放在關係事件之後，剛升級的靈魂伴侶今天就有機會）
+    dailyDrama(state); // 5:2:1 人際事件：熱血羈絆／派系摩擦／八點檔修羅場（Phase 4-E-3，獨立亂數流）
     dailySquad(state); // 自動冊封／隊長缺位繼任／養殖流怨氣（Phase 4-E-1，獨立亂數流）
   }
 }

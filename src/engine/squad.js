@@ -103,6 +103,11 @@ function setCaptain(state, s, how) {
   return s;
 }
 
+/** 奪權上位（噬主夜襲成功用）：不經過順延，直接由 s 接任並改朝換代 */
+export function seizeCaptain(state, s) {
+  return setCaptain(state, s, "coup");
+}
+
 /** 候選人明牌：任命此人將開啟哪個流派（UI 與測試用） */
 export function candidateStyle(s) {
   const id = deriveSquadStyle(s);

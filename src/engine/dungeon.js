@@ -26,6 +26,7 @@ import { intelFull, marketOf } from "./market.js";
 import { addLove } from "./relations.js";
 import { failSanityLoss, squadBossPowerMult, squadClashMult, squadBondMult, squadDefenseBonus, squadAfterClear, bondGuard, farmingPigDied, farmingRewardMult } from "./squad.js";
 import { addChronicle } from "./lineage.js";
+import { dramaAfterRun } from "./drama.js";
 
 /** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
 export function relationBonus(state, party) {
@@ -102,8 +103,10 @@ export function rewardMultiplier(state, dungeon, party = [], env = null) {
   return rewardTierMult(state, dungeon) * (1 + tagRewardPct(party) + collectionEffects(state).rewardPct) * (1 + luckRewardPct(party)) * (env?.rewardMult ?? 1);
 }
 
+/** 小隊總戰力：生死搭檔（4-E-3）兩人都在隊上時，雙方有效戰力各 +CONFIG.drama.pairPowerPct */
 export function partyPower(party) {
-  return party.reduce((sum, s) => sum + effectivePower(s), 0);
+  const ids = new Set(party.map((s) => s.id));
+  return party.reduce((sum, s) => sum + effectivePower(s) * (s.bondPartnerId && ids.has(s.bondPartnerId) ? 1 + CONFIG.drama.pairPowerPct : 1), 0);
 }
 
 /** 飽和公式的戰力基礎率：scale × P ÷ (P + R × k) */
@@ -508,5 +511,6 @@ function finishRun(state, run) {
   afterRunBoard(state, run); // 任務榜：出發的那一槽移除並立即補新槽（4-D-4）
   wishesAfterRun(state, run.dungeonId, success, partyIds, survivors.map((s) => s.id)); // 想去這個副本的許願結算
   godAfterRun(state, run.dungeonId, success, partyIds, survivors.map((s) => s.id)); // 主神突襲任務結算
+  if (success) dramaAfterRun(state, survivors); // 副本結算穿插人際事件（4-E-3，獨立亂數流）
   checkGameOver(state);
 }
