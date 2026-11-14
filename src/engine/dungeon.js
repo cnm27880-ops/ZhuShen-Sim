@@ -8,6 +8,7 @@ import { getDungeon } from "../data/dungeons.js";
 import { ENV_TAGS, getEnvTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
 import { wishesAfterRun } from "./wishes.js";
+import { godAfterRun } from "./godEvents.js";
 import { effectivePower, moodPassBonus, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf } from "./tags.js";
 import { partyRelationBonus, pickClash, clashText, afterClash, afterDeath, findProtector } from "./relations.js";
 import { logText } from "./templates.js";
@@ -270,5 +271,6 @@ function finishRun(state, run) {
   }
   emit(state, "runEnd", text);
   wishesAfterRun(state, run.dungeonId, success, partyIds, survivors.map((s) => s.id)); // 想去這個副本的許願結算
+  godAfterRun(state, run.dungeonId, success, partyIds, survivors.map((s) => s.id)); // 主神突襲任務結算
   checkGameOver(state);
 }

@@ -23,6 +23,8 @@ import { getTag, getEnvTag } from "../data/tags.js";
 import { step, areEnemies } from "../engine/dispatch.js";
 import { pendingWishes, wishesOf, checkAccept, acceptWish, refuseWish, wishVars } from "../engine/wishes.js";
 import { getWish } from "../data/wishes.js";
+import { pendingGodEvent, activeMission, checkResolve, acceptGodEvent, resolveGodEvent, godVars } from "../engine/godEvents.js";
+import { getGodEvent } from "../data/godEvents.js";
 import { renderTemplate } from "../engine/templates.js";
 import { pairSummary, moodOf, partyRelationBonus } from "../engine/relations.js";
 import { LEVEL_LABELS, STATUS_LABELS } from "../data/relations.js";
@@ -105,6 +107,11 @@ function afterChange() {
     state.settings.paused = true;
     modal = { name: "wish", forced: true };
   }
+  // 主神搞事等回覆：自動暫停並彈窗。關掉「主神搞事」暫停就改用 👁 按鈕手動處理（不處理的話過期會視同照辦）
+  if (state.settings.pauseOn.godEvent && !modal && !state.gameOver && pendingGodEvent(state)) {
+    state.settings.paused = true;
+    modal = { name: "godEvent", forced: true };
+  }
   render();
   schedule();
 }
@@ -140,6 +147,10 @@ function renderTopbar() {
   const waiting = pendingWishes(state).length;
   $("btn-wishes").style.display = waiting > 0 ? "" : "none";
   $("btn-wishes").textContent = `🙏 許願 (${waiting})`;
+
+  const godWaiting = Boolean(pendingGodEvent(state));
+  $("btn-god").style.display = godWaiting || activeMission(state) ? "" : "none";
+  $("btn-god").textContent = godWaiting ? "👁 主神搞事 (1)" : "🚨 突襲任務";
 
   $("auto-dispatch").checked = state.settings.autoDispatch;
   $("protect-injured").checked = state.settings.protect.noInjured;
@@ -407,7 +418,7 @@ function closeModal() {
 function renderModal() {
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { dispatch, gacha, shop, detail, settings, runResult, gameOver, confirmRecycle, relations, wish };
+  const builders = { dispatch, gacha, shop, detail, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent };
   $("modal").innerHTML = builders[modal.name]();
 }
 
@@ -727,6 +738,41 @@ function wish() {
     </div>`;
 }
 
+function godEvent() {
+  const ev = pendingGodEvent(state);
+  if (!ev) {
+    const m = activeMission(state);
+    if (!m) return `<h3>👁 主神搞事</h3><p>主神暫時沒有新花樣。</p><div class="modal-actions">${closeButton}</div>`;
+    const s = getSamsarite(state, m.samsariteId);
+    return `<h3>🚨 突襲任務進行中</h3>
+      <div class="summary">
+        對象：${s.name}<br />
+        目標：通關「${getDungeon(m.dungeonId).name}」<br />
+        期限：第 ${m.deadlineDay} 天前（還剩 ${m.deadlineDay - currentDay(state)} 天）<br />
+        <span class="good">完成 → +${m.reward} 分，${s.name} 高興</span><br />
+        <span class="bad">逾期 → 扣 ${CONFIG.godEvent.kinds.raid.penaltyPoints} 分，${s.name} 不爽</span>
+      </div>
+      <div class="modal-actions">${closeButton}</div>`;
+  }
+  const def = getGodEvent(ev.kind);
+  const vars = godVars(state, ev);
+  const check = checkResolve(state);
+  const left = ev.deadlineDay - currentDay(state);
+  return `<h3>${def.icon} 主神搞事：${def.name}</h3>
+    <p>${ev.text}</p>
+    <div class="summary">
+      ${renderTemplate(def.acceptDesc, vars)}<br />
+      ${renderTemplate(def.payDesc, vars)}<br />
+      <span class="bad">${left} 天內沒回覆 → ${renderTemplate(def.ignoreDesc, vars)}</span>
+      ${check.ok ? "" : `<br /><span class="bad">現在花不起積分化解：${check.reason}</span>`}
+    </div>
+    <div class="modal-actions">
+      <button class="danger" data-action="accept-god">${ev.mode === "raid" ? "接下任務" : "照辦"}</button>
+      <button class="primary" data-action="resolve-god" ${check.ok ? "" : "disabled"}>花 ${vars.cost} 分化解</button>
+      ${modal.forced ? "" : closeButton}
+    </div>`;
+}
+
 function gameOver() {
   return `<h3>🕳️ 你被主神換掉了</h3>
     <p>手下沒有任何輪迴者，也借不到積分。撐了 ${currentDay(state)} 天，送走了 ${state.graveyard.length} 個人。</p>
@@ -772,6 +818,21 @@ const actions = {
   "refuse-wish"(el) {
     refuseWish(state, Number(el.dataset.id));
     if (pendingWishes(state).length === 0) modal = null;
+    saveGame();
+  },
+  "open-god"() {
+    modal = { name: "godEvent", forced: false };
+  },
+  "accept-god"() {
+    const result = acceptGodEvent(state);
+    if (!result.ok) alert(result.reason);
+    modal = null;
+    saveGame();
+  },
+  "resolve-god"() {
+    const result = resolveGodEvent(state);
+    if (!result.ok) alert(result.reason);
+    else modal = null;
     saveGame();
   },
   "open-settings"() {

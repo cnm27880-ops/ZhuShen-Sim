@@ -8,6 +8,7 @@ import { rollTags } from "./tags.js";
 import { findSpecialRewardByName, getSpecialReward } from "../data/dungeons.js";
 import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
+import { dailyGod, cancelGodOf, newGodState } from "./godEvents.js"; // 同上（Phase 3-E 主神搞事）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
 // ───────── 事件與日誌 ─────────
@@ -42,6 +43,7 @@ export function createNewGame(seed = (Date.now() ^ 0x5eed) | 0) {
     relations: {}, // 關係矩陣（見 engine/relations.js）
     wishes: [], // 進行中的許願（見 engine/wishes.js）
     nextWishId: 1,
+    god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
     cooldowns: {}, // 事件冷卻：{ 事件:配對 → 第幾天後才能再發生 }
     dungeonStats: {}, // { 副本id: { attempts, clears } }；clears > 0 代表已有該副本情報
     collection: [], // 副本特殊獎勵 id（定義在 data/dungeons.js），永久生效，效果見 engine/shop.js collectionEffects
@@ -120,6 +122,7 @@ export function setInjury(s, level) {
 export function killSamsarite(state, s, cause, killer = null) {
   state.samsarites = state.samsarites.filter((x) => x.id !== s.id);
   cancelWishesOf(state, s.id);
+  cancelGodOf(state, s.id);
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null });
   emit(state, "death", logText(state, "death", { A: s, rank: s.rank, cause }), { samsariteId: s.id, killerId: killer?.id ?? null });
 }
@@ -218,6 +221,7 @@ export function recycle(state, id) {
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause: "被主管推進回收爐" });
   forgetRelations(state, id);
   cancelWishesOf(state, id);
+  cancelGodOf(state, id);
   state.points += CONFIG.recycle.points;
   for (const other of state.samsarites) loseSanity(other, CONFIG.recycle.sanityLoss);
   emit(
@@ -251,6 +255,7 @@ export function advanceTick(state) {
   if (state.tick % CONFIG.ticksPerDay === 0) {
     endOfDay(state);
     dailyWishes(state); // 心情／休假倒數、許願超時（Phase 3-B）
+    dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
   }
 }
@@ -299,6 +304,9 @@ export function deserialize(json) {
   delete state.run;
   for (const r of state.runs) r.id ??= state.nextRunId++;
   state.nextRunId = Math.max(state.nextRunId, 1 + Math.max(0, ...state.runs.map((r) => r.id)));
+  state.god ??= newGodState(state.rngState); // 舊存檔沒有主神搞事欄位（Phase 3-E）
+  state.god.pending ??= null;
+  state.god.mission ??= null;
   state.wishes ??= [];
   state.nextWishId ??= 1 + Math.max(0, ...state.wishes.map((w) => w.id));
   state.relations ??= {};
