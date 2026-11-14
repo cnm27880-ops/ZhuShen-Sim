@@ -71,6 +71,17 @@ export const CONFIG = {
     intelDiscount: 0.85, // 特產綁定的世界情報滿格 → 85 折
   },
 
+  // ── 輪迴者自主逛街（Phase 4-D-3）──
+  shopping: {
+    maxActionsPerDay: 2, // 每人每天最多幾次購買／強化動作
+    reservePct: 0.2, // 自主強化／敗家後，私房錢至少留這個比例當備用金
+    calmBelow: 45, // 理智低於這個數字，優先買回理智耗材
+    lowSanity: 45, // 理智低於這個數字算「低理智者」（愛搞事）
+    dramaChance: 0.15, // 愛搞事的人，每天偷買 drama 黑貨對隊友使用的機率
+    tagWeight: { survival: 1, aggro: 1, communal: 0.5, drama: 0.1 }, // 搶購黑市的基礎偏好（詞條會再乘 2）
+    logKeep: 6, // 每人最近的自主購買紀錄留幾筆（s.shopLog）
+  },
+
   // ── 副本 ──
   partyMax: 4, // 一隊最多幾人（計畫未定）
   dungeon: {

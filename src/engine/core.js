@@ -15,6 +15,7 @@ import { dailyMandatory, newMandatoryState } from "./mandatory.js"; // 同上（
 import { dailySanity, newSanityState } from "./sanity.js"; // 同上（Phase 4-C-2 理智暴走）
 import { newGrowthState } from "./growth.js"; // 同上（Phase 4-B 基因鎖／強化／頓悟；growth.js 也會 import 這個檔案）
 import { taxSanityDaily, forfeitWallet } from "./wallet.js"; // 同上（Phase 4-D-1 雙錢包）
+import { dailyShopping } from "./shopping.js"; // 同上（Phase 4-D-3 輪迴者自主逛街）
 import { newMarketState, refreshMarket, dailyMarket } from "./market.js"; // 同上（Phase 4-D-2 黑市）
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
@@ -132,6 +133,7 @@ export function createSamsarite(state, rank, rng = state) {
     wallet: 0, // 私房錢（4-D-1）：副本分潤進來，輪迴者自己逛街、強化用（見 engine/shopping.js）；戰死 50% 充公，回收 100% 歸公庫
     consumables: [], // 出征耗材緩衝區：商品 id 陣列，下次出發時全部套用成單場 runBuff（4-D-2）
     runBuff: null, // 單場 buff { injuryShield, defense, speed }，出征時由 consumables 轉成、回家清空
+    shopLog: [], // 最近的自主購買紀錄 [{ day, text }]（4-D-3，UI 查閱用）
     lockedInPodBy: null, // 被誰鎖進私人休眠艙（0 = 主管）；podLockDays 倒數，期間不能派遣、不能逛街（4-D-2 狗血黑貨）
     podLockDays: 0,
     soulbound: {}, // 公庫賞賜的裝備綁定 { weapon: true, … }：輪迴者自己逛街時不會覆蓋（4-D-1）
@@ -276,6 +278,7 @@ export function endOfDay(state) {
 
   emit(state, "dayEnd", logText(state, "dayEnd", { day, home: atHome.length, cost }));
   announceDebtIfNew(state, wasInDebt);
+  dailyShopping(state); // 輪迴者用私房錢自主逛街、強化（維持費與休養之後，4-D-3）
   dailyAirdrop(state);
 
   if (state.points < 0 && state.samsarites.length > 0) {
@@ -517,6 +520,7 @@ export function deserialize(json) {
     s.wallet ??= 0;
     s.soulbound ??= {};
     s.consumables ??= [];
+    s.shopLog ??= [];
     s.runBuff ??= null;
     s.lockedInPodBy ??= null;
     s.podLockDays ??= 0;
