@@ -26,6 +26,8 @@ import {
   afterDeath,
   findProtector,
   pickClash,
+  partnerWeight,
+  nearBreakthroughPairs,
 } from "../src/engine/relations.js";
 
 const easy = getDungeon("ghost_village");
@@ -383,4 +385,66 @@ test("放著跑 60 天：留守的人會自己產生關係與事件，而且不�
   const state = run(2);
   const types = new Set(state.log.map((e) => e.type));
   assert.ok(types.has("social"), "要有日常互動的日誌");
+});
+
+// ───────── 第二批回饋 20：日常靜默，只寫關係進展 ─────────
+
+test("日常互動靜默：好感／仇恨照算，但不寫 social 日誌；告白（關係進展）照樣寫", () => {
+  const { state, people: [a, b] } = setup(2);
+  const meal = SOCIAL_EVENTS.find((e) => e.id === "meal");
+  const logs = state.log.length;
+  runSocial(state, meal, a, b);
+  assert.ok(getRel(state, a, b).love > 0, "好感數字照算");
+  assert.equal(state.log.length, logs, "一般互動不寫日誌");
+  assert.ok(meal.texts.length > 0, "SOCIAL_EVENTS 文字資料保留");
+  // 告白成功照寫
+  bothLove(state, a, b, 60);
+  resolveConfession(state, a, b);
+  assert.ok(state.log.some((e) => e.type === "relation"), "告白寫日誌");
+  // 打開開關就會寫（之後想要每日摘要時可用）
+  CONFIG.relations.socialLog = true;
+  try {
+    const n = state.log.length;
+    runSocial(state, SOCIAL_EVENTS.find((e) => e.id === "train"), a, b);
+    assert.equal(state.log.length, n + 1);
+  } finally {
+    CONFIG.relations.socialLog = false;
+  }
+});
+
+test("每天全隊社交互動上限 2 則；12 人規模人際類日誌每天不超過 3 則", () => {
+  assert.deepEqual(CONFIG.relations.dailyRoll, { work: 0.65, social: 0.15 });
+  assert.equal(CONFIG.relations.socialDailyCap, 2);
+  let worst = 0;
+  let total = 0;
+  let days = 0;
+  for (let seed = 1; seed <= 12; seed++) {
+    const state = createNewGame(seed);
+    state.points = 1e9;
+    for (let i = 0; i < 9; i++) state.samsarites.push(createSamsarite(state, "C"));
+    for (let day = 0; day < 30 && !state.gameOver; day++) {
+      const before = state.log.length;
+      const tick0 = state.tick;
+      while (state.tick < tick0 + CONFIG.ticksPerDay) advanceTick(state);
+      const n = state.log.slice(before).filter((e) => ["social", "relation", "scheme"].includes(e.type)).length;
+      worst = Math.max(worst, n);
+      total += n;
+      days += 1;
+    }
+  }
+  assert.ok(total / days <= 3, `平均每天 ${(total / days).toFixed(2)} 則`);
+  assert.ok(worst <= 6, `單日最多 ${worst} 則（陰謀、攻擊、死亡連鎖偶爾會同天湊在一起）`);
+});
+
+test("挑互動對象：快到告白線／陰謀線／死敵線的那對權重額外加成", () => {
+  const { state, people: [a, b, c] } = setup(3);
+  addLove(state, a, b, 40); // 接近告白線 50
+  addLove(state, a, c, 40);
+  addHate(state, a, c, 0);
+  const plain = partnerWeight(state, a, c);
+  addLove(state, a, b, 0);
+  assert.equal(partnerWeight(state, a, b), plain, "同樣好感權重一樣");
+  addHate(state, a, b, 50); // 仇恨 50，接近陰謀線 60
+  assert.ok(partnerWeight(state, a, b) > plain + CONFIG.relations.nearBonus - 1e-9);
+  assert.ok(nearBreakthroughPairs(state).some((p) => p.a === a && p.b === b));
 });

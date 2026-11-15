@@ -4,7 +4,7 @@
 // 觸發時機：
 //   - 每天結算（advanceTick，隊長系統啟用後）：CONFIG.drama.dailyChance（25%）擲一則；
 //   - 副本成功結算（存活 2 人以上）：CONFIG.drama.runChance（30%）擲一則（只有 when 不是 "day" 的事件能演，例如慶功宴）。
-// 群組嚴格 5:2:1（熱血羈絆 : 派系摩擦 : 八點檔修羅場）；抽到的群組當下沒有事件能演，就退回熱血羈絆（所以修羅場只會比 1/8 更少）。
+// 群組比例 3:2:1（熱血羈絆 : 派系摩擦 : 八點檔修羅場）；抽到修羅場當下沒事件能演，退回派系摩擦，再不行才退回熱血羈絆。
 
 import { CONFIG } from "../data/config.js";
 import { DRAMA_EVENTS, DRAMA_GROUPS } from "../data/dramaEvents.js";
@@ -111,7 +111,8 @@ export function runDrama(state, pool, when = "day", forceGroup = null) {
   if (pool.length < 2) return null;
   const rng = squadRng(state);
   const group = forceGroup ?? pickGroup(rng);
-  for (const g of group === "bond" ? ["bond"] : [group, "bond"]) {
+  const chain = { melee: ["melee", "friction", "bond"], friction: ["friction", "bond"], bond: ["bond"] }[group] ?? [group, "bond"]; // 修羅場演不了 → 派系摩擦 → 熱血羈絆
+  for (const g of chain) {
     const options = playable(state, g, pool, when);
     if (options.length === 0) continue;
     const { ev, casts } = pick(rng, options);

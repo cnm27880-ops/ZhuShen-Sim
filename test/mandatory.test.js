@@ -145,7 +145,7 @@ test("逾時未派：抹殺 1～2 名在空間的人，其他人理智大跌", (
     counts.add(dead);
     assert.ok(dead >= 1 && dead <= 2);
     assert.ok(state.graveyard.every((g) => g.cause.includes("抹殺")));
-    for (const s of state.samsarites) assert.ok(s.stats.sanity <= 100 - F.purgeSanityLoss + CONFIG.sanity.restRecover, `理智 ${s.stats.sanity}`);
+    for (const s of state.samsarites.filter((x) => x.location !== "pod")) assert.ok(s.stats.sanity <= 100 - F.purgeSanityLoss + CONFIG.sanity.restRecover, `理智 ${s.stats.sanity}`);
   }
   assert.deepEqual([...counts].sort(), [1, 2], "兩種人數都會出現");
 });

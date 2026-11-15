@@ -33,7 +33,9 @@ test("關卡詞條：有克制資料的環境，克制與被克制各自列出",
 
 test("日誌分類：七類篩選齊全，未知種類歸日常", () => {
   assert.deepEqual(LOG_CATEGORIES.map(([id]) => id), ["all", "drama", "battle", "death", "daily", "wish", "god"]);
-  assert.equal(categoryOf("social"), "drama");
+  assert.equal(categoryOf("social"), "daily", "社交日常歸日常（第二批回饋 19）");
+  assert.equal(categoryOf("relation"), "daily");
+  assert.equal(categoryOf("drama"), "drama");
   assert.equal(categoryOf("death"), "death");
   assert.equal(categoryOf("wishDone"), "wish");
   assert.equal(categoryOf("godEvent"), "god");

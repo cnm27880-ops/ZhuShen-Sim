@@ -276,7 +276,7 @@ export const CONFIG = {
   drama: {
     dailyChance: 0.25, // 每天結算時觸發一則空間日常人際事件的機率
     runChance: 0.3, // 副本成功結算（存活 2 人以上）時穿插一則人際事件的機率
-    groupWeights: { bond: 5, friction: 2, melee: 1 }, // 熱血羈絆：派系摩擦：八點檔修羅場 = 5:2:1
+    groupWeights: { bond: 3, friction: 2, melee: 1 }, // 熱血羈絆：派系摩擦：八點檔修羅場 = 3:2:1（第二批回饋 19，露葵決定；修羅場演不了先退派系摩擦）
     cooldownDays: 6, // 同一則事件同一組人的冷卻
     partnerAt: 65, // 淨好感雙向 >= 這個數字才會結成生死搭檔
     pairPowerPct: 0.04, // 生死搭檔同隊出征：雙方有效戰力各 +4%
@@ -369,7 +369,14 @@ export const CONFIG = {
     passBonus: { like: 0.1, adore: 0.2, soulmate: 0.3, dislike: -0.1, hate: -0.2, nemesis: -0.25 },
     bonusCap: 0.1, // 全隊關係對「單房通過率」的加減上限（Phase 4-B：露葵拍板由 ±30% 改 ±10%）
     // 每天的行動骰（計畫 13.1：50% 日常 / 30% 找人互動 / 20% 特殊事件）
-    dailyRoll: { work: 0.5, social: 0.3 }, // 其餘 20% 是特殊事件（陰謀、標籤事件）
+    // 第二批回饋 20：日常靜默、只寫關係進展。原本 work 0.5／social 0.3，12 人每天約 3.6 則社交日誌，隨人數線性膨脹
+    dailyRoll: { work: 0.65, social: 0.15 }, // 其餘 20% 是特殊事件（陰謀、標籤事件）
+    socialDailyCap: 2, // 全隊每天最多幾次社交互動；超過的社交骰改成日常（理智 +workSanity）
+    socialLog: false, // 一般社交互動要不要寫進日誌（false = 只算好感／仇恨數字；告白、戀人、死敵、陰謀等關係進展照寫）
+    // 互動優先找快要突破的那對：好感差不到 nearRange 就到告白線、仇恨差不到 nearRange 就到陰謀線或死敵線，挑人權重額外 +nearBonus
+    nearRange: 30,
+    nearBonus: 6,
+    nearPickChance: 0.7, // 有「快要突破」的配對時，這次社交互動直接改由他們發生的機率（其餘照權重抽人）
     eventCooldownDays: 7, // 同一對人、同一種互動 7 天內不重複
     hateDecayPerDay: 0.5, // 仇恨每天自然消退一點（死敵不消退）
     workSanity: 1, // 日常行動：理智 +1
