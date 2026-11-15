@@ -643,36 +643,12 @@ function renderDaySummary() {
     items.map((e) => `<div class="ds-item ds-${e.type}"><span class="ds-day">第 ${e.day} 天</span>${e.text}</div>`).join("");
 }
 
-/** 名冊卡左條的狀態圖示（SVG，不是 emoji；會被遊戲的 emoji 清除機制拿掉）：受傷、理智低、副本中、許願、休假… */
-const STATUS_SVG = {
-  injury: `<path d="M8 3.5v9M3.5 8h9"/><circle cx="8" cy="8" r="6.2"/>`,
-  sanity: `<path d="M8 8.2c0-1 1.4-1 1.4 0S8 10.6 6.6 9.4 5.3 5.2 8 4.6s4.6 1.6 4.2 4.4"/>`,
-  dungeon: `<rect x="4" y="2.8" width="8" height="10.4" rx="1.2"/><circle cx="9.8" cy="8" r=".7" fill="currentColor"/>`,
-  pod: `<ellipse cx="8" cy="8.6" rx="4" ry="5"/>`,
-  wish: `<path d="M8 2.6l1.6 3.3 3.6.5-2.6 2.5.6 3.6L8 10.8 4.8 12.5l.6-3.6L2.8 6.4l3.6-.5z"/>`,
-  vacation: `<circle cx="8" cy="8" r="2.6"/><path d="M8 2v1.6M8 12.4V14M2 8h1.6M12.4 8H14M3.8 3.8l1.1 1.1M11.1 11.1l1.1 1.1M12.2 3.8l-1.1 1.1M4.9 11.1l-1.1 1.1"/>`,
-};
-function cardAlerts(s) {
-  const out = [];
-  const add = (kind, tone, tip) =>
-    out.push(`<span class="st-ico ${tone}" title="${esc(String(tip).replace(/<[^>]*>/g, ""))}"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${STATUS_SVG[kind]}</svg></span>`); // injuryLabel 回傳 HTML，提示文字要先去標籤
-  if (s.injury >= 1) add("injury", s.injury >= 2 ? "red" : "amber", injuryLabel(s));
-  if (s.stats.sanity < 40) add("sanity", s.stats.sanity < 20 ? "red" : "amber", `理智偏低（${s.stats.sanity}）`);
-  if (s.location === "dungeon") add("dungeon", "blue", "副本中");
-  if (s.location === "pod") add("pod", "blue", "催熟艙");
-  const w = wishesOf(state, s.id)[0];
-  if (w) add("wish", w.status === "pending" ? "red pulse" : "purple", `許願：${getWish(w.kind).name}${w.status === "pending" ? "（等你回覆）" : ""}`);
-  if (s.vacationDays > 0) add("vacation", "blue", `休假中（${s.vacationDays} 天）`);
-  return out.join("");
-}
-
 let raisedId = null; // 觸控裝置：目前點開（浮起）的卡片
 
 function cardInner(s) {
   return `<div class="card-strip">
       ${rankBadge(s.rank)}
       <div class="strip-name" title="${esc(s.name)}">${[...s.name].slice(0, 5).map((ch) => `<span>${esc(ch)}</span>`).join("")}</div>
-      <div class="card-alerts">${cardAlerts(s)}</div>
       <div class="strip-power" title="戰力">${effectivePower(s)}</div>
     </div>
     <div class="card-rest">
@@ -686,8 +662,29 @@ function cardInner(s) {
 }
 
 /** 堆疊卡片：卡片元素保留、只更新內容，滑過去的浮起動畫才不會被每個時間步的重繪打斷 */
+// 名冊正在被手指／滾輪拖動時，不重寫卡片內容（innerHTML 被換掉，觸控滑動會被打斷或跳回開頭）；停下 0.25 秒後補畫一次
+let rosterTouching = false;
+let rosterBusyUntil = 0;
+let rosterCatchup = null;
+const rosterBusy = () => rosterTouching || performance.now() < rosterBusyUntil;
+function rosterInteract(ms = 250) {
+  rosterBusyUntil = performance.now() + ms;
+  clearTimeout(rosterCatchup);
+  rosterCatchup = setTimeout(() => (rosterBusy() ? rosterInteract(100) : renderRoster()), ms + 20);
+}
+{
+  const rosterEl = document.getElementById("roster");
+  rosterEl.addEventListener("touchstart", () => { rosterTouching = true; }, { passive: true });
+  const touchEnd = () => { rosterTouching = false; rosterInteract(); };
+  rosterEl.addEventListener("touchend", touchEnd, { passive: true });
+  rosterEl.addEventListener("touchcancel", touchEnd, { passive: true });
+  rosterEl.addEventListener("scroll", () => rosterInteract(), { passive: true });
+}
+
 function renderRoster() {
   const root = $("roster");
+  const keepLeft = root.scrollLeft;
+  const busy = rosterBusy();
   if (state.samsarites.length === 0) {
     root.innerHTML = `<div class="empty">你手下一個輪迴者都沒有了。去抽卡吧。</div>`;
     return;
@@ -705,14 +702,18 @@ function renderRoster() {
     }
     const cls = `card stack rank-border-${s.rank} ${s.location === "dungeon" ? "away" : s.location === "pod" ? "pod" : ""}${raisedId === s.id ? " raised" : ""}`;
     if (el.className !== cls) el.className = cls;
-    const html = cardInner(s);
-    if (el._html !== html) {
-      el.innerHTML = html;
-      el._html = html;
+    if (!busy || el._html === undefined) {
+      const html = cardInner(s);
+      if (el._html !== html) {
+        el.innerHTML = html;
+        el._html = html;
+      }
     }
     el.style.zIndex = raisedId === s.id ? "60" : String(i + 1);
     if (root.children[i] !== el) root.insertBefore(el, root.children[i] ?? null);
   });
+  // 結構有增減時瀏覽器可能把捲動位置沖掉：還原（用 instant，不吃 CSS 的 smooth）
+  if (Math.abs(root.scrollLeft - keepLeft) > 1) root.scrollTo({ left: keepLeft, behavior: "instant" });
 }
 
 // 觸控裝置（沒有 hover）：點一下浮起、再點一下收回；浮起後用「查看檔案」按鈕進檔案頁
@@ -981,8 +982,8 @@ function shop() {
   const target = getSamsarite(state, modal.targetId);
   if (!home.some((s) => s.id === modal.victimId && s.id !== modal.targetId)) modal.victimId = home.find((s) => s.id !== modal.targetId)?.id ?? null;
   const progress = next
-    ? `累積花費 <b>${state.totalSpent}</b> 分，再花 <b>${next.remaining}</b> 分解鎖 Tier ${next.tier}`
-    : `累積花費 <b>${state.totalSpent}</b> 分，商店已全部解鎖`;
+    ? `目前 Tier <b>${tier}</b>，打通第 <b>${next.chapter}</b> 章尾王解鎖 Tier ${next.tier}`
+    : `商店已全部解鎖（Tier ${tier}）`;
 
   const tabs = [["shop", "🛒 常駐制式商店"], ["market", "🕶️ 8 格黑市"], ["relics", `🏺 奇物圖鑑 ${relicInfo(state).owned}/${relicInfo(state).total}`]]
     .map(([id, label]) => `<button data-action="shop-tab" data-id="${id}" class="${tab === id ? "active" : ""}">${label}</button>`)
@@ -1058,11 +1059,11 @@ function shopStandardTab(tier, target) {
       <button class="primary" data-action="buy" data-id="${item.id}" ${check.ok ? "" : "disabled"}>${locked ? "🔒" : item.price + " 分"}</button>
     </div>`;
   };
-  const sections = CONFIG.shopTierUnlock
+  const sections = CONFIG.shopTierBossChapter
     .map((_, i) => i + 1)
     .map((t) => {
-      const need = CONFIG.shopTierUnlock[t - 1];
-      const label = t <= tier ? `Tier ${t}` : `Tier ${t}（累積花費 ${need} 分解鎖）`;
+      const need = CONFIG.shopTierBossChapter[t - 1];
+      const label = t <= tier ? `Tier ${t}` : `Tier ${t}（打通第 ${need} 章尾王解鎖）`;
       return `<h3>${label}</h3><div class="option-list">${shopItemsOfTier(t).filter(inCat).map(itemRow).join("")}</div>`;
     })
     .join("");

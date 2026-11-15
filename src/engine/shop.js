@@ -21,11 +21,11 @@ import { wishesAfterBuy } from "./wishes.js";
 
 export { shopTier };
 
-/** 下一階還差多少累積花費。已經是最高階就回傳 null */
+/** 下一階要打通哪一章的尾王。已經是最高階就回傳 null */
 export function nextTierInfo(state) {
   const tier = shopTier(state);
-  const need = CONFIG.shopTierUnlock[tier]; // 索引 tier = 下一階
-  return need === undefined ? null : { tier: tier + 1, need, remaining: Math.max(0, need - state.totalSpent) };
+  const chapter = CONFIG.shopTierBossChapter[tier]; // 索引 tier = 下一階
+  return chapter === undefined ? null : { tier: tier + 1, chapter };
 }
 
 /** 常駐商店賣的商品：常駐裝備（8 件／階）+ 常備耗材（permanent：治傷藥、鎮靜劑）。tier 省略 = 全部階層 */
@@ -77,7 +77,7 @@ export function checkBuy(state, item, s, opts = {}) {
   const payer = opts.payer ?? "treasury";
   const price = opts.price ?? item.price;
   if (item.tier > shopTier(state)) {
-    return { ok: false, reason: `Tier ${item.tier} 還沒解鎖（累積花費 ${CONFIG.shopTierUnlock[item.tier - 1]} 分）` };
+    return { ok: false, reason: `Tier ${item.tier} 還沒解鎖（要先打通第 ${CONFIG.shopTierBossChapter[item.tier - 1]} 章尾王）` };
   }
   if ((opts.source ?? "shop") === "shop" && !isPermanent(item)) return { ok: false, reason: "這件商品只在黑市出現" };
   if (!s) return { ok: false, reason: "請先選一個人" };

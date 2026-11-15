@@ -12,6 +12,7 @@ import { appointCaptain, captainOf, squadOf } from "../src/engine/squad.js";
 import { shiftAffinity } from "../src/engine/relations.js";
 import { defectEligible, isDefectImmune, inducePregnancy, lineageBlock, dailyLineage } from "../src/engine/lineage.js";
 import { giveBirth, dailyNursery } from "../src/engine/children.js";
+import { setSpentTier } from "./helpers/tier.js";
 
 function setup(n = 4, { level = 2, seed = 51 } = {}) {
   const state = createNewGame(seed);
@@ -134,7 +135,7 @@ test("互助金補貼：受重傷者治療費、低於隊長且 1 階的人衝 2
   b.enhanceCount = CONFIG.gene.tiers[1].enhanceCap;
   b.rank = "A";
   b.wallet = 10;
-  state.totalSpent = 0; // 商店維持第 1 階，免得他先拿錢去換裝
+  setSpentTier(state, 0); // 商店維持第 1 階，免得他先拿錢去換裝
   const w0 = b.geneLock;
   dailyShopping(state);
   assert.equal(b.geneLock, w0 + 1, "互助金補貼他衝上 2 階基因鎖");

@@ -32,8 +32,9 @@ export const CONFIG = {
   // 絕境空投（4-C-3）：存活人數（不含催熟艙）< minAlive 且積分 < pointsBelow，連續滿 everyDays 天，主神免費空投 1 名新人
   // rescue：true 時空投當作安全網，「沒人又借不到錢」不再直接判遊戲結束（否則全滅當下就死檔，空投來不及；4-C-6）
   airdrop: { minAlive: 2, pointsBelow: 120, everyDays: 3, rank: "C", rescue: true },
-  // 商店 5 階的解鎖門檻：「累積花費」（抽卡也算）達到才開放。索引 0 = Tier 1（Phase 4-A）
-  shopTierUnlock: [0, 600, 3000, 12000, 45000],
+  // 商店 6 階的解鎖條件（第二批試玩回饋 16）：改看章節尾王首通，不再看累積花費。索引 0 = Tier 1。
+  // 值 = 要先首通哪一章的尾王（0 = 開局就有）。Tier 2 = 通關第 1 章尾王 … Tier 6 = 通關第 5 章尾王。
+  shopTierBossChapter: [0, 1, 2, 3, 4, 5],
   shopDodgeMax: 0.9, // 閃避機率上限（標籤 + 商店加成加起來）
 
   // ── 雙錢包活體經濟（Phase 4-D-1）──

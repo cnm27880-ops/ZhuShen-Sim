@@ -515,6 +515,11 @@ function finishRun(state, run) {
         const lv = dungeon.chapter >= state.spaceLevel ? Math.min(CONFIG.space.maxLevel, state.spaceLevel + 1) : state.spaceLevel;
         addChronicle(state, "boss", logText(state, "chronBoss", { chapter: dungeon.chapter, boss: dungeon.name, level: lv }));
       }
+      if (dungeon.boss && CONFIG.shopTierBossChapter.includes(dungeon.chapter)) {
+        // 商店階級改看尾王首通（第二批試玩回饋 16）：宣布解鎖
+        const tier = CONFIG.shopTierBossChapter.indexOf(dungeon.chapter) + 1;
+        emit(state, "shopTier", logText(state, "shopTier", { tier, chapter: dungeon.chapter }), { tier });
+      }
       if (dungeon.boss && dungeon.chapter >= state.spaceLevel) {
         state.chapterClearDay[dungeon.chapter] = currentDay(state);
         if (state.spaceLevel < CONFIG.space.maxLevel) {

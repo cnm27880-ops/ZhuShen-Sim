@@ -6,7 +6,7 @@ import { SURNAMES, GIVEN_NAMES } from "../data/names.js";
 import { rand, randInt, pick, weighted } from "./rng.js";
 import { rollTags, hpRestBonus } from "./tags.js";
 import { findSpecialRewardByName, getSpecialReward } from "../data/dungeons.js";
-import { migrateWorldId } from "../data/worlds.js";
+import { migrateWorldId, WORLD_LIST } from "../data/worlds.js";
 import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
 import { dailyGod, cancelGodOf, newGodState } from "./godEvents.js"; // 同上（Phase 3-E 主神搞事）
@@ -276,23 +276,25 @@ export function canAfford(state, cost) {
   return state.points - cost >= debtLimitOf(state);
 }
 
-/** 商店目前開到第幾階（1~4），依累積花費 totalSpent 和 CONFIG.shopTierUnlock 決定 */
+/** 某章尾王首通過了嗎？（看首通日記錄或該尾王的通關次數；舊存檔兩種都認） */
+function bossCleared(state, chapter) {
+  if (state.chapterClearDay?.[chapter] != null) return true;
+  const boss = WORLD_LIST.find((w) => w.chapter === chapter && w.boss);
+  return (state.dungeonStats?.[boss?.id]?.clears ?? 0) > 0;
+}
+
+/** 商店目前開到第幾階（1~6）：Tier N 需要首通第 N-1 章尾王（CONFIG.shopTierBossChapter）；累積花費不再影響階級 */
 export function shopTier(state) {
   let tier = 1;
-  CONFIG.shopTierUnlock.forEach((need, i) => {
-    if (state.totalSpent >= need) tier = i + 1;
+  CONFIG.shopTierBossChapter.forEach((ch, i) => {
+    if (ch === 0 || bossCleared(state, ch)) tier = Math.max(tier, i + 1);
   });
   return tier;
 }
 
-/** 累加累積花費（公庫與私房錢的消費都走這裡），跨過商店階層門檻就宣布解鎖 */
+/** 累加累積花費（公庫與私房錢的消費都走這裡）。只做統計，不再開商店階級（階級改看尾王首通） */
 export function addSpent(state, cost) {
-  const tierBefore = shopTier(state);
   state.totalSpent += cost;
-  const tierAfter = shopTier(state);
-  if (tierAfter > tierBefore) {
-    emit(state, "shopTier", logText(state, "shopTier", { tier: tierAfter, spent: state.totalSpent }), { tier: tierAfter });
-  }
 }
 
 /** countTier 預設 true：商店／黑市／強化／抽卡的消費計入商店階級解鎖；基建、刷新、事件類消費傳 false（#16） */

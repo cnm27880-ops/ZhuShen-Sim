@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 
 import { CONFIG, RANKS } from "../src/data/config.js";
 import { DUNGEONS, getDungeon } from "../src/data/dungeons.js";
-import { createNewGame, createSamsarite, upkeepOf, debtLimitOf, canAfford, endOfDay, serialize, deserialize } from "../src/engine/core.js";
+import { createNewGame, createSamsarite, shopTier, upkeepOf, debtLimitOf, canAfford, endOfDay, serialize, deserialize } from "../src/engine/core.js";
 import { startRun, clearChance, chanceAtLeast, roomPassRate, powerRate, isUnlocked, unlockedDungeons } from "../src/engine/dungeon.js";
 import { planAutoDispatch, step } from "../src/engine/dispatch.js";
 
@@ -98,7 +98,10 @@ test("首通本章尾王：空間升 1 級、記下第幾天、解鎖下一章�
   assert.ok(state.chapterClearDay[1] >= 1);
   assert.ok(state.log.some((e) => e.text.includes("Lv.2")));
   assert.equal(isUnlocked(state, getDungeon("ch2_01")), true);
+  assert.equal(shopTier(state), 2, "尾王首通開商店 Tier 2");
+  assert.equal(state.events.filter((e) => e.type === "shopTier" && e.text.includes("Tier 2")).length, 1, "只宣布一次");
   for (let i = 0; i < 5; i++) runOnce(state, "ch1_boss");
+  assert.equal(state.events.filter((e) => e.type === "shopTier").length, 1, "重打不再宣布");
   assert.equal(state.spaceLevel, 2, "重打不會再升級");
   // 一般關卡首通不會升級
   const other = setup();

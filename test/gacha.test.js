@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 import { CONFIG } from "../src/data/config.js";
 import { createNewGame, pullGacha, gachaInfo, checkGacha, checkGameOver, advanceTick, serialize, deserialize } from "../src/engine/core.js";
+import { setSpentTier } from "./helpers/tier.js";
 
 const pool = (id) => CONFIG.gacha.pools.find((p) => p.id === id);
 const rich = (seed = 5, spaceLevel = 4) => {
@@ -145,7 +146,7 @@ test("神級池：每抽固定消耗 1 顆因果結晶（不隨漲價增加）�
 
 test("抽卡的花費算進累積花費；錢不夠（超過高利貸上限）抽不了且不扣", () => {
   const state = createNewGame(3);
-  state.totalSpent = 0;
+  setSpentTier(state, 0);
   pullGacha(state, "basic");
   assert.equal(state.totalSpent, 120);
   state.points = CONFIG.space.debtLimit[0] + 100;

@@ -25,7 +25,7 @@ function setup(n = 3, { seed = 61, level = 2, spent = 60000 } = {}) {
   state.samsarites = [];
   state.spaceLevel = level;
   state.points = 10000000;
-  state.totalSpent = spent;
+  setSpentTier(state, spent);
   for (let i = 0; i < n; i++) {
     const s = createSamsarite(state, "C");
     s.tags = [];
@@ -359,6 +359,7 @@ test("AI 催生黑貨：只有愛搞事、有雙向淨好感 >= 60 的對象時�
 // ───────── 4-E-8 收尾：孕育 1%/天＋助孕、破鎖耗材去誤導化、前 3 世界房間文字 ─────────
 import { birthChanceOf, isCozy, dailyLineage } from "../src/engine/lineage.js";
 import { currentDay as dayOf } from "../src/engine/core.js";
+import { setSpentTier } from "./helpers/tier.js";
 
 test("自然孕育：基礎 1.0%/天；bond 流派 +0.5%；雙方留守、沒重傷且社交助興再 +1.5%（可疊加）", () => {
   assert.equal(CONFIG.lineage.birthChance, 0.01);

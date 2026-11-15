@@ -51,7 +51,12 @@ function possibleWishes(state, s) {
       if (options.length > 0) out.push({ def, weight: k.weight, params: { dungeonId: pick(state, options).id } });
     } else if (def.mode === "gear") {
       const tier = shopTier(state);
-      const options = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard" && i.tier <= tier && s.gear?.[i.slot] !== i.id);
+      // 只准許「比該欄位現有裝備更高階」的裝備；欄位是空的才准任意階；沒有更高階可挑就不出這個願（試玩回饋 15）
+      const options = SHOP_ITEMS.filter((i) => {
+        if (i.kind !== "gear" || i.category !== "standard" || i.tier > tier) return false;
+        const cur = s.gear?.[i.slot] ? getShopItem(s.gear[i.slot]) : null;
+        return !cur || i.tier > (cur.tier ?? 0);
+      });
       if (options.length > 0) out.push({ def, weight: k.weight, params: { itemId: pick(state, options).id } });
     }
   }

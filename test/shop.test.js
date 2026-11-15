@@ -10,6 +10,7 @@ import { shopTier, nextTierInfo, buyItem, checkBuy, collectionEffects } from "..
 import { effectivePower, injuryShieldOf, dodgeOf } from "../src/engine/tags.js";
 import { roomPassRate, rewardMultiplier, partyPower, startRun } from "../src/engine/dungeon.js";
 import { step } from "../src/engine/dispatch.js";
+import { setSpentTier } from "./helpers/tier.js";
 
 const ghost = getDungeon("ghost_village");
 
@@ -22,36 +23,62 @@ function setup(points = 100000) {
   return { state, s };
 }
 
-test("商店門檻讀 config：0 / 600 / 3000 / 12000 / 45000，依累積花費開階", () => {
-  assert.deepEqual(CONFIG.shopTierUnlock, [0, 600, 3000, 12000, 45000]);
+test("商店階級改看章節尾王首通：Tier 1 開局就有，打通第 N 章尾王開 Tier N+1，Tier 6 要通第 5 章；花費不影響", () => {
+  assert.deepEqual(CONFIG.shopTierBossChapter, [0, 1, 2, 3, 4, 5]);
   const { state } = setup();
-  const at = (n) => {
-    state.totalSpent = n;
-    return shopTier(state);
-  };
-  assert.deepEqual([0, 599, 600, 2999, 3000, 11999, 12000, 44999, 45000, 999999].map(at), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
-  state.totalSpent = 1200;
-  assert.deepEqual(nextTierInfo(state), { tier: 3, need: 3000, remaining: 1800 });
-  state.totalSpent = 45000;
+  assert.equal(shopTier(state), 1);
+  state.totalSpent = 9999999; // 花再多也不開階
+  assert.equal(shopTier(state), 1);
+  assert.deepEqual(nextTierInfo(state), { tier: 2, chapter: 1 });
+  const got = [];
+  for (let ch = 1; ch <= 5; ch++) {
+    state.chapterClearDay[ch] = 10 + ch;
+    got.push(shopTier(state));
+  }
+  assert.deepEqual(got, [2, 3, 4, 5, 6]);
   assert.equal(nextTierInfo(state), null);
+  // 舊存檔沒有 chapterClearDay 但該尾王有通關次數，也認
+  const s2 = setup().state;
+  s2.dungeonStats.ch2_boss = { clears: 1 };
+  assert.equal(shopTier(s2), 3);
 });
 
-test("商品資料表：id 不重複、階層 1~5、種類合法、有價格；常駐武器白值對齊各章錨點（±10%）", () => {
+test("商品資料表：id 不重複、階層 1~6、種類合法、有價格；常駐武器白值對齊各章錨點（±10%）", () => {
   const ids = new Set(SHOP_ITEMS.map((i) => i.id));
   assert.equal(ids.size, SHOP_ITEMS.length);
   for (const i of SHOP_ITEMS) {
-    assert.ok([1, 2, 3, 4, 5].includes(i.tier), i.id);
+    assert.ok([1, 2, 3, 4, 5, 6].includes(i.tier), i.id);
     assert.ok(i.kind in SHOP_KIND_LABELS, i.id);
     assert.ok(i.price > 0, i.id);
     if (i.kind === "gear") assert.ok(["weapon", "armor", "accessory", "bloodline"].includes(i.slot) && Object.keys(i.stats).length > 0, i.id);
   }
-  for (const t of [1, 2, 3, 4, 5]) assert.ok(SHOP_ITEMS.some((i) => i.tier === t), `Tier ${t} 沒有商品`);
+  for (const t of [1, 2, 3, 4, 5, 6]) assert.ok(SHOP_ITEMS.some((i) => i.tier === t), `Tier ${t} 沒有商品`);
   const anchors = [18, 60, 220, 900, 3500];
   anchors.forEach((want, i) => {
     for (const w of SHOP_ITEMS.filter((x) => x.tier === i + 1 && x.category === "standard" && x.slot === "weapon")) {
       assert.ok(Math.abs(w.stats.power - want) <= want * 0.1 + 1, `${w.id} 戰力 ${w.stats.power} 偏離錨點 ${want}`);
     }
   });
+});
+
+test("Tier 6 商品：每件的白值總和與價格都高於 Tier 5 同槽位同類別的最高值（效果不重複 Tier 5 的）", () => {
+  const sum = (i) => Object.values(i.stats).reduce((a, b) => a + Math.max(0, b), 0);
+  for (const cat of ["standard", "specialty", "contraband"]) {
+    for (const slot of ["weapon", "armor", "accessory", "bloodline"]) {
+      const t5 = SHOP_ITEMS.filter((i) => i.tier === 5 && i.category === cat && i.slot === slot);
+      const t6 = SHOP_ITEMS.filter((i) => i.tier === 6 && i.category === cat && i.slot === slot);
+      if (t5.length === 0 || t6.length === 0) continue;
+      assert.ok(Math.max(...t6.map((i) => i.stats.power)) > Math.max(...t5.map((i) => i.stats.power)), `${cat}/${slot} 戰力`);
+      assert.ok(Math.min(...t6.map(sum)) > Math.min(...t5.map(sum)), `${cat}/${slot} 白值總和`);
+      assert.ok(Math.min(...t6.map((i) => i.price)) > Math.min(...t5.map((i) => i.price)), `${cat}/${slot} 價格`);
+    }
+  }
+  // 耗材：同編號的效果組合不能和 Tier 5 一模一樣
+  for (const n of ["27", "28", "29", "30", "31", "32", "38", "39"]) {
+    const a = SHOP_ITEMS.find((i) => i.id === `t5_${n}`).effect;
+    const b = SHOP_ITEMS.find((i) => i.id === `t6_${n}`).effect;
+    assert.notDeepEqual(a, b, `t6_${n} 效果和 Tier 5 重複`);
+  }
 });
 
 test("沒解鎖的階層買不了，也不會扣積分", () => {
@@ -79,7 +106,7 @@ test("買裝備：扣積分、累積花費增加、戰力上升；買新武器�
   assert.equal(effectivePower(s), base + 18);
   assert.equal(partyPower([s]), base + 18); // 隊伍戰力也跟著變
   assert.equal(checkBuy(state, getShopItem("t1_01"), s).ok, false); // 同一件不能重買
-  state.totalSpent = 600; // 開 Tier 2
+  setSpentTier(state, 600); // 開 Tier 2
   assert.equal(buyItem(state, "t2_01", s.id).ok, true);
   assert.equal(s.gear.weapon, "t2_01");
   assert.equal(effectivePower(s), base + 62); // 換掉，不是疊加
@@ -88,7 +115,7 @@ test("買裝備：扣積分、累積花費增加、戰力上升；買新武器�
 
 test("防具提供戰力與防禦白值，換防具不是疊加；飾品與血統是獨立欄位", () => {
   const { state, s } = setup();
-  state.totalSpent = 12000; // 開 Tier 4
+  setSpentTier(state, 12000); // 開 Tier 4
   const base = effectivePower(s);
   buyItem(state, "t2_03", s.id);
   assert.equal(effectivePower(s), base + 54);
@@ -129,16 +156,13 @@ test("副本裡的人不能用商店", () => {
   assert.equal(buyItem(state, "t1_01", s.id).ok, false);
 });
 
-test("花費跨過門檻時主神會宣布解鎖（抽卡的花費也算）", () => {
+test("抽卡與花費不再開商店階級，只有尾王首通才開，並且主神會宣布", () => {
   const { state } = setup(100000);
   state.totalSpent = 500;
-  pullGacha(state, "basic"); // 120 → 620
-  assert.equal(shopTier(state), 2);
-  // shopTier 不寫進主神日誌（CONFIG.logHiddenTypes），但事件照常產生
-  assert.ok(state.events.some((e) => e.type === "shopTier" && e.text.includes("Tier 2")));
-  assert.ok(!state.log.some((e) => e.type === "shopTier"), "不進日誌");
-  pullGacha(state, "basic"); // 還是 Tier 2，不再宣布
-  assert.equal(state.events.filter((e) => e.type === "shopTier").length, 1);
+  pullGacha(state, "basic"); // 120 → 620：舊制會開 Tier 2，新制不會
+  assert.equal(state.totalSpent, 620, "totalSpent 照算（只當統計）");
+  assert.equal(shopTier(state), 1);
+  assert.equal(state.events.filter((e) => e.type === "shopTier").length, 0);
 });
 
 test("商店日誌模板每個 key 至少 2 個版本", () => {
