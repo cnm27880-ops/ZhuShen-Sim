@@ -639,6 +639,9 @@ function cardInner(s) {
       <div class="card-top"><span class="grow">${s.name}</span><span class="tag-dots">${tagDots(s)}</span><span class="follow-btn ${s.id === state.settings.followId ? "on" : ""}" data-action="toggle-follow" data-id="${s.id}" title="${s.id === state.settings.followId ? "取消鎖定視角" : "鎖定視角（他下副本時畫面跟著切）"}">👁</span></div>
       <div class="card-meta"><span>戰力 <b>${effectivePower(s)}</b></span><span>理智 <b>${s.stats.sanity}</b></span></div>
       <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
+      <div class="card-subs"><span>生命 <b>${subStat(s, "hp")}</b></span><span>防 <b>${subStat(s, "defense")}</b></span><span>速 <b>${subStat(s, "speed")}</b></span><span>運 <b>${subStat(s, "luck")}</b></span></div>
+      <div class="card-grow"><span>基因鎖 <b>${s.geneLock ?? 0}</b> 階</span><span>強化 <b>${s.enhanceCount ?? 0}/${enhanceCapOf(s)}</b></span><span>私房錢 <b>${s.wallet ?? 0}</b></span></div>
+      <div class="card-tags">${(s.tags ?? []).map(getTag).filter(Boolean).slice(0, 4).map((t) => `<span class="tag-dot-${t.rarity}-chip">${esc(t.name)}</span>`).join("")}</div>
       <div class="card-status">${locationLabel(s)}${statusExtras(s)}</div>
       <div class="card-recent" title="最近發生的事">${recentOf(s)}</div>
       <button class="pill card-open" data-action="open-detail" data-id="${s.id}">查看檔案</button>
@@ -673,8 +676,7 @@ function renderRoster() {
     root.innerHTML = `<div class="empty">你手下一個輪迴者都沒有了。去抽卡吧。</div>`;
     return;
   }
-  if (state.samsarites.length <= 4) root.style.setProperty("--overlap", "-10px"); // 人少時不疊（留 10px 間距），5 人以上才堆疊
-  else root.style.removeProperty("--overlap");
+  root.style.removeProperty("--overlap"); // 一律堆疊（人少也疊）
   const ids = new Set(state.samsarites.map((s) => String(s.id)));
   for (const c of [...root.children]) if (!ids.has(c.dataset.id)) c.remove();
   state.samsarites.forEach((s, i) => {

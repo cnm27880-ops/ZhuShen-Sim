@@ -952,3 +952,17 @@ button.pill:disabled { opacity: .45; cursor: not-allowed; }
 #roster .card-open { margin-top: 6px; border-radius: 99px !important; background: #111; border-color: #111; color: #fff; font-weight: 600; }
 #roster .card-open:hover:not(:disabled) { background: #333; }
 #roster .card.stack.away .card-strip { filter: saturate(.45); }
+
+/* 小人卡加高：多顯示副屬性、成長、私房錢與詞條；浮起幅度配合，減少與按鈕間的空白 */
+#roster { padding-top: 40px; }
+#roster .card.stack { min-height: 250px; }
+#roster .card.stack:hover, #roster .card.stack.raised { transform: translateY(-28px); }
+#roster .card-subs { display: flex; gap: 10px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+#roster .card-subs b, #roster .card-grow b { color: #111; font-family: ui-monospace, "JetBrains Mono", monospace; }
+#roster .card-grow { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); }
+#roster .card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+#roster .card-tags span { padding: 1px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; background: #f0f0ec; color: #333; border: 1px solid transparent; }
+#roster .card-tags .tag-dot-R-chip { background: #dbe9ff; color: #1d4ed8; }
+#roster .card-tags .tag-dot-SR-chip { background: #ece3ff; color: #6d28d9; }
+#roster .card-tags .tag-dot-SSR-chip { background: #fff0c2; color: #92400e; }
+#roster .card-tags .tag-dot-UR-chip { background: #ffdcdc; color: #b91c1c; }
