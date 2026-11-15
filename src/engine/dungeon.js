@@ -562,6 +562,8 @@ function finishRun(state, run) {
     erosionCrystals = run.erosion * CONFIG.erosion.crystalPerStar;
     state.erosionCrystals = (state.erosionCrystals ?? 0) + erosionCrystals;
     state.maxErosion = Math.max(state.maxErosion ?? 0, run.erosion);
+    const st = state.dungeonStats[run.dungeonId]; // 記下這個副本打過的最高星級（排行榜「副本通關」用；舊存檔沒有這欄就當 0★）
+    if (st) st.maxStar = Math.max(st.maxStar ?? 0, run.erosion);
     emit(state, "erosion", logText(state, "erosionClear", { star: run.erosion, dungeon: dungeon.name, n: erosionCrystals, total: state.erosionCrystals }));
   }
   if (rogue?.win) loot.rogueBounty = distributeLoot(state, survivors, rogue.bounty, { run, dungeon }).tax; // 賞金也走流派分潤（4-E-4）

@@ -1,11 +1,13 @@
 // 排行榜成績：從遊戲狀態算出要送給後端的資料。純函式，不碰畫面與網路。
 //   level  空間等級
 //   roster 目前輪迴者人數
-//   clears 副本通關數：通關過幾個不同的副本（30 個世界各算一個，重打不重複算；強制任務、洲際碰撞不算）
+//   clears 副本通關分：每個通關過的副本 1 分（重打不重複算），再加上它打過的最高侵蝕星級（每 1★ 加 CLOUD.clearStarWeight 分）。
+//          所以通關 3★ 的人，同一個副本拿 4 分，比只通關 1★（2 分）的人高。強制任務、洲際碰撞不算
 //   power  最強輪迴者：活著的人（現有有效戰力）與墓園裡的人（死亡當下的戰力）之中最高的一位
 //   life   最長壽輪迴者：存活天數 = 今天（或死亡日）− 加入日，活著與已死的都算
 
 import { DUNGEONS } from "../data/dungeons.js";
+import { CLOUD } from "../data/config.js";
 import { currentDay } from "./core.js";
 import { effectivePower } from "./tags.js";
 
@@ -25,12 +27,15 @@ export function buildScorePayload(state) {
     if (!b) continue;
     consider(b.power ?? 0, (b.deathDay ?? g.day ?? today) - (b.joinedDay ?? 1), g.name);
   }
-  const clears = DUNGEONS.filter((d) => (state.dungeonStats?.[d.id]?.clears ?? 0) > 0).length;
+  const clears = DUNGEONS.reduce((n, d) => {
+    const st = state.dungeonStats?.[d.id];
+    return (st?.clears ?? 0) > 0 ? n + 1 + (st.maxStar ?? 0) * CLOUD.clearStarWeight : n;
+  }, 0);
   const int = (v, hi) => Math.max(0, Math.min(hi, Math.floor(v)));
   return {
     level: Math.max(1, Math.min(5, state.spaceLevel ?? 1)),
     roster: int(state.samsarites.length, CAP.roster),
-    clears: int(clears, 100),
+    clears: int(clears, 1000),
     power: int(power.v, CAP.power),
     powerName: power.name,
     life: int(life.v, CAP.life),
