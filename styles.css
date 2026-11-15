@@ -620,7 +620,7 @@ footer { box-shadow: none; background: #fff; padding-block: 20px; }
 .stat-value, #points { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; }
 .stat-value.small { color: #000; }
 #modal { border-radius: 24px; padding: 24px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06); }
-#modal-backdrop { background: rgba(0, 0, 0, 0.32); backdrop-filter: none; }
+#modal-backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(3px); } /* 第四批：遮罩加深加模糊，頁面上黑底按鈕與深色面板不再透出來像黑球（試玩回饋 23） */
 #modal h3 { font-size: 20px; font-weight: 700; }
 .tabs button.active { background: #000; border-color: #000; }
 button:hover:not(:disabled) { box-shadow: none; }

@@ -284,3 +284,14 @@ test("整合：每日行動骰會產生許願（機率拉高時）；存檔讀�
   assert.equal(migrated.samsarites[0].vacationDays, 0);
   assert.equal(migrated.settings.pauseOn.wish, true);
 });
+
+test("許願「想吃好的」的積分也跟著天數章節乘倍率（第四批）：第 3 章 ×10", async () => {
+  const { godMultOf } = await import("../src/engine/dayChapter.js");
+  const { state, s } = setup();
+  state.tick = (150 - 1) * CONFIG.ticksPerDay;
+  state.points = 1e9;
+  const w = forceWish(state, s, "eat");
+  const [lo, hi] = CONFIG.wish.kinds.eat.cost;
+  assert.equal(godMultOf(150), 10);
+  assert.ok(w.params.cost >= lo * 10 && w.params.cost <= hi * 10, `cost ${w.params.cost}`);
+});
