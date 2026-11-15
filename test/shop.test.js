@@ -134,9 +134,11 @@ test("花費跨過門檻時主神會宣布解鎖（抽卡的花費也算）", ()
   state.totalSpent = 500;
   pullGacha(state, "basic"); // 120 → 620
   assert.equal(shopTier(state), 2);
-  assert.ok(state.log.some((e) => e.type === "shopTier" && e.text.includes("Tier 2")));
+  // shopTier 不寫進主神日誌（CONFIG.logHiddenTypes），但事件照常產生
+  assert.ok(state.events.some((e) => e.type === "shopTier" && e.text.includes("Tier 2")));
+  assert.ok(!state.log.some((e) => e.type === "shopTier"), "不進日誌");
   pullGacha(state, "basic"); // 還是 Tier 2，不再宣布
-  assert.equal(state.log.filter((e) => e.type === "shopTier").length, 1);
+  assert.equal(state.events.filter((e) => e.type === "shopTier").length, 1);
 });
 
 test("商店日誌模板每個 key 至少 2 個版本", () => {

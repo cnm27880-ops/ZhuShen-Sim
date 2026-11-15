@@ -561,6 +561,9 @@ export const CONFIG = {
   runReportMax: 20, // 排隊等玩家看的副本結算摘要最多留幾筆
 
   logMax: 300,
+  // 不寫進主神日誌的訊息種類（2026-11 露葵：每日結算、商店等級、錢包、市集、自動閒置、保底）。
+  // 這些事件照常產生（暫停事件、測試用的 state.events 不受影響），只是不佔日誌版面與 logMax 額度。
+  logHiddenTypes: ["dayEnd", "shopTier", "wallet", "market", "autoIdle", "gachaPity"],
 };
 
 // 階級：維持費附加（基礎費的百分比）+ 各屬性的隨機範圍。

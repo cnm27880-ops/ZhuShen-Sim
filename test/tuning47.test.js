@@ -52,7 +52,7 @@ test("赤字緊急徵用：公庫 < 0 時分潤臨時以 max(稅率, 75%) 抽稅
   a.stats.sanity = 50;
   taxSanityDaily(state, a);
   assert.equal(a.stats.sanity, 50, "0.4 稅率沒有每日扣理智");
-  assert.ok(state.log.some((l) => l.text.includes("75%")), "日誌有註記");
+  assert.ok(state.events.some((l) => l.text.includes("75%")), "事件有註記（wallet 類不進主神日誌，CONFIG.logHiddenTypes）");
   // 回正後照原稅率
   const r2 = distributeLoot(state, [a, b], 1000);
   assert.equal(r2.deficit, false);

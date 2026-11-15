@@ -48,3 +48,19 @@ test("詞條庫自訂分類跟著存檔走，舊存檔補預設", () => {
   delete old.codex;
   assert.deepEqual(deserialize(JSON.stringify(old)).codex, { categories: [] });
 });
+
+test("日誌不寫入的種類：每日結算、商店等級、錢包、市集、自動閒置、保底；事件照常，舊存檔清掉", async () => {
+  const { CONFIG } = await import("../src/data/config.js");
+  const { emit } = await import("../src/engine/core.js");
+  const hidden = ["dayEnd", "shopTier", "wallet", "market", "autoIdle", "gachaPity"];
+  assert.deepEqual([...CONFIG.logHiddenTypes].sort(), [...hidden].sort());
+  const st = createNewGame(9);
+  st.log = [];
+  for (const t of hidden) emit(st, t, `測試 ${t}`);
+  emit(st, "social", "留下來");
+  assert.deepEqual(st.log.map((e) => e.type), ["social"]);
+  assert.equal(st.events.filter((e) => hidden.includes(e.type)).length, hidden.length);
+  const old = JSON.parse(serialize(st));
+  old.log.push({ day: 1, type: "dayEnd", text: "舊的每日結算" });
+  assert.deepEqual(deserialize(JSON.stringify(old)).log.map((e) => e.type), ["social"]);
+});

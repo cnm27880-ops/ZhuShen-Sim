@@ -33,9 +33,10 @@ import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會
 
 /** 寫一條日誌，同時丟進 state.events 讓畫面層決定要不要自動暫停 */
 export function emit(state, type, text, data = {}) {
-  const entry = { day: currentDay(state), type, text };
-  state.log.push(entry);
-  if (state.log.length > CONFIG.logMax) state.log.splice(0, state.log.length - CONFIG.logMax);
+  if (!CONFIG.logHiddenTypes.includes(type)) {
+    state.log.push({ day: currentDay(state), type, text });
+    if (state.log.length > CONFIG.logMax) state.log.splice(0, state.log.length - CONFIG.logMax);
+  }
   state.events.push({ type, text, ...data });
 }
 
@@ -638,6 +639,7 @@ export function deserialize(json) {
   state.squadRngState ??= (state.rngState ^ 0x5ad0) | 0;
   state.autoStrategy ??= CONFIG.auto.defaultStrategy;
   state.codex ??= { categories: [] };
+  state.log = (state.log ?? []).filter((e) => !CONFIG.logHiddenTypes.includes(e.type)); // 舊存檔裡已寫入的這幾種日誌一併清掉
   state.autoRiskLogDay ??= null;
   state.settings.autoPause ??= true; // 設定頁「自動暫停」總開關：開窗自動暫停（4-E-8）
   state.chronicles ??= [];
