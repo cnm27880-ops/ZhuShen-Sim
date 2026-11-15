@@ -1011,7 +1011,7 @@ function shop() {
   else body = shopRelicTab();
 
   return `<h3>商店 <small>Tier ${tier}</small></h3>
-    <p>公庫 <b>${state.points}</b>・${next ? `再花 <b>${next.remaining}</b> 分解鎖 Tier ${next.tier}` : "已全部解鎖"}</p>
+    <p>公庫 <b>${state.points}</b>・${next ? `打通第 <b>${next.chapter}</b> 章尾王解鎖 Tier ${next.tier}` : "已全部解鎖"}</p>
     <div class="tabs">${tabs}</div>
     ${tab === "relics" || (tab === "shop" && !modal.lockTarget && ["medicine", "skill", "special"].includes(modal.cat ?? "medicine")) ? "" : picker}
     ${target && (tab === "market" || (tab === "shop" && ["gear", "bloodline"].includes(modal.cat))) ? `<div class="shop-now"><b>👀 ${target.name} 現在穿的</b>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => { const it = getShopItem(target.gear?.[slot]); return `<div class="shop-now-row"><span class="bio-gear-slot">${label}</span><span class="${it ? "" : "muted"}">${it ? `${it.name}${target.soulbound?.[slot] ? " 🔒" : ""}` : "（空）"}</span>${it ? `<small class="good">${Object.entries(it.stats ?? {}).map(([k, v]) => `${STAT_LABEL[k]}${v >= 0 ? "+" : ""}${v}`).join(" ")}</small>` : ""}</div>`; }).join("")}<small class="muted">買同一欄的裝備會直接換掉現有的那件。</small></div>` : ""}
@@ -1764,7 +1764,7 @@ GUIDE_PAGES.rules = [
   ["派遣與任務榜", () => `任務榜 ${CONFIG.board.slots} 槽，每 ${CONFIG.board.rotateDays} 天輪換，每槽帶一個**突變詞綴**（吊橋效應、斷電黑夜、分贓誘惑、血月狂躁、濃霧走散、風平浪靜）。尾王常駐，要先把該章常規關累計通關 ${CONFIG.bossGate.requiredClears} 次。**首次開荒**傷勢較重，首通多拿 ${Math.round(CONFIG.dungeon.firstClearBonusPct * 100)}% 獎勵與一件首通奇物；尾王首通讓主神空間升級。通關率是樂觀估計，沒算途中有人受傷戰死；帶傷出征死亡率更高。隊內有仇人，每個房間都可能先打起來。`],
   ["貪婪探索與位面侵蝕", () => `副本**情報滿格**後可勾選貪婪探索：通關最後一房後有 ${Math.round(CONFIG.relic.greedyChance * 100)}% 機率追加一間 R×${CONFIG.relic.hiddenRMult} 的高危隱藏房，通過掉隱藏奇物。空間 Lv.${CONFIG.erosion.unlockSpaceLevel} 後，已首通的世界可選 1★～10★ **位面侵蝕**：推薦戰力 ×1.45^k、積分 ×1.32^k、成功掉 k 顆侵蝕結晶（不計入尾王守門次數）。`],
   ["抽卡", () => `四個卡池依空間等級解鎖，每 ${CONFIG.gacha.resetDays} 天重置「本週抽數」與漲價，保底計數不會重置。積分不夠可向主神借，最多借到 ${debtLimitOf(state)} 分。神級池每抽消耗 1 顆**因果結晶**。`],
-  ["商店與物資", () => `公庫買裝備＝**賞賜**：綁定（自己逛街時不會被換掉）且理智 +${CONFIG.wallet.giftSanity}。輪迴者也會用私房錢自己逛街。累積花費（含抽卡）決定商店解鎖到第幾階。常駐商店賣制式武防、血統與常備藥；藥品買進**物資倉庫**，到物資面板點物資再點人使用，最缺的人排最前面。世界特產、出征耗材、黑貨只在 8 格黑市，每 3 天換貨。`],
+  ["商店與物資", () => `公庫買裝備＝**賞賜**：綁定（自己逛街時不會被換掉）且理智 +${CONFIG.wallet.giftSanity}。輪迴者也會用私房錢自己逛街。商店階級看章節進度：打通第 N 章尾王，開 Tier N+1（最高 Tier 6）。常駐商店賣制式武防、血統與常備藥；藥品買進**物資倉庫**，到物資面板點物資再點人使用，最缺的人排最前面。世界特產、出征耗材、黑貨只在 8 格黑市，每 3 天換貨。`],
   ["基建", () => `基建是全隊永久加成，升一次永遠有效。高階等級要侵蝕結晶（打位面侵蝕才掉）。**自動建設**：每天結算時公庫高於 ${CONFIG.facility.safeWaterPerLevel} × 空間等級才動用超出的部分，優先升最便宜的。**自動挑戰侵蝕**：主線卡關或全通後，改打已通關世界的侵蝕星級。`],
   ["自動派遣策略", () => `穩健＝通關率 85%、每天 1 隊、留 2 人在家、不派傷員；均衡＝75%／2 隊／留 1 人／可接受輕傷；激進＝60%／不限隊數／不留人／受傷也派。`],
   ["英靈碑與小隊", () => `基因鎖 ${CONFIG.stele.minGene} 階以上或出征滿 ${CONFIG.stele.minRuns} 場的人，戰死在副本或被主神抹殺會入碑；碑上加成最高的前 ${CONFIG.stele.topN} 名生效。隊長個人戰力 +${Math.round(CONFIG.squad.captainPowerPct * 100)}%，**流派由隊長的性格詞條決定**，不能直接切換。撤換令要花公庫與因果結晶。隊長陣亡時依原流派順延；戰力前兩名太接近且互相討厭會爆發爭奪戰。`],

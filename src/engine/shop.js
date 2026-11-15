@@ -4,7 +4,7 @@
 // 付費者（opts.payer）：
 //   "treasury"（預設）  主神公庫 state.points：「主動賞賜」。買裝備 → 綁定（soulbound）並讓該角色理智 +5。
 //   "wallet"            輪迴者自己的私房錢 s.wallet：「自主逛街」（engine/shopping.js）；不綁定，不能覆蓋已綁定的裝備。
-// 不論誰付錢，花費一律累加進 state.totalSpent（商店階層解鎖用）。
+// 不論誰付錢，花費一律累加進 state.totalSpent（只當統計；商店階級改看章節尾王首通）。
 // 來源（opts.source）："shop" 常駐制式商店只賣 standard 與 permanent 耗材；"market" 黑市由 engine/market.js 傳入（可買任何商品、可帶折扣價 opts.price）。
 
 import { noteContraband, squadRng, bump } from "./squad.js"; // 黑貨使用紀錄（4-E-3；循環引用只在執行時呼叫）

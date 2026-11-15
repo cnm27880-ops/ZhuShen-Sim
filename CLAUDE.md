@@ -29,11 +29,12 @@
 | 檔案 | 用途 |
 |---|---|
 | `index.html` | 主頁面，遊戲介面 |
-| `src/data/config.js` | 所有可調數字（開局積分、空間等級表 `space`、章節房數／門檻 `dungeon.chapters`、飽和公式 `dungeon.saturation`、情報條 `dungeon.intel`、傷勢、抽卡機率、商店階層門檻 `shopTierUnlock`、強制任務數字 `forcedMission` 等），改數字只改這裡；Phase 4-B 新增 `gene`（基因鎖階段表）、`enhance`（強化增量與費用）、`insight`（頓悟）、`bossGate`（尾王守門）、`gacha`（四卡池）、`karma`（因果結晶掉落），`RANKS` 多了 `growthMult`／`maxGene`／`recycleRefund`；標籤與關係加成上限已改 ±10% |
+| `src/data/config.js` | 所有可調數字（開局積分、空間等級表 `space`、章節房數／門檻 `dungeon.chapters`、飽和公式 `dungeon.saturation`、情報條 `dungeon.intel`、傷勢、抽卡機率、商店階級改看章節尾王首通 `shopTierBossChapter`（Tier N+1 = 通關第 N 章尾王，共 6 階，第二批回饋 16）、副本收藏上限 `collection`、強制任務數字 `forcedMission` 等），改數字只改這裡；Phase 4-B 新增 `gene`（基因鎖階段表）、`enhance`（強化增量與費用）、`insight`（頓悟）、`bossGate`（尾王守門）、`gacha`（四卡池）、`karma`（因果結晶掉落），`RANKS` 多了 `growthMult`／`maxGene`／`recycleRefund`；標籤與關係加成上限已改 ±10% |
 | `src/data/dungeons.js` | 副本資料表（4-D-4 起五章 × 6 張 = 30 個世界：每章 5 張常規 + 1 張尾王，id 見 `worlds.js`，第 1 章前 3 個真實世界保留語意 id；其餘 R／獎勵由各章錨點等比內插，`CHAPTER_ANCHOR`；舊說明如下，數字已被 4-D-6 覆蓋：`chapter`、`boss`、`rooms` 長度＝該章房數）；第 1 章前 3 關是靈異村、太空船、魔法戰爭（各 3 個特殊獎勵），其餘 17 關是 `placeholder()` 佔位資料；`getSpecialReward(id)` 查獎勵；Phase 4-B 起 R 與獎勵已依 sim 校正（尾王 R 倍率 ×1.8／2.4／2.5／2.0／0.65、第 5 章一般關 R ×0.6、各章獎勵 ×1／2.5／4.5／9／8）；全域第幾關 = 陣列順序（`dungeonNumber`） |
 | `src/data/shop.js` | 相容用的 re-export（商品資料表已在 4-D-2 搬到 `shopItems.js`） |
 | `src/data/shopItems.js` | **商品資料表（4-E-8，200 件）**：解析 `shopRaw.js` 的原始列，每階 40 件（8 常駐 + 18 世界特產〔每世界 3 件，編號 09～26 依序綁世界〕+ 6 耗材 + 8 黑貨）；欄位 `id`（`t1_01`～`t5_40`）／`name`／`tier`／`slot`（weapon armor accessory bloodline consumable）／`category`（standard specialty consumable contraband）／`source`／`price`／`stats`（白值）／`aiBuyTag`／`desc`，選配 `effect`（耗材：`healInjury`／`permHp`＋`maxUsesPerChar`／`sanity`／`geneLockTarget`＋`costDiscount`／`deathWard`＋`fullRecover`／`intelGain`＋`targetCount`／`teamLove`／`clearHate`／`hateDelta`／`nextRunLoveBonus`／`transferMadness`／`inducePregnancy`／`nextRunPowerMult`／`partyNextRunPowerMult`／`postRunInjury`／`partyPostRunSanity`）與 `passive`（黑貨裝備：`dailySanity`／`runSanity`／`partyRunSanity`／`demonTendency`／`captainHateMult`／`captainLoveMult`／`coupPowerBonus`）；`kind`：gear／use（買了立刻用）／buff（進出征耗材緩衝區）；`permanent`：每階 `_27`、`_28` 與 `t1_29` 常駐可買。`itemStat(item,key)` 統一讀白值（新版看 `stats`，舊版看 `effect`）；`getShopItem` 找不到新 id 會退回舊表。**要改價錢、名稱、描述、白值只改 `shopRaw.js`；特殊效果在這裡的 `EFFECTS`／`PASSIVES`** |
-| `src/data/shopRaw.js` | 200 件商店總表原始列（`id｜名稱｜槽位｜來源 S/W/C/K｜價格｜白值代號 p h d s l｜aiBuyTag｜描述`） |
+| `src/data/worldRewards.js`、`src/data/worldRooms.js` | 27 個世界的首通特殊獎勵（小克初稿，`WORLD_REWARDS`）；哈基米的 19 個世界房間文字（第 4 章尾王與第 5 章整章還沒收到稿，仍是佔位） |
+| `src/data/shopRaw.js` | 240 件商店總表原始列（第 6 階 `t6_*` 是第二批回饋新增，特產綁回第 5 章世界）（`id｜名稱｜槽位｜來源 S/W/C/K｜價格｜白值代號 p h d s l｜aiBuyTag｜描述`） |
 | `src/data/legacyItems.js` | **舊版 115 件商品表（4-D-2），已停售，只供存檔相容**：舊存檔穿著的舊裝備、囤的耗材、遺物照原名稱與數值計算（`getLegacyItem`） |
 | `src/engine/gearFx.js` | 裝備被動與爆發耗材的共用解析（4-E-8）：`passiveSum`／`gearMult`／`gearDaily`（日結理智、入魔傾向）／`gearAfterRun`（出戰扣理智、隨機扣隊友理智）／`sanityHarm`（AI 防呆用） |
 | `src/data/worlds.js` | 30 世界清單 `WORLD_LIST`（id／章節／尾王）、舊 id 遷移表 `LEGACY_WORLD_IDS`／`migrateWorldId`；**4-E-8**：`WORLD_TEXT`（30 世界正式名稱與題材描述，規格編號 `chN_0X`）、`WORLD_ALIAS`（第 1 章第 1／3／5 關對應 `ghost_village`／`silent_ark`／`ember_war`）。前 3 個世界的房間文字與首通獎勵名稱已對齊新題材（`dungeons.js`） |
@@ -185,12 +186,12 @@
 npm test
 ```
 
-446 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
+455 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
 
 ## 不可違反的規則
 
 1. 這是獨立專案，與舊 AI-TRPG 專案無關；舊專案的規則（六維十技能、Prompt 快取契約等）不適用。
-2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，446 項都要通過。
+2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，455 項都要通過。
 3. 所有可調數字都要放在 `src/data/config.js`，不要寫死在引擎裡。
 4. 引擎不要碰 DOM，畫面邏輯不要寫進引擎。
 5. 機密（Token、金鑰）永遠不能進 git。
@@ -200,7 +201,7 @@ npm test
 - 推上 `main` ＝ Cloudflare Workers 自動建置並執行 `npx wrangler deploy`（建置指令留空、根目錄 `/`，後台設定不要改）。合併前先確認 `npm test` 都過。
 - `wrangler.jsonc`：assets 目錄是專案根目錄，所以 `.assetsignore` 負責把 `worker/`、`test/`、`docs/`、`CLAUDE.md` 等非網站內容擋掉；**新增遊戲需要的檔案時不要被它誤擋**（`index.html`、`styles.css`、`src/` 必須能被讀到）。`keep_vars: true` 讓後台填的 `GOOGLE_CLIENT_ID`／`PUBLIC_ORIGIN` 不會被部署洗掉；`GOOGLE_CLIENT_SECRET` 只能在後台用 Secret 類型填，**不進 git**。
 - 本機完整預覽（真的 Worker＋本機 D1，不用 Cloudflare 帳號）：`npx wrangler d1 execute zhushen-sim --local --file worker/schema.sql`，然後 `npx wrangler dev --port 8799`。
-- 部署前確認 `npm test` 446 項全過。
+- 部署前確認 `npm test` 455 項全過。
 
 ## 開發階段（現在不要做，除非我明確要求）
 
