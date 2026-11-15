@@ -3,7 +3,7 @@
 
 import { json } from "./util.js";
 import { LIMITS } from "./limits.js";
-import { loginRedirect, loginCallback, currentUser, logout, originOf, loginReady } from "./auth.js";
+import { loginRedirect, loginCallback, currentUser, logout, originOf, sameOrigin, loginReady } from "./auth.js";
 import { cleanScore, submitScore, leaderboard } from "./board.js";
 
 const bad = (error, status = 400) => json({ error }, status);
@@ -28,7 +28,7 @@ export function createApp({ fetch: doFetch = (...a) => globalThis.fetch(...a), n
     if (path === "/api/auth/google/callback" && method === "GET") return loginCallback(request, env, { doFetch, now });
 
     // 寫入類請求必須來自自己的網站（擋跨站偽造請求）
-    if (method !== "GET" && request.headers.get("origin") !== originOf(request, env)) return bad("bad_origin", 403);
+    if (method !== "GET" && !sameOrigin(request.headers.get("origin"), originOf(request, env))) return bad("bad_origin", 403);
 
     if (path === "/api/leaderboard" && method === "GET") {
       const me = await currentUser(request, env, now);

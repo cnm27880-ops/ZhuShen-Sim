@@ -229,6 +229,7 @@ test("侵蝕出征：有效 R 被放大；成功通關固定掉 k 顆侵蝕結�
       assert.equal(rep.erosionCrystals, 3);
       assert.equal(state.erosionCrystals, 3);
       assert.equal(state.maxErosion, 3);
+      assert.equal(state.dungeonStats[w.id].maxStar, 3, "記下這個副本打過的最高星級（排行榜用）");
       assert.ok(state.points > tax);
       return;
     }

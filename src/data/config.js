@@ -624,6 +624,7 @@ export const CLOUD = {
   meTimeoutMs: 4000, // 開遊戲時問「你登入了嗎」最多等幾毫秒，逾時就當作雲端功能不可用，直接進遊戲
   previewTop: 5, // 封面排行榜預覽顯示前幾名
   defaultBoard: "power", // 封面預覽與排行榜預設榜單
+  clearStarWeight: 1, // 「副本通關」榜的算法：每個通關過的副本 1 分，加上它打過的最高侵蝕星級 × 這個權重
   boards: [
     ["level", "空間等級"],
     ["clears", "副本通關"],
