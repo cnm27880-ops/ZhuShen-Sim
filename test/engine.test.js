@@ -87,7 +87,7 @@ test("標籤：戰力加成、類型相性、環境相性、加成上限", () =>
   const strong = [{ stats: { power: 100 }, tags: ["born_strong"] }]; // 戰力 +15%
   assert.equal(partyPower(strong), 115);
   assert.ok(roomPassRate(state, strong, easy) > roomPassRate(state, base, easy));
-  const fool = [{ stats: { power: 100 }, tags: ["horror_fool"] }]; // 靈異 +15%，但被標籤加成上限（±10%）夾住
+  const fool = [{ stats: { power: 100 }, tags: ["haunted_sleeper"] }]; // 靈異類 +15%，但被標籤加成上限（±10%）夾住（凶宅試睡員；恐怖片作死專家在哈基米翻譯後改成靈異 -5%）
   const foolDiff = roomPassRate(state, fool, easy) - roomPassRate(state, base, easy);
   assert.ok(Math.abs(foolDiff - Math.min(0.15, CONFIG.tags.tagBonusCap)) < 1e-9);
   const silence = ENV_TAGS.find((e) => e.id === "absolute_silence");

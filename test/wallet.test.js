@@ -57,18 +57,23 @@ test("分潤：全滅則全歸公庫；稅率可覆寫（給 4-E 流派用）", 
 });
 
 test("副本結算：總積分 = 入公庫稅額 + 存活隊員私房錢；摘要帶 tax／share", () => {
-  const state = setup(4, 5);
-  for (const s of state.samsarites) s.stats.power = 5000; // 戰力碾壓，確保通關
-  const ids = state.samsarites.map((s) => s.id);
-  const before = state.points;
-  assert.equal(startRun(state, "ghost_village", ids).ok, true);
-  let guard = 0;
-  while (state.runs.length && guard++ < 100) step(state);
-  const rep = state.lastRun;
+  // 單房通過率上限 85%、環境還會再扣，戰力碾壓也不是 100% 通關：挑第一個通關的種子（結果跟隨機數流有關，資料表一改就換種子）
+  let state, rep, before;
+  for (let seed = 5; seed < 40; seed++) {
+    state = setup(4, seed);
+    for (const s of state.samsarites) s.stats.power = 5000;
+    before = state.points;
+    assert.equal(startRun(state, "ghost_village", state.samsarites.map((s) => s.id)).ok, true);
+    let guard = 0;
+    while (state.runs.length && guard++ < 100) step(state);
+    rep = state.lastRun;
+    if (rep.success && state.samsarites.length === 4) break; // 全員存活才能套下面「每人 share」的算式
+  }
   assert.ok(rep.success && rep.reward > 0);
   const walletSum = state.samsarites.reduce((n, s) => n + s.wallet, 0);
   assert.equal(rep.tax + walletSum, rep.reward, "稅＋私房錢 = 總積分");
-  assert.equal(rep.share * state.samsarites.length + (rep.tax - Math.round(rep.reward * 0.4)), walletSum);
+  assert.equal(rep.share * state.samsarites.length, walletSum, "每人分到的 × 人數 = 私房錢總和（除不盡的零頭歸公庫）");
+  assert.ok(rep.tax >= Math.round(rep.reward * 0.4), "公庫拿到的稅不會少於稅率算出的金額（零頭另外歸公庫）");
   assert.ok(state.points > before - 1000); // 公庫只拿到稅（還要扣維持費，這裡只看它沒拿到全額）
 });
 

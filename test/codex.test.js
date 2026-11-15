@@ -27,7 +27,8 @@ test("關卡詞條：有克制資料的環境，克制與被克制各自列出",
     const rel = envRelations(e.id);
     assert.ok(Array.isArray(rel.victims) && Array.isArray(rel.counters));
   }
-  assert.ok(envRelations("mirror_world").victims.some((x) => x.tag.id === "bad_direction"));
+  assert.ok(envRelations("absolute_silence").victims.some((x) => x.tag.id === "bgm_carrier"), "絕對靜音克制 BGM 自帶者");
+  assert.ok(envRelations("absolute_silence").counters.some((x) => x.tag.id === "backstabber"), "背刺成癮者在絕對靜音佔優勢");
 });
 
 test("日誌分類：七類篩選齊全，未知種類歸日常", () => {

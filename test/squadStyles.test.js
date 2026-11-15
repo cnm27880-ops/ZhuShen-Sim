@@ -10,6 +10,7 @@ import { dailyShopping } from "../src/engine/shopping.js";
 import { enshrine } from "../src/engine/memorial.js";
 import { slotPrice, marketOf } from "../src/engine/market.js";
 import { getShopItem } from "../src/data/shopItems.js";
+import { getTag } from "../src/data/tags.js";
 import {
   appointCaptain, dailySquad, captainOf, styleOf, squadDefenseBonus, squadClashMult, squadBondMult, squadBossPowerMult,
   squadMarketMult, failSanityLoss, bondGuard, farmingPigDied, farmingRewardMult, squadAfterClear, worthOf,
@@ -186,7 +187,8 @@ test("養殖流：geneLock <= 1 肉豬陣亡 → 隊長臨時戰力 +12%、結�
   farmingPigDied(state, run, pig);
   assert.equal(run.pigDeaths, 1);
   assert.ok(effectivePower(cap) > base);
-  assert.equal(effectivePower(cap), Math.round(30 * (1 + CONFIG.squad.captainPowerPct + CONFIG.squad.farming.pigPowerPct)));
+  const tagPct = getTag("smiling_tiger").powerPct ?? 0; // 隊長帶的流派標籤本身的戰力加成（哈基米翻譯後 +5%）
+  assert.equal(effectivePower(cap), Math.round(30 * (1 + CONFIG.squad.captainPowerPct + CONFIG.squad.farming.pigPowerPct + tagPct)));
   assert.equal(farmingRewardMult(state, run), 1.2);
   farmingPigDied(state, run, { ...pig, id: 99 });
   farmingPigDied(state, run, { ...pig, id: 98 });
