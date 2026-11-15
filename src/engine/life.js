@@ -107,11 +107,32 @@ export function bioOf(state, s, extra = {}) {
   return bio;
 }
 
+/**
+ * 墓園存檔用的精簡傳記：標籤與成就只留 id（名稱、說明每次顯示時從資料表補回），空的傷勢狀態不存。
+ * 墓園每一筆都會一直留在存檔裡，是存檔裡最大的一塊，精簡後每人從約 1.1 KB 降到約 0.6 KB。
+ */
+export function compactBio(bio) {
+  const { tags, achievements, statuses, ...rest } = bio;
+  return { ...rest, tagIds: tags.map((t) => t.id), achIds: achievements.map((a) => a.id), ...(statuses?.length ? { statuses } : {}) };
+}
+
+/** compactBio 的反向：補回畫面要用的完整傳記。舊存檔的完整傳記（沒有 tagIds）原樣回傳 */
+function expandBio(bio) {
+  if (!bio.tagIds) return bio;
+  const { tagIds, achIds, ...rest } = bio;
+  return {
+    ...rest,
+    tags: tagIds.map((id) => getTag(id)).filter(Boolean).map((t) => ({ id: t.id, name: t.name, rarity: t.rarity, desc: t.desc })),
+    achievements: ACHIEVEMENTS.filter((a) => achIds.includes(a.id)).map(({ id, icon, name, desc }) => ({ id, icon, name, desc })),
+    statuses: rest.statuses ?? [],
+  };
+}
+
 /** 墓園裡第 index 筆的傳記（沒有就 null）；舊墓園紀錄沒有 bio，補一份簡版 */
 export function graveBio(state, index) {
   const g = state.graveyard?.[index];
   if (!g) return null;
-  if (g.bio) return g.bio;
+  if (g.bio) return expandBio(g.bio);
   return {
     alive: false, name: g.name, rank: g.rank, generation: 1, geneLock: 0, power: 0, sanity: 0, wallet: 0, runs: 0, kills: 0, joinedDay: 1, injury: 0,
     parentNames: [], tags: [], gear: {}, relations: { partner: null, likes: [], dislikes: [], nemeses: [], mentor: null }, children: [], achievements: [], statuses: [],

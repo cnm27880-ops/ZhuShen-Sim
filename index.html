@@ -7,6 +7,9 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <!-- 封面（同時是登入畫面）：boot() 決定要不要顯示 -->
+    <div id="cover" class="cover" style="display: flex"></div>
+    <div id="toast" role="status"></div>
     <!-- 上面：積分、時間、速度控制、暫停 -->
     <header id="topbar">
       <div class="brand"><span class="brand-orb"></span><span>主神空間<small>打工日記</small></span></div>
@@ -65,6 +68,7 @@
         <div class="act-main">
           <button class="primary big" data-action="open-dispatch">派遣</button>
           <button class="primary big" data-action="open-gacha">抽卡</button>
+          <button class="big" data-action="open-leaderboard">排行榜</button>
         </div>
         <!-- 次要功能 -->
         <div class="act-sub">

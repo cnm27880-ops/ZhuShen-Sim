@@ -615,3 +615,19 @@ export const AUTO_MODES = {
 
 // 新增暫停事件的門檻（問題 5）：傷勢 >= severeInjury、理智 < lowSanity 時各提醒一次（恢復後才會再提醒）
 export const ALERT_LEVELS = { severeInjury: 2, lowSanity: 20 };
+
+// 雲端功能（Google 登入、雲端存檔、排行榜）的前端數字。後端的上限在 worker/limits.js。
+export const CLOUD = {
+  discordUrl: "https://discord.gg/2K273vE36", // 封面與設定的 Discord 邀請連結
+  saveIntervalMs: 120_000, // 自動存檔後，最快多久同步一次到雲端（省 Workers 免費請求額度：每天 10 萬次）
+  scoreIntervalMs: 300_000, // 排行榜成績最快多久送一次（後端另有 30 秒下限）
+  meTimeoutMs: 4000, // 開遊戲時問「你登入了嗎」最多等幾毫秒，逾時就當作雲端功能不可用，直接進遊戲
+  previewTop: 5, // 封面排行榜預覽顯示前幾名
+  defaultBoard: "power", // 封面預覽與排行榜預設榜單
+  boards: [
+    ["level", "空間等級"],
+    ["clears", "副本通關"],
+    ["power", "最強輪迴者"],
+    ["life", "最長壽輪迴者"],
+  ],
+};
