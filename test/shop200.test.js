@@ -454,5 +454,5 @@ test("前 3 個世界（密室殺陣、喪屍危城、猛鬼宿舍）：房間�
     assert.equal(d.specialRewards.length, 3);
   }
   assert.equal(DUNGEONS.find((x) => x.id === "ghost_village").specialRewards[0].name, "破局者手札");
-  assert.equal(DUNGEONS.find((x) => x.id === "silent_ark").specialRewards[2].name, "桃木驅鬼釘");
+  assert.equal(DUNGEONS.find((x) => x.id === "silent_ark").specialRewards[2].name, "破銅鈴"); // 第四批：猛鬼宿舍獎勵名換成哈基米第二批稿（符紙灰／桃木釘／破銅鈴）
 });

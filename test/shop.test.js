@@ -299,3 +299,13 @@ test("收藏的「少受一級」機率有上限 50%（第三批決策 5），�
   assert.ok(collectionEffects(state).injuryShield <= 0.5 + 1e-9);
   assert.ok(DUNGEONS.flatMap((d) => d.specialRewards).filter((r) => r.effect.injuryShield).every((r) => r.desc.includes("少受一級")));
 });
+
+test("Tier 6 商品換成哈基米第二批名稱；破限鑰匙描述是折抵 40%（跟 costDiscount 一致）", () => {
+  const t29 = getShopItem("t6_29");
+  assert.equal(t29.name, "四階基因鎖鑰匙");
+  assert.ok(t29.desc.includes("折抵 40%") && !t29.desc.includes("全額"));
+  assert.equal(t29.effect.costDiscount, 0.4);
+  assert.equal(getShopItem("t6_01").name, "篡改器");
+  assert.equal(getShopItem("t6_40").name, "主神賣身契");
+  assert.equal(SHOP_ITEMS.filter((i) => i.tier === 6).length, 40);
+});

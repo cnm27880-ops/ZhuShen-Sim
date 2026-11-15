@@ -204,3 +204,10 @@ test("哈基米房間文字：30 個世界都沒有佔位字、房間數量照�
     for (const r of d.rooms) assert.ok(r.fail.includes("{name}") || d.id.startsWith("ch1_") || todo.includes(d.id) || r.fail.length > 10, `${d.id}:${r.name}`);
   }
 });
+
+test("極寒列車（ch1_05）換成哈基米的 5 間房：尾節車廂→冰軌車頂→鍋爐房→頭等餐車→引擎室，fail 都有 {name}", () => {
+  const d = DUNGEONS.find((x) => x.id === "ember_war");
+  assert.deepEqual(d.rooms.map((r) => r.name), ["尾節車廂", "冰軌車頂", "鍋爐房", "頭等餐車", "引擎室"]);
+  assert.ok(d.rooms.every((r) => r.fail.includes("{name}") && !/待命名|佔位/.test(r.pass + r.fail)));
+  assert.equal(d.name, "極寒列車");
+});

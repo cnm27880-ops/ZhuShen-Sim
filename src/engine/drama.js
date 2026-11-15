@@ -79,6 +79,8 @@ const CASTS = {
       const fans = pool.filter((s) => s.id !== b.id && affinity(state, s, b) >= 45);
       return fans.flatMap((a) => fans.filter((c) => a.id < c.id).map((c) => ({ A: a, B: b, C: c })));
     }),
+  // 三個互不相同的人（A、B、C）：替身文學、爭奪遺產的文案需要第三個人（第四批）
+  trio: (state, pool) => pool.flatMap((a) => pool.filter((b) => b.id !== a.id).flatMap((b) => pool.filter((c) => c.id > b.id && c.id !== a.id).map((c) => ({ A: a, B: b, C: c })))),
   doll: (state, pool) => recentContraband(state, pool, (r) => ["t3_38", "t4_39", "t5_39"].includes(r.itemId)), // 催生黑貨被對象發現（4-E-8：舊捏造人偶已停售，事件改綁催生黑貨）
 };
 

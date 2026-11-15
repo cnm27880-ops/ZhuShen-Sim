@@ -246,3 +246,20 @@ test("每日人際事件：隊長系統沒啟用（空間 Lv.1）不演；啟用
   assert.equal(playable(state, "bond", state.samsarites, "run").some((o) => o.ev.id === "victory_feast"), true);
   setInjury(state.samsarites[0], 0);
 });
+
+test("哈基米第二批修羅場：8 則新標題、文案要三個不同的人時選角是 trio（A、B、C 互不相同）", () => {
+  const titles = { cheat_caught: "抓姦在床", fake_pregnancy: "假孕逼宮", impostor: "替身文學", heir_claim: "滴血認親", inheritance_fight: "爭奪遺產", bestie_steal: "閨蜜背刺", undercover_exposed: "臥底曝光", backfire: "迴力鏢打臉" };
+  for (const [id, name] of Object.entries(titles)) {
+    const e = DRAMA_EVENTS.find((x) => x.id === id);
+    assert.equal(e.name, name);
+    assert.equal(e.group, "melee");
+    assert.equal(e.texts.length, 3);
+    if (e.texts.some((t) => t.includes("{C}"))) assert.ok(["triangle", "trio"].includes(e.cast), `${id} 文案有 {C}，選角要有第三個人`);
+  }
+  const state = setup(4);
+  for (const id of ["impostor", "inheritance_fight"]) {
+    const o = playable(state, "melee", state.samsarites, "day").find((x) => x.ev.id === id);
+    assert.ok(o && o.casts.length > 0);
+    for (const c of o.casts) assert.ok(c.A.id !== c.B.id && c.B.id !== c.C.id && c.A.id !== c.C.id);
+  }
+});

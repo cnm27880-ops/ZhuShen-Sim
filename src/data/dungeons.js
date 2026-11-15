@@ -115,9 +115,9 @@ const REAL_WORLDS = [
     recommendedPower: 130,
     reward: 125,
     specialRewards: [
-      { id: "ark_accelerator", name: "夜巡者的警覺", desc: "所有副本通過率 +4%。", effect: { passBonus: 0.04 } },
-      { id: "ark_prosthetic", name: "辟邪護身符", desc: "全員受傷時多 15% 機率少受一級。", effect: { injuryShield: 0.15 } },
-      { id: "ark_cutter", name: "桃木驅鬼釘", desc: "科幻副本通過率 +10%。", effect: { genreBonus: { 科幻: 0.1 } } },
+      { id: "ark_accelerator", name: "符紙灰", desc: "所有副本通過率 +4%。", effect: { passBonus: 0.04 } },
+      { id: "ark_prosthetic", name: "桃木釘", desc: "全員受傷時多 15% 機率少受一級。", effect: { injuryShield: 0.15 } },
+      { id: "ark_cutter", name: "破銅鈴", desc: "科幻副本通過率 +10%。", effect: { genreBonus: { 科幻: 0.1 } } },
     ],
     intro: "失去動力的殖民船，走廊只剩緊急照明，通風管裡有東西在爬。",
     rooms: [
@@ -138,17 +138,17 @@ const REAL_WORLDS = [
     recommendedPower: 185,
     reward: 165,
     specialRewards: [
-      { id: "ember_firebolt", name: "魔法・火焰箭", desc: "奇幻副本通過率 +10%。", effect: { genreBonus: { 奇幻: 0.1 } } },
-      { id: "ember_staff", name: "魔杖・燼木法杖", desc: "所有副本通關積分 +10%。", effect: { rewardPct: 0.1 } },
-      { id: "ember_blood", name: "魔法血統・燼裔", desc: "所有副本通過率 +5%。", effect: { passBonus: 0.05 } },
+      { id: "ember_firebolt", name: "凍黑麵包", desc: "奇幻副本通過率 +10%。", effect: { genreBonus: { 奇幻: 0.1 } } },
+      { id: "ember_staff", name: "劣質烈酒", desc: "所有副本通關積分 +10%。", effect: { rewardPct: 0.1 } },
+      { id: "ember_blood", name: "列車長帽", desc: "所有副本通過率 +5%。", effect: { passBonus: 0.05 } },
     ],
     intro: "兩座法師塔對轟了三百年，天空下的是火，地上跑的是失控的魔法生物。",
     rooms: [
-      { name: "魔法風暴荒原", pass: "抓準風暴的間隙衝過了荒原。", fail: "一道失控的雷鏈掃過，{name}被電得渾身冒煙。" },
-      { name: "傀儡哨站", pass: "趁魔像換班，拆掉了哨站的核心。", fail: "魔像一拳砸下，{name}連人帶盾飛了出去。" },
-      { name: "燃燒的城堡", pass: "在樑柱倒塌前穿過了大廳。", fail: "燃燒的吊燈砸下來，{name}被壓在下面。" },
-      { name: "敵對法師團", pass: "打斷了對方的集體詠唱，法術反噬了他們自己。", fail: "對方詠唱完成，{name}被冰槍釘在牆上。" },
-      { name: "塔頂核心", pass: "核心水晶碎裂，三百年的戰爭少了一座塔。", fail: "核心暴走，{name}被魔力洪流正面吞沒。" },
+      { name: "尾節車廂", pass: "擠滿凍瘡難民的臭氣車廂裡，小隊直接亮出武器鎮壓了暴動的搶食者，順手徵收了他們藏在床底的劣質伏特加取暖。", fail: "難民群起哄搶小隊的乾糧，混亂中 {name} 被人用凍硬的黑麵包狠狠砸中後腦勺，腫了一個大包還丟了半袋補給。" },
+      { name: "冰軌車頂", pass: "頂著零下七十度的刮骨暴風雪，小隊踩著結冰的車頂鐵皮一路狂奔，趕在隧道撞擊前全員滑進了前段天窗。", fail: "車頂結冰太滑，狂風呼嘯而過時 {name} 腳底打滑差點被吹飛，雖然死死抱住排氣管保住一命，但雙手已被凍傷脫皮。" },
+      { name: "鍋爐房", pass: "面對揮舞燒紅鐵鏟的瘋狂鍋爐工，小隊乾脆利落地把領頭者踹進煤渣堆，成功搶下通往貴族區的門禁磁卡。", fail: "交戰中不小心打爆了老舊的洩壓閥，滾燙的蒸氣瞬間噴了 {name} 一臉，全隊只能頂著滿身水泡狼狽逃竄。" },
+      { name: "頭等餐車", pass: "衣冠楚楚的貴族們還在舉杯暢飲紅酒，小隊直接掀翻長桌、一槍打爆了保安隊長的機械義眼，在尖叫聲中大搖大擺地穿堂而過。", fail: "藏在水晶吊燈上的自動防禦砲塔突然開火，{name} 閃避不及被電擊彈打得渾身焦黑抽搐，差點成了餐桌上的熟肉。" },
+      { name: "引擎室", pass: "在列車長啟動自爆程序的前一刻，小隊合力將他釘死在主控台前，一刀斬斷失控的永動核心線路，奪下了整列火車的控制權。", fail: "列車長狂笑著拉下超載拉桿，劇烈的剎車慣性讓 {name} 被甩飛出去重重撞在發紅的引擎外殼上，當場斷了兩根肋骨。" },
     ],
   },
 ];
