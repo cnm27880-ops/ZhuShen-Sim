@@ -123,6 +123,16 @@ test("id_token 檢查：iss／aud／exp／nonce 任一不對都拒絕", () => {
   assert.equal(checkIdToken("garbage", { clientId: CLIENT_ID, nonce: "n", nowMs: 0 }), null);
 });
 
+test("寫入請求：網域大小寫不同也算同一個來源（PUBLIC_ORIGIN 照 Google 後台填大寫、瀏覽器送小寫）", { skip }, async () => {
+  const w = world();
+  w.env.PUBLIC_ORIGIN = "https://Game.Test";
+  const cookie = await w.login();
+  const r = await w.call("PUT", "/api/settings", { cookie, origin: "https://game.test", body: { hidden: true } });
+  assert.equal(r.status, 200);
+  assert.equal((await w.call("PUT", "/api/settings", { cookie, origin: "https://evil.test", body: { hidden: true } })).status, 403);
+  assert.equal((await w.call("PUT", "/api/settings", { cookie, origin: "https://game.test.evil.com", body: { hidden: true } })).status, 403);
+});
+
 test("寫入請求：沒登入 401、來源不對 403", { skip }, async () => {
   const w = world();
   assert.equal((await w.call("PUT", "/api/save", { body: { data: "{}" } })).status, 401);

@@ -11,6 +11,18 @@ const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
 
 export const originOf = (request, env) => env.PUBLIC_ORIGIN ?? new URL(request.url).origin;
 
+/** 比對來源用：網域名稱大小寫視為相同（瀏覽器送出的 Origin 一律小寫，但 PUBLIC_ORIGIN 可能照 Google 後台的大小寫填成 ZhuShen-Sim） */
+export const sameOrigin = (a, b) => {
+  const norm = (o) => {
+    try {
+      return new URL(o).origin;
+    } catch {
+      return String(o ?? "");
+    }
+  };
+  return Boolean(a) && norm(a) === norm(b);
+};
+
 export const loginReady = (env) => Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
 
 export function loginRedirect(request, env) {

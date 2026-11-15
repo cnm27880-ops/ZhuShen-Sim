@@ -183,12 +183,12 @@
 npm test
 ```
 
-436 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
+437 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
 
 ## 不可違反的規則
 
 1. 這是獨立專案，與舊 AI-TRPG 專案無關；舊專案的規則（六維十技能、Prompt 快取契約等）不適用。
-2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，436 項都要通過。
+2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，437 項都要通過。
 3. 所有可調數字都要放在 `src/data/config.js`，不要寫死在引擎裡。
 4. 引擎不要碰 DOM，畫面邏輯不要寫進引擎。
 5. 機密（Token、金鑰）永遠不能進 git。
@@ -198,7 +198,7 @@ npm test
 - 推上 `main` ＝ Cloudflare Workers 自動建置並執行 `npx wrangler deploy`（建置指令留空、根目錄 `/`，後台設定不要改）。合併前先確認 `npm test` 都過。
 - `wrangler.jsonc`：assets 目錄是專案根目錄，所以 `.assetsignore` 負責把 `worker/`、`test/`、`docs/`、`CLAUDE.md` 等非網站內容擋掉；**新增遊戲需要的檔案時不要被它誤擋**（`index.html`、`styles.css`、`src/` 必須能被讀到）。`keep_vars: true` 讓後台填的 `GOOGLE_CLIENT_ID`／`PUBLIC_ORIGIN` 不會被部署洗掉；`GOOGLE_CLIENT_SECRET` 只能在後台用 Secret 類型填，**不進 git**。
 - 本機完整預覽（真的 Worker＋本機 D1，不用 Cloudflare 帳號）：`npx wrangler d1 execute zhushen-sim --local --file worker/schema.sql`，然後 `npx wrangler dev --port 8799`。
-- 部署前確認 `npm test` 436 項全過。
+- 部署前確認 `npm test` 437 項全過。
 
 ## 開發階段（現在不要做，除非我明確要求）
 
