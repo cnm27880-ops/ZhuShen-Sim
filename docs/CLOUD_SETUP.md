@@ -35,25 +35,13 @@
 3. 進入這個資料庫 →「主控台 (Console)」分頁，把 `worker/schema.sql` 的內容**整份貼進去**執行。成功後左邊會看到 5 張表：`users`、`sessions`、`saves`、`scores`、`rank_snap`。
 4. 記下「資料庫 ID (database_id)」，之後要填進 `wrangler.jsonc`。
 
-## 三、Cloudflare：讓網站載入後端（需要先確認你的專案類型）
+## 三、Cloudflare：讓網站載入後端（已完成，說明用）
 
-你的專案在 Cloudflare 是 Workers（從部署通知的網址判斷，需驗證）。要加後端，repo 裡需要一個 `wrangler.jsonc` 設定檔，內容大致是（**先不要自己加**，等確認部署指令後我再放進 repo）：
-
-```jsonc
-{
-  "name": "zhushen-sim",
-  "main": "worker/index.js",
-  "compatibility_date": "（填部署當天的日期）",
-  "assets": { "directory": ".", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
-  "d1_databases": [{ "binding": "DB", "database_name": "zhushen-sim", "database_id": "（步驟二第 4 點）" }]
-}
-```
-
-請到 Cloudflare 後台你的 `zhushen-sim` 專案 → **設定 (Settings) → 建置 (Build)**，把「建置指令」「部署指令」「根目錄」三個欄位的內容回報給我。
+repo 根目錄的 `wrangler.jsonc` 已經設定好（Worker 名稱 `zhushen-sim`、後端 `worker/index.js`、D1 綁定 `DB`、`/api/*` 交給後端、其餘網址給靜態檔）；`.assetsignore` 負責不把程式碼與文件當成公開檔案上傳。Cloudflare 後台「建置指令空白、部署指令 `npx wrangler deploy`、根目錄 `/`」不要改。**推上 `main` 就會自動部署。**
 
 ## 四、Cloudflare：填變數與密鑰
 
-專案 → 設定 → 變數和密鑰：
+**要等第一次部署完成（有後端程式碼之後）後台才看得到「變數與機密」區塊。** 專案 → 設定 → 變數與機密：
 
 | 名稱 | 類型 | 內容 |
 |---|---|---|

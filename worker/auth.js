@@ -11,7 +11,10 @@ const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
 
 export const originOf = (request, env) => env.PUBLIC_ORIGIN ?? new URL(request.url).origin;
 
+export const loginReady = (env) => Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+
 export function loginRedirect(request, env) {
+  if (!loginReady(env)) return back("/?login=failed"); // 後台還沒填 Google 憑證：回遊戲顯示登入失敗，不要把玩家送去 Google 的錯誤頁
   const state = randomToken(16);
   const nonce = randomToken(16);
   const params = new URLSearchParams({

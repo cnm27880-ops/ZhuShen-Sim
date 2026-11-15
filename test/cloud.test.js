@@ -75,6 +75,17 @@ test("登入：導向 Google 時帶 state／nonce，只要 openid profile", { sk
   assert.match(r.headers.get("set-cookie"), /__Host-oauth=.*Secure.*HttpOnly/s);
 });
 
+test("登入：後台沒填 Google 憑證時不導去 Google，回遊戲顯示失敗；/api/me 告知 loginReady", { skip }, async () => {
+  const w = world();
+  assert.equal((await (await w.call("GET", "/api/me")).json()).loginReady, true);
+  const saved = { ...w.env };
+  delete w.env.GOOGLE_CLIENT_ID;
+  assert.equal((await (await w.call("GET", "/api/me")).json()).loginReady, false);
+  const r = await w.call("GET", "/api/auth/google/login");
+  assert.equal(r.headers.get("location"), "/?login=failed");
+  Object.assign(w.env, saved);
+});
+
 test("登入：state 對不上、沒帶 cookie 都失敗；成功後 /api/me 看得到人，登出後看不到", { skip }, async () => {
   const w = world();
   const r = await w.call("GET", "/api/auth/google/callback?code=abc&state=wrong", { cookie: "__Host-oauth=s.n" });

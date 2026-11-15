@@ -102,7 +102,7 @@ let lastFollowRunId = null; // 上一次鎖定對象所在的副本 id，用來�
 
 // ───────── 雲端：封面、登入、同步、排行榜 ─────────
 let coverOpen = true; // 封面開著時遊戲不跑（boot() 決定要不要顯示封面）
-let account = { available: false, user: null }; // available：這個網站有雲端後端；user：登入的人
+let account = { available: false, loginReady: false, user: null }; // available：這個網站有雲端後端；user：登入的人
 let coverBoard = null; // 封面排行榜預覽的資料
 const lb = { board: CLOUD.defaultBoard, data: null, loading: false }; // 排行榜面板
 const syncer = cloud.createSyncer({ getUser: () => account.user, getScorePayload: () => buildScorePayload(state), onConflict: () => openSyncChoice("cloud-newer") });
@@ -1654,7 +1654,7 @@ function showToast(text) {
 function renderCover() {
   const el = $("cover");
   el.style.display = coverOpen ? "flex" : "none";
-  if (coverOpen) el.innerHTML = coverHtml({ loading: coverLoading, available: account.available, board: CLOUD.defaultBoard, boardData: coverBoard });
+  if (coverOpen) el.innerHTML = coverHtml({ loading: coverLoading, available: account.available, loginReady: account.loginReady, board: CLOUD.defaultBoard, boardData: coverBoard });
 }
 let coverLoading = true;
 
@@ -1676,7 +1676,7 @@ function leaderboardPanel() {
 const SYNC_TEXT = { idle: "尚未同步（下次自動存檔時上傳）", syncing: "同步中…", error: "同步失敗，稍後會自動重試", conflict: "雲端存檔有衝突，請按「立即同步」處理" };
 function accountSection() {
   if (!account.available) return `<h3>帳號</h3><p>這個版本還沒有連上雲端，存檔只留在這台裝置。</p>`;
-  if (!account.user) return `<h3>帳號</h3><p>訪客模式：存檔只留在這台裝置。</p><div class="modal-actions" style="justify-content:flex-start"><a class="g-btn" href="${cloud.LOGIN_URL}">使用 Google 登入</a></div>`;
+  if (!account.user) return `<h3>帳號</h3><p>訪客模式：存檔只留在這台裝置。</p>${account.loginReady ? `<div class="modal-actions" style="justify-content:flex-start"><a class="g-btn" href="${cloud.LOGIN_URL}">使用 Google 登入</a></div>` : `<p>Google 登入還在設定中。</p>`}`;
   const u = account.user;
   const status = syncer.status === "ok" && syncer.lastOkAt ? `已同步（${timeText(syncer.lastOkAt)}）` : SYNC_TEXT[syncer.status] ?? SYNC_TEXT.idle;
   return `<h3>帳號</h3>

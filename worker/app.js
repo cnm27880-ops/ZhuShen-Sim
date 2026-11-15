@@ -3,7 +3,7 @@
 
 import { json } from "./util.js";
 import { LIMITS } from "./limits.js";
-import { loginRedirect, loginCallback, currentUser, logout, originOf } from "./auth.js";
+import { loginRedirect, loginCallback, currentUser, logout, originOf, loginReady } from "./auth.js";
 import { cleanScore, submitScore, leaderboard } from "./board.js";
 
 const bad = (error, status = 400) => json({ error }, status);
@@ -37,7 +37,7 @@ export function createApp({ fetch: doFetch = (...a) => globalThis.fetch(...a), n
     }
 
     const user = await currentUser(request, env, now);
-    if (path === "/api/me" && method === "GET") return json({ user: user ? { id: user.id, name: user.name, picture: user.picture, hidden: Boolean(user.hidden) } : null });
+    if (path === "/api/me" && method === "GET") return json({ loginReady: loginReady(env), user: user ? { id: user.id, name: user.name, picture: user.picture, hidden: Boolean(user.hidden) } : null });
     if (!user) return bad("unauthorized", 401);
 
     if (path === "/api/logout" && method === "POST") return logout(request, env);

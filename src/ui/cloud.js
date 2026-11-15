@@ -62,11 +62,11 @@ async function api(path, { method = "GET", body, timeoutMs = 15000 } = {}) {
 
 export const LOGIN_URL = "/api/auth/google/login";
 
-/** 問後端「我是誰」。available = 這個網站有雲端後端；user = 目前登入的人（沒登入是 null） */
+/** 問後端「我是誰」。available = 這個網站有雲端後端；loginReady = Google 憑證已設定好；user = 目前登入的人（沒登入是 null） */
 export async function loadMe() {
   const r = await api("/api/me", { timeoutMs: CLOUD.meTimeoutMs });
-  if (!r.ok || !r.data || !("user" in r.data)) return { available: false, user: null };
-  return { available: true, user: r.data.user };
+  if (!r.ok || !r.data || !("user" in r.data)) return { available: false, loginReady: false, user: null };
+  return { available: true, loginReady: r.data.loginReady !== false, user: r.data.user }; // loginReady：後台已填好 Google 憑證
 }
 
 export const fetchCloudSave = async (metaOnly = false) => {

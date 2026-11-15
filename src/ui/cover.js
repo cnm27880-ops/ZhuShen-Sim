@@ -9,11 +9,11 @@ const GOOGLE_G = `<svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="t
 const INTRO = ["管理輪迴者，每個人都有自己的人生", "派他們下副本，賭他們活著回來", "看他們談戀愛、吵架、生小孩", "還有一個每天想搞你的主神"];
 
 /** loading = 還在問後端你登入了沒；available = 這個網站有雲端後端 */
-export function coverHtml({ loading, available, board, boardData }) {
+export function coverHtml({ loading, available, loginReady, board, boardData }) {
   if (loading) return `<div class="cover-card"><div class="cover-orb"></div><p class="cover-tag">載入中…</p></div>`;
-  const google = available
+  const google = available && loginReady
     ? `<a class="g-btn" href="${LOGIN_URL}">${GOOGLE_G}<span>使用 Google 登入</span></a>`
-    : `<button class="g-btn" disabled>${GOOGLE_G}<span>使用 Google 登入</span></button><p class="cover-hint">雲端功能尚未啟用，先用訪客模式玩。</p>`;
+    : `<button class="g-btn" disabled>${GOOGLE_G}<span>使用 Google 登入</span></button><p class="cover-hint">${available ? "Google 登入還在設定中，先用訪客模式玩。" : "雲端功能尚未啟用，先用訪客模式玩。"}</p>`;
   return `<div class="cover-card">
     <div class="cover-orb"></div>
     <h1>主神空間<span class="gold">打工</span>日記</h1>

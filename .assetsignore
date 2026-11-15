@@ -1,0 +1,17 @@
+# assets 目錄是整個專案根目錄，下面這些不是網站內容，不要當成公開靜態檔上傳
+# （語法跟 .gitignore 一樣；遊戲需要的 index.html、styles.css、src/ 不能放進來）
+.git
+.github
+node_modules
+worker
+test
+scripts
+docs
+server.mjs
+package.json
+package-lock.json
+wrangler.jsonc
+.assetsignore
+CLAUDE.md
+README.md
+.wrangler
