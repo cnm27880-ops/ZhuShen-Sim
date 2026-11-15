@@ -888,10 +888,11 @@ function dispatch() {
   if (party.length > 0) {
     const rate = Math.round(roomPassRate(state, party, dungeon, null, 0, isMand ? 0 : null) * 100);
     const rawChance = isMand ? chanceAtLeast(roomCount(dungeon), roomsToClear(dungeon), roomPassRate(state, party, dungeon, null, 0, 0)) : clearChance(state, party, dungeon);
-    const { pct: chance, failPct } = chanceDisplay(rawChance);
+    const { pct: chance, failPct, capped } = chanceDisplay(rawChance);
     const deathPct = Math.round(deathRisk(state, party, dungeon) * 100);
     const cls = chance >= 75 ? "good" : chance >= 50 ? "warn" : "bad";
-    summary = `小隊戰力 <b>${partyPower(party)}</b> / 推薦 ${dungeon.recommendedPower}・預估通關率 <b class="${cls}">${chance}%</b>・戰死風險 <b class="${deathPct >= 20 ? "bad" : deathPct >= 8 ? "warn" : "good"}">${deathPct}%</b>`;
+    summary = `小隊戰力 <b>${partyPower(party)}</b> / 推薦 ${dungeon.recommendedPower}・預估通關率 <b class="${cls}">${chance}%${capped ? "＋" : ""}</b>・戰死風險 <b class="${deathPct >= 20 ? "bad" : deathPct >= 8 ? "warn" : "good"}">${deathPct}%</b>`;
+    summary += `<br /><small class="muted">單房通過率 ${rate}%・${roomCount(dungeon)} 房要過 ${roomsToClear(dungeon)} 房。單房不是必過；預估不含途中受傷、戰死、內鬥的連鎖影響，實際會略有出入。</small>`;
     const enemyPairs = [];
     for (let i = 0; i < party.length; i++) {
       for (let j = i + 1; j < party.length; j++) if (areEnemies(state, party[i], party[j])) enemyPairs.push(`${party[i].name} × ${party[j].name}`);

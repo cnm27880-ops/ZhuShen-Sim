@@ -120,6 +120,8 @@ export const CONFIG = {
     intel: { start: -0.03, perRun: 0.015, max: 0.09 },
     minPassRate: 0.05,
     maxPassRate: 0.95,
+    // 派遣畫面「預估通關率」最高顯示幾 %（2026-11 露葵：單房 85% 不是必過、還要 N 房過 K 房，不該顯示 99%）。只影響顯示，不影響實際判定
+    chanceDisplayCap: 95,
     // 房間失敗時，受害者傷勢「加重幾級」的機率權重（計畫只寫「隨機決定」）
     injuryRoll: [
       { levels: 1, weight: 65 },

@@ -3,12 +3,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { chanceDisplay } from "../src/engine/dungeon.js";
+import { CONFIG as CFG } from "../src/data/config.js";
 
-test("問題 6：通關率顯示最高 99%，並附失敗機率", () => {
-  assert.deepEqual(chanceDisplay(0.9), { pct: 90, failPct: 10 });
-  assert.deepEqual(chanceDisplay(0.9996), { pct: 99, failPct: 1 }, "99.96% 不能顯示成 100%");
-  assert.deepEqual(chanceDisplay(1), { pct: 99, failPct: 1 });
-  assert.deepEqual(chanceDisplay(0), { pct: 0, failPct: 100 });
+test("問題 6：通關率顯示有上限（CONFIG.dungeon.chanceDisplayCap，預設 95），並附失敗機率", () => {
+  const cap = CFG.dungeon.chanceDisplayCap;
+  assert.equal(cap, 95);
+  assert.deepEqual(chanceDisplay(0.9), { pct: 90, failPct: 10, capped: false });
+  assert.deepEqual(chanceDisplay(0.9996), { pct: cap, failPct: 100 - cap, capped: true }, "99.96% 不能顯示成 100%");
+  assert.deepEqual(chanceDisplay(0.99), { pct: cap, failPct: 100 - cap, capped: true }, "98～99% 也只顯示上限");
+  assert.deepEqual(chanceDisplay(1), { pct: cap, failPct: 100 - cap, capped: true });
+  assert.deepEqual(chanceDisplay(0), { pct: 0, failPct: 100, capped: false });
   assert.equal(chanceDisplay(0.756).pct, 75, "向下取整，不樂觀進位");
 });
 
