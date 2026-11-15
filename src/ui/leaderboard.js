@@ -8,7 +8,7 @@ const BOARD_NAME = Object.fromEntries(CLOUD.boards);
 /** 這個榜單的主要數字與副標題（最強／最長壽輪迴者的副標題是那位輪迴者的名字） */
 export function boardValue(e, board) {
   if (board === "level") return { main: `Lv.${e.level}`, sub: `${e.roster} 位輪迴者` };
-  if (board === "clears") return { main: `${e.clears} 次`, sub: `Lv.${e.level}` };
+  if (board === "clears") return { main: `${e.clears} 個副本`, sub: `Lv.${e.level}` };
   if (board === "power") return { main: String(e.power), sub: e.powerName };
   return { main: `${e.life} 天`, sub: e.lifeName };
 }

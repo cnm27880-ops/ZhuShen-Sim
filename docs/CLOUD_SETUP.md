@@ -68,7 +68,7 @@ npm run dev:cloud
 | `PUT /api/save` | 寫存檔，`{data, baseUpdatedAt, force?}`；版本對不上回 409 |
 | `PUT /api/score` | 更新成績，`{level, roster, clears, power, powerName, life, lifeName}`，每項只增不減，30 秒內不能重送。`power`／`powerName` = 歷來最強輪迴者的戰力與名字；`life`／`lifeName` = 歷來最長壽輪迴者的存活天數與名字 |
 | `PUT /api/settings` | `{hidden: true}` = 不上排行榜 |
-| `GET /api/leaderboard?board=level\|clears\|power\|life` | 四個榜單（空間等級、副本通關數、最強輪迴者、最長壽輪迴者；總積分榜已取消）：前 20 名＋自己的名次＋相對昨天的升降 |
+| `GET /api/leaderboard?board=level\|clears\|power\|life` | 四個榜單（空間等級、副本通關數〔通關過幾個不同副本〕、最強輪迴者、最長壽輪迴者；總積分榜已取消）：前 20 名＋自己的名次＋相對昨天的升降 |
 
 ## 已知限制
 
