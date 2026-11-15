@@ -896,7 +896,9 @@ function shop() {
           <small>戰力 ${effectivePower(s)}・理智 ${s.stats.sanity}</small></div>`)
         .join("")
     : `<div class="empty">主神空間裡沒有人可以用。</div>`;
-  const picker = `<h3>要給誰用？</h3>
+  const picker = modal.lockTarget
+    ? `<div class="shop-lock">🎯 收件人：<b>${target ? `${target.name}` : "（沒有人）"}</b> <small>已鎖定；要換人請回去點別的小人</small></div>`
+    : `<h3>要給誰用？</h3>
     <div class="option-list">${people}</div>`;
 
   let body = "";
@@ -907,9 +909,10 @@ function shop() {
   return `<h3>商店 <small>Tier ${tier}</small></h3>
     <p>公庫 <b>${state.points}</b>・${next ? `再花 <b>${next.remaining}</b> 分解鎖 Tier ${next.tier}` : "已全部解鎖"}</p>
     <div class="tabs">${tabs}</div>
-    ${tab === "relics" || (tab === "shop" && ["medicine", "skill", "special"].includes(modal.cat ?? "medicine")) ? "" : picker}
+    ${tab === "relics" || (tab === "shop" && !modal.lockTarget && ["medicine", "skill", "special"].includes(modal.cat ?? "medicine")) ? "" : picker}
+    ${modal.note ? `<div class="summary">${modal.note}</div>` : ""}
     ${body}
-    <div class="modal-actions">${closeButton}</div>`;
+    <div class="modal-actions">${modal.lockTarget ? `<button data-action="back-to-profile">↩ 回檔案頁</button>` : ""}${closeButton}</div>`;
 }
 
 const STAT_LABEL = { power: "戰力", hp: "生命", defense: "防禦", speed: "速度", luck: "氣運" };
@@ -979,10 +982,11 @@ function shopMedicineTab(tier) {
         return `<button class="${n === 1 ? "primary" : ""}" data-action="buy-stock" data-id="${item.id}" data-qty="${n}" ${c.ok ? "" : `disabled title="${c.reason ?? ""}"`}>${locked ? "🔒" : `買 ${n}（${item.price * n}）`}</button>`;
       })
       .join("");
+    const useBtn = modal.lockTarget && !locked ? `<button class="primary" data-action="buy-use-stock" data-id="${item.id}" ${checkBuyStock(state, item.id, 1).ok ? "" : "disabled"}>買 1 並給他用</button>` : "";
     return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
       <span class="option-icon">${item.icon}</span>
       <span class="grow"><b>${item.name}</b> <small>現有 <b>${stockCount(state, item.id)}</b></small></span>
-      <span class="slot-actions">${buttons}</span>
+      <span class="slot-actions">${useBtn}${buttons}</span>
     </div>`;
   };
   const rest = all.filter((i) => !common.includes(i));
@@ -1069,8 +1073,8 @@ function detail() {
     return gb ? bioCard(gb, null) : `<h3>查無此人</h3><div class="modal-actions">${closeButton}</div>`;
   }
   const who = getSamsarite(state, modal.id);
-  if (who && (modal.view ?? "bio") === "bio") return bioCard(bioOf(state, who), who);
-  return manageDetail();
+  if (who) return bioCard(bioOf(state, who), who);
+  return `<h3>查無此人</h3><p>這個人已經不在了。</p><div class="modal-actions">${closeButton}</div>`;
 }
 
 const SLOT_ICON = { weapon: "", armor: "", accessory: "", bloodline: "" }; // 傳記不用 emoji，欄位名稱本身就夠清楚
@@ -1091,9 +1095,17 @@ function bioStory(b) {
   return parts.join("");
 }
 
-/** 人物傳記卡（功能 5）。s 有值 = 還活著、可轉移裝備；null = 墓園裡的人（只看，附復活入口） */
+/** 每個裝備欄的一行規則（裝備欄旁邊顯示，文字要短） */
+const SLOT_RULE = {
+  weapon: "只能裝 1 把，買新的會換掉舊的，不能疊加",
+  armor: "只能穿 1 件，買新的會換掉舊的，不能疊加",
+  accessory: "只能戴 1 件，買新的會換掉舊的，不能疊加",
+  bloodline: "血統只能套用一種，不能疊加（新的會覆蓋舊的）",
+};
+
+/** 人物檔案頁（功能 5，2026-11 改版）。s 有值 = 還活著；null = 墓園裡的人（只看，附復活入口） */
 function bioCard(b, s) {
-  const chips = b.tags.length ? b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}" title="${(t.desc ?? "").replace(/"/g, "&quot;")}">${t.rarity}｜${t.name}</span>`).join("") : `<small>（沒有標籤）</small>`;
+  const chips = b.tags.length ? b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}">${t.rarity}｜${t.name}</span>`).join("") : `<small>（沒有標籤）</small>`;
   const rel = b.relations;
   const relRows = [
     rel.partner ? `<div>${rel.partner.status === "soulmate" ? "靈魂伴侶" : "戀人"}：<b>${rel.partner.name}</b></div>` : "",
@@ -1106,8 +1118,9 @@ function bioCard(b, s) {
   const gearRows = Object.entries(SHOP_SLOT_LABELS)
     .map(([slot, label]) => {
       const name = b.gear[slot];
-      const move = canMove && name ? `<button data-action="gear-pick" data-slot="${slot}" ${modal.transfer?.slot === slot ? 'class="active"' : ""}>卸下並轉給…</button>` : "";
-      return `<div class="bio-gear"><span>${SLOT_ICON[slot]} ${label}</span><b class="${name ? "" : "muted"}">${name ?? "（空）"}</b>${move}</div>`;
+      const bound = s?.soulbound?.[slot] ? ` <span class="badge-bound">🔒綁定</span>` : "";
+      const move = canMove && name ? `<button class="pill${modal.transfer?.slot === slot ? " active" : ""}" data-action="gear-pick" data-slot="${slot}">卸下並轉給…</button>` : "";
+      return `<div class="bio-gear"><div class="bio-gear-main"><span class="bio-gear-slot">${label}</span><b class="${name ? "" : "muted"}">${name ?? "（空）"}</b>${bound}${move}</div><small class="slot-rule">${SLOT_RULE[slot] ?? ""}</small></div>`;
     })
     .join("");
   let transfer = "";
@@ -1127,6 +1140,34 @@ function bioCard(b, s) {
   const revive = b.alive
     ? ""
     : `<div class="summary bio-revive"><b>復活</b><br /><small>使用氪金道具可以讓他回來。道具名稱：—　價格：—（尚未決定）</small><br /><button disabled title="道具與價格還沒決定，尚未開放">使用氪金道具復活（尚未開放）</button></div>`;
+
+  // 活著才有的區塊：成長（強化／突破直接在這裡做）、裝備買賣、操作
+  let growth = "";
+  let gearActions = "";
+  let ops = "";
+  if (s) {
+    const gain = enhanceGain(s);
+    const enh = checkEnhance(state, s.id);
+    const brk = checkBreakGene(state, s.id);
+    const cap = enhanceCapOf(s);
+    const pct = cap ? Math.min(100, Math.round(((s.enhanceCount ?? 0) / cap) * 100)) : 0;
+    const home = s.location === "space";
+    growth = `<section class="bio-sec sec-mint"><h4>💪 成長</h4>
+      <div class="bio-prog"><span>強化 <b>${s.enhanceCount ?? 0}/${cap}</b> 次</span><span class="bar"><i style="width:${pct}%"></i></span><span>基因鎖 <b>第 ${s.geneLock ?? 0} 階</b>／最高 ${maxGeneOf(s)} 階</span></div>
+      <small>每次強化：戰力 +${gain.power}、生命 +${gain.hp}、防禦／速度／運氣各 +${gain.defense}（成長倍率 ×${RANKS[s.rank].growthMult}）</small>
+      <div class="pill-row">
+        <button class="pill primary" data-action="enhance" data-id="${s.id}" ${enh.ok ? "" : "disabled"} title="${enh.ok ? "" : enh.reason}">💪 強化${enh.cost ? `（${enh.cost} 分）` : ""}</button>
+        <button class="pill primary" data-action="break-gene" data-id="${s.id}" ${brk.ok ? "" : "disabled"} title="${brk.ok ? "" : brk.reason}">🧬 突破基因鎖${brk.cost ? `（${brk.cost} 分）` : ""}</button>
+      </div>
+      ${enh.ok ? "" : `<small class="muted">強化：${enh.reason}</small>`}${brk.ok ? "" : `<small class="muted">基因鎖：${brk.reason}</small>`}
+    </section>`;
+    gearActions = `<div class="pill-row">${home ? `<button class="pill primary" data-action="shop-for" data-id="${s.id}">🛒 買道具給他</button>` : `<small class="muted">人在副本或催熟艙，現在不能買東西給他。</small>`}</div>`;
+    ops = `<section class="bio-sec"><h4>⚙️ 操作</h4><div class="pill-row">
+      <button class="pill" data-action="toggle-lock" data-id="${s.id}">${s.locked ? "🔓 解除鎖定" : "🔒 鎖定（不自動派遣）"}</button>
+      <button class="pill" data-action="toggle-follow" data-id="${s.id}">${s.id === state.settings.followId ? "👁️ 取消鎖定視角" : "👁 鎖定視角"}</button>
+      <button class="pill danger" data-action="ask-recycle" data-id="${s.id}" ${home ? "" : "disabled"}>♻️ 回收（+${RANKS[s.rank].recycleRefund} 分）</button>
+    </div></section>`;
+  }
   return `<div class="bio ${b.alive ? "" : "bio-dead"}">
     <div class="bio-head bio-rank-${b.rank}">
       <div class="bio-avatar">${b.name.slice(0, 1)}</div>
@@ -1134,33 +1175,32 @@ function bioCard(b, s) {
         <div class="bio-sub">第 ${b.generation} 代・基因鎖 ${b.geneLock} 階・出征 ${b.runs} 場</div></div>
     </div>
     ${statuses ? `<div class="bio-status">${statuses}</div>` : ""}
-    <p class="bio-story">${bioStory(b)}</p>
     <div class="bio-grid">
-      <div><small>戰力</small><b>${b.power}</b></div><div><small>理智</small><b>${Math.round(b.sanity)}</b></div>
-      <div><small>私房錢</small><b>${b.wallet}</b></div><div><small>階級</small><b>${b.rank}</b></div>
+      <div class="sec-cream"><small>戰力</small><b>${b.power}</b></div><div class="sec-coral"><small>理智</small><b>${Math.round(b.sanity)}</b></div>
+      <div class="sec-mint"><small>私房錢</small><b>${b.wallet}</b></div><div class="sec-lav"><small>階級</small><b>${b.rank}</b></div>
     </div>
-    <h4>標籤</h4><div class="bio-tags">${chips}</div>
-    <h4>關係</h4><div class="bio-rel">${relRows.join("")}</div>
-    <h4>裝備</h4><div>${gearRows}</div>${transfer}
+    <p class="bio-story">${bioStory(b)}</p>
+    <section class="bio-sec"><h4>🏷️ 標籤</h4><div class="bio-tags">${chips}</div></section>
+    ${growth}
+    <section class="bio-sec sec-cream"><h4>🎒 裝備</h4><div>${gearRows}</div>${transfer}${gearActions}</section>
     ${modal.note ? `<div class="summary">${modal.note}</div>` : ""}
-    <h4>一生大事記</h4><div class="bio-timeline">${timeline}</div>
-    <h4>子女與血脈</h4><div>${b.parentNames.length ? `父母：${b.parentNames.join("、")}<br />` : ""}子女：${kids}</div>
-    <h4>成就</h4><div class="bio-achs">${ach}</div>
+    ${ops}
+    <section class="bio-sec"><h4>💞 關係</h4><div class="bio-rel">${relRows.join("")}</div></section>
+    <section class="bio-sec"><h4>📜 一生大事記</h4><div class="bio-timeline">${timeline}</div></section>
+    <section class="bio-sec"><h4>👶 子女與血脈</h4><div>${b.parentNames.length ? `父母：${b.parentNames.join("、")}<br />` : ""}子女：${kids}</div></section>
+    <section class="bio-sec"><h4>🏆 成就</h4><div class="bio-achs">${ach}</div></section>
+    ${s ? `<details class="bio-more"><summary>📊 詳細數值（生命／防禦／維持費／標籤效果…）</summary>${statsTable(s)}<h4>人際關係（雙向數字）</h4><div class="rel-list">${relationRows(s)}</div></details>` : ""}
     ${revive}
-    <div class="modal-actions">${s ? `<button data-action="view-manage" data-id="${s.id}">管理（強化／突破／鎖定／回收）</button>` : `<button data-action="open-settings">↩ 回設定</button>`}${closeButton}</div>
+    <div class="modal-actions">${s ? "" : `<button data-action="open-settings">↩ 回設定</button>`}${closeButton}</div>
   </div>`;
 }
 
-function manageDetail() {
-  const s = getSamsarite(state, modal.id);
-  if (!s) return `<h3>查無此人</h3><p>這個人已經不在了。</p><div class="modal-actions">${closeButton}</div>`;
+/** 詳細數值表（收在檔案頁最下面的折疊區；強化／突破／鎖定／回收已搬到檔案頁各區） */
+function statsTable(s) {
   const home = s.location === "space";
   const gene = geneTierOf(s);
   const gain = enhanceGain(s);
-  const enh = checkEnhance(state, s.id);
-  const brk = checkBreakGene(state, s.id);
-  return `<h3>${rankBadge(s.rank)} ${s.name} <button data-action="view-bio" data-id="${s.id}">📖 人物傳記</button></h3>
-    <table class="stats">
+  return `<table class="stats">
       <tr><td>狀態</td><td>${s.location === "pod" ? `🍼 催熟艙（還要 ${s.podDaysLeft} 天）` : `${home ? "主神空間" : "副本中"}・${injuryLabel(s)}`}</td></tr>
       ${s.parents ? `<tr><td>家長</td><td>${parentNames(state, s).join("、") || "（已不在世）"}${s.inheritedTags?.length ? `<br /><small>繼承標籤：${s.inheritedTags.map((id) => getTag(id)?.name ?? id).join("、")}</small>` : ""}</td></tr>` : ""}
       ${s.mood || s.vacationDays > 0 || wishesOf(state, s.id).length ? `<tr><td>心情／許願</td><td>${statusExtras(s).replace("<br />", "")}</td></tr>` : ""}
@@ -1184,20 +1224,7 @@ function manageDetail() {
         .filter(Boolean)
         .map((t) => `<div><span class="tag-chip tag-${t.rarity}">${t.rarity}・${t.name}</span> <small>${t.desc}${t.pending ? `<br /><i>（${t.pending}）</i>` : ""}<br />效果：${describeTag(t).effects}<br />${describeTag(t).lead}</small></div>`)
         .join("")}</td></tr>
-    </table>
-    <h3 style="margin-top:12px">💞 人際關係</h3>
-    <div class="rel-list">${relationRows(s)}</div>
-    <p style="margin-top:12px"><small>💪 強化：${enh.ok ? `可以強化（${enh.cost} 分）` : enh.reason}<br />🧬 基因鎖：${brk.ok ? `可以突破到第 ${brk.next} 階（${brk.cost} 分）` : brk.reason}</small></p>
-    <div class="modal-actions">
-      <button class="primary" data-action="enhance" data-id="${s.id}" ${enh.ok ? "" : "disabled"} title="${enh.ok ? "" : enh.reason}">💪 強化${enh.cost ? `（${enh.cost} 分）` : ""}</button>
-      <button class="primary" data-action="break-gene" data-id="${s.id}" ${brk.ok ? "" : "disabled"} title="${brk.ok ? "" : brk.reason}">🧬 突破基因鎖${brk.cost ? `（${brk.cost} 分）` : ""}</button>
-    </div>
-    <div class="modal-actions">
-      <button class="danger" data-action="ask-recycle" data-id="${s.id}" ${home ? "" : "disabled"}>♻️ 推進回收爐（+${RANKS[s.rank].recycleRefund} 分）</button>
-      <button data-action="toggle-follow" data-id="${s.id}">${s.id === state.settings.followId ? "👁️ 取消鎖定視角" : "👁 鎖定視角"}</button>
-      <button data-action="toggle-lock" data-id="${s.id}">${s.locked ? "🔓 解除鎖定" : "🔒 鎖定（不參與自動派遣）"}</button>
-      ${closeButton}
-    </div>`;
+    </table>`;
 }
 
 /** 一對關係的文字：等級／狀態、雙向好感、雙向仇恨 */
@@ -1976,7 +2003,23 @@ const actions = {
     saveGame();
   },
   "shop-target"(el) {
+    if (modal.lockTarget) return; // 從小人檔案頁進來的商店：收件人鎖定，不能在這裡換人
     modal.targetId = Number(el.dataset.id);
+  },
+  "shop-for"(el) {
+    // 小人檔案頁 →「買道具給他」：收件人固定，預設先看裝備
+    modal = { name: "shop", tab: "shop", cat: "gear", targetId: Number(el.dataset.id), victimId: null, lockTarget: true, fromId: Number(el.dataset.id) };
+  },
+  "back-to-profile"() {
+    modal = { name: "detail", id: modal.fromId, view: "bio" };
+  },
+  "buy-use-stock"(el) {
+    // 鎖定收件人時買藥：買 1 份直接用在他身上
+    const b = buyStock(state, el.dataset.id, 1);
+    if (!b.ok) return void alert(b.reason);
+    const u = useStock(state, el.dataset.id, modal.targetId);
+    modal.note = u.ok ? `✅ ${u.note}` : `<span class="bad">${u.reason}（已先放進倉庫）</span>`;
+    saveGame();
   },
   buy(el) {
     const result = buyItem(state, el.dataset.id, modal.targetId);

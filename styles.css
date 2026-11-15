@@ -765,3 +765,29 @@ button.primary:disabled { background: #f1f1f1; color: #6b6b6b; border-color: #e6
 .wish-row.urgent { background: #ffe4dc; }
 .wish-row small { color: var(--muted); }
 .wish-time.bad { color: #dc2626; font-weight: 700; }
+
+/* ── 小人檔案頁（2026-11 改版：白底、膠囊按鈕、粉彩區塊） ── */
+.bio-sec { margin: 12px 0; padding: 14px 16px; border-radius: 20px; background: #fff; border: 1px solid var(--line); }
+.bio-sec h4 { margin: 0 0 8px; font-size: 15px; }
+.bio-sec.sec-mint { background: #dff5e8; border-color: transparent; }
+.bio-sec.sec-cream { background: #fff6d6; border-color: transparent; }
+.bio-grid > .sec-cream { background: #fff6d6; } .bio-grid > .sec-coral { background: #ffe4dc; } .bio-grid > .sec-mint { background: #dff5e8; } .bio-grid > .sec-lav { background: #ebe6ff; }
+.bio-grid > div { border-radius: 16px; }
+.bio-prog { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 6px; font-size: 14px; }
+.bio-prog .bar { flex: 1 1 120px; height: 8px; border-radius: 99px; background: rgba(255,255,255,.8); overflow: hidden; }
+.bio-prog .bar i { display: block; height: 100%; background: #2e9e66; border-radius: 99px; }
+.pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+button.pill { min-height: 40px; padding: 8px 18px; border-radius: 999px; border: 1px solid #e3e3e3; background: #fff; color: #111; font-weight: 600; cursor: pointer; }
+button.pill:hover:not(:disabled) { border-color: #111; }
+button.pill.primary { background: #111; color: #fff; border-color: #111; }
+button.pill.danger { color: #dc2626; border-color: #f5c2c2; }
+button.pill:disabled { opacity: .45; cursor: not-allowed; }
+.bio-gear { padding: 6px 0; border-top: 1px dashed rgba(0,0,0,.08); }
+.bio-gear:first-child { border-top: 0; }
+.bio-gear-main { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bio-gear-slot { min-width: 44px; padding: 2px 10px; border-radius: 99px; background: #fff; font-size: 13px; font-weight: 700; }
+.slot-rule { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.bio-more { margin: 12px 0; padding: 10px 14px; border-radius: 16px; border: 1px solid var(--line); }
+.bio-more summary { cursor: pointer; font-weight: 600; }
+.shop-lock { margin: 8px 0; padding: 10px 16px; border-radius: 99px; background: #fff6d6; }
+.bio-sec h4 { margin: 0 0 8px; padding: 0; border: 0; }
