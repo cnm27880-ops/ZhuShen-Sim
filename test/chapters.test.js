@@ -195,8 +195,8 @@ test("Phase 4-B 校正後的副本曲線：尾王是章內最高 R／獎勵；�
   }
 });
 
-test("哈基米房間文字：已接進來的 19 個世界沒有佔位字、房間數量照章節；沒稿的 7 個世界仍是佔位（等稿）", () => {
-  const todo = ["ch4_boss", "ch5_01", "ch5_02", "ch5_03", "ch5_04", "ch5_05", "ch5_boss"];
+test("哈基米房間文字：30 個世界都沒有佔位字、房間數量照章節", () => {
+  const todo = [];
   for (const d of DUNGEONS) {
     assert.equal(d.rooms.length, CONFIG.dungeon.chapters[d.chapter - 1].rooms, d.id);
     const placeholder = d.rooms.some((r) => r.name.includes("待命名") || r.pass.includes("佔位文字"));
