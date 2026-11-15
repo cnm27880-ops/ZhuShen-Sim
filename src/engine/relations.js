@@ -243,11 +243,23 @@ export function partnerWeight(state, a, o) {
 /** 在家的人之間「快要突破」的有向配對（好感接近告白線、仇恨接近陰謀線／死敵線）：[{ a, b }] */
 export function nearBreakthroughPairs(state) {
   const home = state.samsarites.filter((s) => s.location === "space");
+  // 效能（人多時 n³ 會卡死）：沒有任何關係紀錄的配對好感仇恨都是 0、也沒有狀態，不可能「快要突破」，
+  // 所以只掃關係矩陣裡真的有紀錄的配對；再依「在家名冊順序」排好，結果與全掃 n×n 完全一樣（挑人的亂數順序不變）。
+  const index = new Map(home.map((s, i) => [s.id, i]));
+  const keys = new Set();
+  for (const key in state.relations ?? {}) {
+    const cut = key.indexOf(">");
+    const ia = index.get(Number(key.slice(0, cut)));
+    const ib = index.get(Number(key.slice(cut + 1)));
+    if (ia === undefined || ib === undefined || ia === ib) continue;
+    keys.add(ia * home.length + ib);
+    keys.add(ib * home.length + ia); // 狀態（戀人等）兩個方向都讀得到，所以兩個方向都列入候選
+  }
   const out = [];
-  for (const a of home) {
-    for (const b of home) {
-      if (a.id !== b.id && partnerWeight(state, a, b) - baseWeight(state, a, b) > 0) out.push({ a, b });
-    }
+  for (const k of [...keys].sort((x, y) => x - y)) {
+    const a = home[Math.floor(k / home.length)];
+    const b = home[k % home.length];
+    if (partnerWeight(state, a, b) - baseWeight(state, a, b) > 0) out.push({ a, b });
   }
   return out;
 }

@@ -74,6 +74,18 @@ export function useStock(state, itemId, targetId) {
   return { ok: true, note };
 }
 
+/** 一鍵批量使用：把這件物資依需求高低餵給所有「有需求、能用」的人，直到用完或沒人需要 */
+export function useStockMany(state, itemId) {
+  const fed = [];
+  for (const { s, need, block } of stockTargets(state, itemId)) {
+    if (block || need <= 0) continue;
+    if (stockCount(state, itemId) < 1) break;
+    const r = useStock(state, itemId, s.id);
+    if (r.ok) fed.push(s.name);
+  }
+  return { fed, left: stockCount(state, itemId) };
+}
+
 /**
  * 這個人對這件物資的「需求程度」（越大越需要，0 = 用不到）：理智藥看缺多少理智、傷藥看傷勢等級。
  * 物資面板用它把最需要的人排最前面。
