@@ -910,18 +910,8 @@ button.pill:disabled { opacity: .45; cursor: not-allowed; }
 /* 詞條庫：開著的小人檔案頁裡，他身上的詞條置頂並標底色 */
 .cx-item.pinned { background: #fff6d6; border-color: #e5c84f; }
 
-/* ── 2026-11 介面整理：頂欄單行、操作列單行、小人卡精緻化 ── */
+/* ── 2026-11 介面整理：操作列單行、小人卡精緻化（頂欄維持原樣） ── */
 @media (min-width: 1100px) {
-  #topbar { flex-wrap: nowrap; gap: 0 18px; }
-  #topbar .tb-group { flex-wrap: nowrap; gap: 18px; white-space: nowrap; }
-  #topbar .tb-group + .tb-group { padding-left: 18px; }
-  /* 每個資源「標籤 + 數值」排成同一行 */
-  #topbar .stat { flex-direction: row; align-items: center; gap: 8px; min-width: 0; }
-  #topbar .stat-label { font-size: 12px; }
-  #topbar .stat-value { font-size: 20px; }
-  #topbar .stat-value.small { font-size: 15px; }
-  #topbar .stat #day-bar { margin-top: 0; width: 110px; }
-  #topbar .stat:has(#day-bar) { flex-direction: row-reverse; }
   #actions { flex-wrap: nowrap; gap: 0 16px; }
   #actions .act-main, #actions .act-sub, #actions .act-alert { flex-wrap: nowrap; gap: 8px; }
   #actions .act-sub, #actions .act-alert { padding-left: 16px; }
