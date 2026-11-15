@@ -13,52 +13,57 @@
 //   swing：每個房間的通過率隨機浮動 ±swing（烏鴉嘴、Flag 之類的賭徒標籤）
 //   pending：這個標籤原本設計的事件效果還沒做，目前只有簡化效果（Phase 2-B 之後已沒有標籤用到）
 
+// 2026-11：這 30 個標籤的「數值欄位」依哈基米寫的效果文字（src/data/codexTags.js）翻譯成引擎能算的數值：
+// 百分比原樣搬到最接近的欄位、條件式／機率式效果依觸發頻率折算；正面 ×1.2、負面 ×0.8、類型加成再 ×1.2
+// （係數用 npm run sim 校正到跟翻譯前的章節節奏一致；天生神力、身輕如燕的閃避、健身房推銷員的力量這種可一對一對應的數字不套係數）。
+// 逐項前後對照與理由見 docs/TAG_TRANSLATION.md。文字（name／desc）沒動。
 export const TAGS = [
   // ───── N（8）─────
   { id: "born_strong", name: "天生神力", rarity: "N", kind: "stat", desc: "力氣大到不講道理。", powerPct: 0.15 },
-  { id: "thick_skin", name: "皮糙肉厚", rarity: "N", kind: "stat", desc: "挨打是日常。", powerPct: 0.05, injuryShield: 0.25 },
-  { id: "nimble", name: "身輕如燕", rarity: "N", kind: "stat", desc: "跑得比壞消息還快。", powerPct: 0.05, dodge: 0.2 },
-  { id: "overwork_reborn", name: "過勞死轉生者", rarity: "N", kind: "trait", desc: "上輩子做到死，這輩子還在做。", powerPct: 0.08 },
-  { id: "delivery_pro", name: "外送平台五星騎手", rarity: "N", kind: "trait", desc: "準時送達是職業道德，連副本也不例外。", passBonus: 0.03 },
-  { id: "gym_salesman", name: "健身房推銷員", rarity: "N", kind: "trait", desc: "體格不錯，嘴更厲害。", powerPct: 0.05, passBonus: 0.01 },
-  { id: "bad_direction", name: "路痴", rarity: "N", kind: "trait", desc: "走廊永遠有三條路，他永遠選錯。", passBonus: -0.03, genreBonus: { 科幻: -0.05 }, envBonus: { mirror_world: -0.15 } },
-  { id: "light_fingers", name: "順手牽羊", rarity: "N", kind: "trait", desc: "路過的東西都會順手帶走。", rewardPct: 0.05 },
+  { id: "thick_skin", name: "皮糙肉厚", rarity: "N", kind: "stat", desc: "挨打是日常。", powerPct: 0.06, injuryShield: 0.3 },
+  { id: "nimble", name: "身輕如燕", rarity: "N", kind: "stat", desc: "跑得比壞消息還快。", powerPct: 0.07, dodge: 0.12 },
+  { id: "overwork_reborn", name: "過勞死轉生者", rarity: "N", kind: "trait", desc: "上輩子做到死，這輩子還在做。", powerPct: -0.04, passBonus: 0.02 },
+  { id: "delivery_pro", name: "外送平台五星騎手", rarity: "N", kind: "trait", desc: "準時送達是職業道德，連副本也不例外。", passBonus: 0.04, dodge: 0.12 },
+  { id: "gym_salesman", name: "健身房推銷員", rarity: "N", kind: "trait", desc: "體格不錯，嘴更厲害。", powerPct: 0.1, passBonus: 0.01 },
+  { id: "bad_direction", name: "路痴", rarity: "N", kind: "trait", desc: "走廊永遠有三條路，他永遠選錯。", passBonus: -0.02, rewardPct: 0.04 },
+  { id: "light_fingers", name: "順手牽羊", rarity: "N", kind: "trait", desc: "路過的東西都會順手帶走。", rewardPct: 0.06 },
 
   // ───── R（7）─────
-  { id: "schrodinger_courage", name: "薛丁格的勇氣", rarity: "R", kind: "trait", desc: "不打開箱子，就不知道他會不會逃跑。", swing: 0.15, envBonus: { live_show: -0.1 } },
-  { id: "doomsday_hoarder", name: "末日囤積症", rarity: "R", kind: "trait", desc: "背包永遠比別人多裝三天份。", genreBonus: { 科幻: 0.1 } },
-  { id: "keyboard_general", name: "鍵盤軍事家", rarity: "R", kind: "trait", desc: "紙上談兵，偶爾真的有用。", passBonus: -0.02, genreBonus: { 科幻: 0.1 } },
-  { id: "salary_thief", name: "薪水小偷轉世", rarity: "R", kind: "trait", desc: "上班摸魚，但抽成永遠算得很精。", powerPct: -0.1, rewardPct: 0.08 },
-  { id: "blood_allergy", name: "血液過敏症", rarity: "R", kind: "trait", desc: "看到血就手軟。", injuryShield: -0.25, genreBonus: { 靈異: -0.05 } },
-  { id: "indecisive", name: "選擇困難症晚期", rarity: "R", kind: "trait", desc: "左轉還是右轉？再想想。", passBonus: -0.03, envBonus: { mind_link: -0.1 } },
-  { id: "lecturer", name: "爹味說教狂", rarity: "R", kind: "trait", desc: "一路碎碎念，隊友的士氣竟然莫名提升。", passBonus: 0.02 },
+  { id: "schrodinger_courage", name: "薛丁格的勇氣", rarity: "R", kind: "trait", desc: "不打開箱子，就不知道他會不會逃跑。", envBonus: { god_watching: -0.15 }, swing: 0.25 },
+  { id: "doomsday_hoarder", name: "末日囤積症", rarity: "R", kind: "trait", desc: "背包永遠比別人多裝三天份。", rewardPct: 0.1, injuryShield: -0.12 },
+  { id: "keyboard_general", name: "鍵盤軍事家", rarity: "R", kind: "trait", desc: "紙上談兵，偶爾真的有用。", powerPct: -0.12, passBonus: 0.04 },
+  { id: "salary_thief", name: "薪水小偷轉世", rarity: "R", kind: "trait", desc: "上班摸魚，但抽成永遠算得很精。", powerPct: -0.12, envBonus: { live_show: -0.15, god_watching: -0.15 }, rewardPct: -0.04, injuryShield: 0.24 },
+  { id: "blood_allergy", name: "血液過敏症", rarity: "R", kind: "trait", desc: "看到血就手軟。", injuryShield: -0.2 },
+  { id: "indecisive", name: "選擇困難症晚期", rarity: "R", kind: "trait", desc: "左轉還是右轉？再想想。", powerPct: 0.1, passBonus: -0.02 },
+  { id: "lecturer", name: "爹味說教狂", rarity: "R", kind: "trait", desc: "一路碎碎念，隊友的士氣竟然莫名提升。", passBonus: 0.04, envBonus: { absolute_silence: -0.15 } },
 
   // ───── SR（11）─────
-  { id: "horror_fool", name: "恐怖片作死專家", rarity: "SR", kind: "trait", desc: "「我去看看外面」是他的口頭禪。", genreBonus: { 靈異: 0.15 }, injuryShield: -0.15 },
-  { id: "smiling_tiger", name: "功德無量笑面虎", rarity: "SR", kind: "trait", desc: "笑著把死者的遺產收進口袋。", rewardPct: 0.1 },
-  { id: "haunted_sleeper", name: "凶宅試睡員", rarity: "SR", kind: "trait", desc: "睡過的凶宅比你住過的房子還多。", genreBonus: { 靈異: 0.12 } },
-  { id: "scam_lecturer", name: "詐騙集團首席講師", rarity: "SR", kind: "trait", desc: "連副本 NPC 都能被他說服。", passBonus: 0.03, rewardPct: 0.1 },
-  { id: "pain_convert", name: "痛覺轉化", rarity: "SR", kind: "soul", desc: "越痛越強。", powerPct: 0.1, injuryShield: 0.3 },
-  { id: "green_tea", name: "綠茶／心機蓮花", rarity: "SR", kind: "trait", desc: "笑得很甜，專門製造修羅場。", passBonus: -0.03 },
+  { id: "horror_fool", name: "恐怖片作死專家", rarity: "SR", kind: "trait", desc: "「我去看看外面」是他的口頭禪。", genreBonus: { 靈異: -0.04 }, envBonus: { live_show: 0.15, mind_link: -0.15 }, rewardPct: 0.12, injuryShield: -0.16 },
+  { id: "smiling_tiger", name: "功德無量笑面虎", rarity: "SR", kind: "trait", desc: "笑著把死者的遺產收進口袋。", powerPct: 0.06, passBonus: 0.02, rewardPct: 0.06 },
+  { id: "haunted_sleeper", name: "凶宅試睡員", rarity: "SR", kind: "trait", desc: "睡過的凶宅比你住過的房子還多。", genreBonus: { 靈異: 0.22 } },
+  { id: "scam_lecturer", name: "詐騙集團首席講師", rarity: "SR", kind: "trait", desc: "連副本 NPC 都能被他說服。", passBonus: 0.04, rewardPct: 0.12 },
+  { id: "pain_convert", name: "痛覺轉化", rarity: "SR", kind: "soul", desc: "越痛越強。", powerPct: 0.12, passBonus: -0.02, envBonus: { mirror_world: 0.15, mind_link: -0.15 }, injuryShield: 0.36 },
+  { id: "green_tea", name: "綠茶／心機蓮花", rarity: "SR", kind: "trait", desc: "笑得很甜，專門製造修羅場。", passBonus: -0.02, envBonus: { live_show: 0.15 }, injuryShield: 0.18 },
   { id: "mad_matchmaker", name: "瘋狂月老", rarity: "SR", kind: "trait", desc: "看誰都想湊成一對。", passBonus: 0.02 },
-  { id: "emergency_ration", name: "緊急口糧預備役", rarity: "SR", kind: "soul", desc: "隊友看他的眼神總是帶著一點食慾，反而讓他活得更久。", passBonus: 0.02, injuryShield: 0.2 },
-  { id: "backstabber", name: "背刺成癮者", rarity: "SR", kind: "trait", desc: "不背刺隊友渾身不對勁。", powerPct: 0.1, passBonus: -0.03 },
-  { id: "bgm_carrier", name: "BGM 自帶者", rarity: "SR", kind: "soul", desc: "走到哪都有配樂，鼓舞士氣，但潛行就別想了。", passBonus: 0.03, envBonus: { live_show: 0.1, absolute_silence: -0.2 } },
-  { id: "gourmet", name: "美食家", rarity: "SR", kind: "trait", desc: "連怪物的肉都要品評一番。", passBonus: 0.02, rewardPct: 0.05 },
+  { id: "emergency_ration", name: "緊急口糧預備役", rarity: "SR", kind: "soul", desc: "隊友看他的眼神總是帶著一點食慾，反而讓他活得更久。", passBonus: 0.02, injuryShield: 0.36 },
+  { id: "backstabber", name: "背刺成癮者", rarity: "SR", kind: "trait", desc: "不背刺隊友渾身不對勁。", powerPct: 0.18, passBonus: -0.02, envBonus: { absolute_silence: 0.15 } },
+  { id: "bgm_carrier", name: "BGM 自帶者", rarity: "SR", kind: "soul", desc: "走到哪都有配樂，鼓舞士氣，但潛行就別想了。", passBonus: 0.04, envBonus: { absolute_silence: -0.15 } },
+  { id: "gourmet", name: "美食家", rarity: "SR", kind: "trait", desc: "連怪物的肉都要品評一番。", powerPct: 0.12, passBonus: 0.02 },
 
   // ───── SSR（4）─────
-  { id: "ex_customer_service", name: "前任主神空間客服", rarity: "SSR", kind: "soul", desc: "知道主神的後台，連主神都要賣他三分面子。", passBonus: 0.04, envBonus: { god_watching: 0.15 } },
+  { id: "ex_customer_service", name: "前任主神空間客服", rarity: "SSR", kind: "soul", desc: "知道主神的後台，連主神都要賣他三分面子。", passBonus: 0.05 },
   { id: "crow_mouth", name: "烏鴉嘴", rarity: "SSR", kind: "soul", desc: "說好事會壞，說壞事會成真。", swing: 0.25 },
-  { id: "luck_borrower", name: "借運人", rarity: "SSR", kind: "soul", desc: "把別人的運氣借來用，從不還。", powerPct: 0.1, passBonus: 0.04 },
-  { id: "flag_architect", name: "Flag 建築師", rarity: "SSR", kind: "soul", desc: "每一句「打完這仗我就回家」都在蓋樓。", passBonus: 0.05, genreBonus: { 奇幻: 0.1 }, swing: 0.1 },
+  { id: "luck_borrower", name: "借運人", rarity: "SSR", kind: "soul", desc: "把別人的運氣借來用，從不還。", powerPct: 0.24, passBonus: -0.02, dodge: 0.36 },
+  { id: "flag_architect", name: "Flag 建築師", rarity: "SSR", kind: "soul", desc: "每一句「打完這仗我就回家」都在蓋樓。", rewardPct: 0.36, injuryShield: -0.32 },
 ];
 
 // 副本環境標籤：每次進副本隨機抽一個。
 // passMod：全隊通過率修正；rewardMult：通關積分倍率
+// （2026-11：5 個環境的通過率／積分修正，與標籤的「克制／優勢」關係（envBonus ±15%），依哈基米的環境文字與名單翻譯，見 docs/TAG_TRANSLATION.md）
 export const ENV_TAGS = [
-  { id: "absolute_silence", name: "絕對靜音領域", desc: "聲音傳不出去，也聽不到任何提示。", passMod: -0.03 },
-  { id: "mirror_world", name: "鏡像反轉世界", desc: "左右顛倒，連方向感都被反轉。", passMod: 0 },
-  { id: "live_show", name: "強制直播秀", desc: "有觀眾在看，膽小的人更膽小，愛表現的人更賣力。", passMod: 0 },
+  { id: "absolute_silence", name: "絕對靜音領域", desc: "聲音傳不出去，也聽不到任何提示。", passMod: -0.04 },
+  { id: "mirror_world", name: "鏡像反轉世界", desc: "左右顛倒，連方向感都被反轉。", passMod: -0.01 },
+  { id: "live_show", name: "強制直播秀", desc: "有觀眾在看，膽小的人更膽小，愛表現的人更賣力。", passMod: 0, rewardMult: 1.15 },
   { id: "mind_link", name: "精神共享網絡", desc: "所有人的念頭混在一起，猶豫的人特別痛苦。", passMod: 0.02 },
   { id: "god_watching", name: "主神親自督戰", desc: "主神在旁邊看，難度更高，獎勵也更好。", passMod: -0.05, rewardMult: 1.2 },
 ];

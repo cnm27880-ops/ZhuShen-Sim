@@ -107,7 +107,7 @@ test("首通本章尾王：空間升 1 級、記下第幾天、解鎖下一章�
 });
 
 test("首通第 5 章尾王：主線通關，空間停在 Lv.5", () => {
-  const state = setup();
+  const state = setup(4, 1e7); // 第 5 章尾王推薦戰力約 59 萬；原本 4 人 × 10 萬其實打不贏，只是靠運氣過，環境數值一調就不過了
   state.spaceLevel = 5;
   state.chapterClears[5] = CONFIG.bossGate.requiredClears;
   for (let i = 0; i < 20 && !state.chapterClearDay[5]; i++) runOnce(state, "ch5_boss");
