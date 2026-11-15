@@ -148,7 +148,8 @@ test("許願「想去副本」：只有出征名單裡的人、且是那個副�
   runAll(state);
   if (state.runReports.at(-1).success && state.runReports.some((r) => r.dungeonId === easy.id && r.success)) {
     assert.equal(state.wishes.length, 0, "通關後許願完成");
-    assert.equal(state.samsarites.find((s) => s.id === wisher.id).mood?.kind, "happy");
+    const alive = state.samsarites.find((s) => s.id === wisher.id); // 許願者可能在副本裡戰死（不看運氣）
+    if (alive) assert.equal(alive.mood?.kind, "happy");
   }
 });
 

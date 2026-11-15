@@ -170,11 +170,10 @@ test("商店日誌模板每個 key 至少 2 個版本", () => {
   assert.equal(LOGS.shopEnhance, undefined, "舊商店強化日誌已移除");
 });
 
-test("特殊獎勵資料表：有填的副本各 3 個（佔位副本先留空），id 唯一、都有效果，類型對得上副本", () => {
+test("特殊獎勵資料表：30 個世界各 3 個（Phase 3-1 補齊），id 唯一、都有效果，類型對得上副本", () => {
   const ids = new Set();
   for (const d of DUNGEONS) {
-    assert.ok([0, 3].includes(d.specialRewards.length), d.id);
-    if (["ghost_village", "silent_ark", "ember_war"].includes(d.id)) assert.equal(d.specialRewards.length, 3, d.id);
+    assert.equal(d.specialRewards.length, 3, d.id);
     for (const r of d.specialRewards) {
       assert.ok(!ids.has(r.id), `${r.id} 重複`);
       ids.add(r.id);
@@ -265,4 +264,28 @@ test("存檔：裝備、強化、收藏讀回來還在；舊存檔的收藏名�
   assert.equal(migrated.samsarites[0].upgrades, undefined);
   assert.equal(migrated.samsarites[0].bought, undefined);
   assert.equal(effectivePower(migrated.samsarites[0]), effectivePower({ ...migrated.samsarites[0], gear: {} }), "舊強化不再加戰力");
+});
+
+test("30 世界首通獎勵：效果不重複、尾王比普通關強，收藏總量有上限（避免 30 個世界收完通過率爆表）", () => {
+  const seen = new Set();
+  for (const d of DUNGEONS) {
+    const kinds = d.specialRewards.map((r) => Object.keys(r.effect)[0]);
+    assert.ok(new Set(d.specialRewards.map((r) => r.name)).size === 3, `${d.id} 名稱重複`);
+    assert.ok(new Set(d.specialRewards.map((r) => r.id)).size === 3);
+    for (const r of d.specialRewards) {
+      assert.ok(!seen.has(r.name), `名稱重複：${r.name}`);
+      seen.add(r.name);
+    }
+    if (d.id.startsWith("ch1_") || d.id.startsWith("ch2_") || d.id.startsWith("ch3_") || d.id.startsWith("ch4_") || d.id.startsWith("ch5_")) assert.ok(new Set(kinds).size >= 2, `${d.id} 效果種類太單調`);
+  }
+  const boss = DUNGEONS.find((d) => d.id === "ch2_boss").specialRewards.find((r) => r.effect.injuryShield);
+  const norm = DUNGEONS.find((d) => d.id === "ch2_04").specialRewards.find((r) => r.effect.injuryShield);
+  assert.ok(boss.effect.injuryShield > norm.effect.injuryShield);
+  // 全部收進來：被上限擋住
+  const state = createNewGame(1);
+  state.collection = DUNGEONS.flatMap((d) => d.specialRewards.map((r) => r.id));
+  const fx = collectionEffects(state);
+  assert.ok(fx.passBonus <= CONFIG.collection.passCap + 1e-9);
+  assert.ok(fx.rewardPct <= CONFIG.collection.rewardCap + 1e-9);
+  for (const v of Object.values(fx.genreBonus)) assert.ok(v <= CONFIG.collection.genreCap + 1e-9);
 });

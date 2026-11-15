@@ -267,6 +267,10 @@ export function collectionEffects(state) {
     total.injuryShield += e.injuryShield ?? 0;
     for (const [genre, v] of Object.entries(e.genreBonus ?? {})) total.genreBonus[genre] = (total.genreBonus[genre] ?? 0) + v;
   }
+  const cap = CONFIG.collection;
+  total.passBonus = Math.min(cap.passCap, total.passBonus);
+  total.rewardPct = Math.min(cap.rewardCap, total.rewardPct);
+  for (const g of Object.keys(total.genreBonus)) total.genreBonus[g] = Math.min(cap.genreCap, total.genreBonus[g]);
   return total;
 }
 

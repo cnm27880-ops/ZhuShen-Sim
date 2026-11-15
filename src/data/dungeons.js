@@ -19,6 +19,8 @@
 
 import { CONFIG } from "./config.js";
 import { WORLD_LIST, WORLD_NAME_INTRO } from "./worlds.js";
+import { buildWorldRewards } from "./worldRewards.js";
+import { HAJIMI_ROOMS } from "./worldRooms.js";
 
 // 佔位房間：n 間通用文字，最後一間是首領房
 function placeholderRooms(n) {
@@ -157,8 +159,9 @@ export const DUNGEONS = WORLD_LIST.map((w) => {
   const base = buildWorld(w);
   const t = WORLD_NAME_INTRO[w.id]; // 4-E-8：30 世界正式名稱與題材描述（房間文字與首通特殊獎勵沿用原內容）
   const named = t ? { ...base, name: t.name, intro: t.intro } : base;
-  const extra = WORLD_ROOMS[w.id] ?? {}; // 前 3 個世界的房間文字對齊新世界觀（4-E-8 收尾）
-  return { ...named, ...extra, recommendedPower: Math.round(base.recommendedPower * E8_R_MULT[w.chapter - 1] * F_R_MULT[w.chapter - 1]) }; // 200 件商店總表（4-E-8）與基建（4-F-3）上線後的 R 校正
+  const extra = WORLD_ROOMS[w.id] ?? (HAJIMI_ROOMS[w.id] ? { rooms: HAJIMI_ROOMS[w.id] } : {}); // 哈基米的房間文字（worldRooms.js）；沒有稿的世界維持佔位 // 前 3 個世界的房間文字對齊新世界觀（4-E-8 收尾）
+  const specialRewards = named.specialRewards?.length ? named.specialRewards : buildWorldRewards(named); // 原本沒有首通獎勵的世界補上（Phase 3-1，見 worldRewards.js）
+  return { ...named, ...extra, specialRewards, recommendedPower: Math.round(base.recommendedPower * E8_R_MULT[w.chapter - 1] * F_R_MULT[w.chapter - 1]) }; // 200 件商店總表（4-E-8）與基建（4-F-3）上線後的 R 校正
 });
 function buildWorld(w) {
   if (REAL.has(w.id)) return REAL.get(w.id);
