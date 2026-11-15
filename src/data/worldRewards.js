@@ -5,9 +5,9 @@
 //   P = passBonus   所有副本單房通過率加成
 //   G = genreBonus  該世界類型（靈異／科幻／奇幻）副本的通過率加成
 //   R = rewardPct   所有副本通關積分加成
-//   S = injuryShield 全員受傷時少受一級的機率
+//   S = injuryShield 全員受傷時「少受一級」的機率（不是減傷幅度）
 // 數字（REWARD_VALUE）：普通關 P 1%／G 3%／R 3%／S 3%，尾王 ×1.5。
-// 因為收藏全部疊加，總量上限在 CONFIG.collection（passCap／genreCap／rewardCap），避免 30 個世界全收完把通過率堆到爆。
+// 因為收藏全部疊加，總量上限在 CONFIG.collection（passCap／genreCap／rewardCap／injuryShieldCap），避免 30 個世界全收完把通過率堆到爆。
 
 export const REWARD_VALUE = { P: 0.01, G: 0.03, R: 0.03, S: 0.03 };
 export const BOSS_REWARD_MULT = 1.5;

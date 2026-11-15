@@ -36,7 +36,7 @@ export const CONFIG = {
   // 值 = 要先首通哪一章的尾王（0 = 開局就有）。Tier 2 = 通關第 1 章尾王 … Tier 6 = 通關第 5 章尾王。
   shopTierBossChapter: [0, 1, 2, 3, 4, 5],
   // 副本首通特殊獎勵（收藏）全部疊加的上限（第二批回饋 3-1：30 個世界各有獎勵，避免堆到爆）。原本 3 個世界的總和遠低於這些上限
-  collection: { passCap: 0.15, genreCap: 0.15, rewardCap: 0.3 }, // 全域通過率／單一類型通過率／通關積分
+  collection: { passCap: 0.15, genreCap: 0.15, rewardCap: 0.3, injuryShieldCap: 0.5 }, // 全域通過率／單一類型通過率／通關積分／「全員受傷時少受一級」的機率（第三批決策 5）
   shopDodgeMax: 0.9, // 閃避機率上限（標籤 + 商店加成加起來）
 
   // ── 雙錢包活體經濟（Phase 4-D-1）──

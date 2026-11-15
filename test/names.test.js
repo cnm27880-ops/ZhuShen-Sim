@@ -18,3 +18,10 @@ test("實際抽 400 個人：名字長度 2、3、4 個字都出現，最長 4 �
   for (let i = 0; i < 400; i++) lengths.add([...createSamsarite(state, "C").name].length);
   assert.deepEqual([...lengths].sort(), [2, 3, 4]);
 });
+
+test("房間文字沒有簡體字與日文假名誤植（第三批文字修正）", async () => {
+  const { HAJIMI_ROOMS } = await import("../src/data/worldRooms.js");
+  const all = JSON.stringify(HAJIMI_ROOMS);
+  for (const bad of ["外侧", "扫", "の", "グ", "佐斯"]) assert.ok(!all.includes(bad), `還有 ${bad}`);
+  assert.ok(all.includes("迷魅鼠") && all.includes("外側") && all.includes("掃過") && all.includes("的手肘"));
+});

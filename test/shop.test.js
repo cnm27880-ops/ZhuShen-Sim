@@ -289,3 +289,13 @@ test("30 世界首通獎勵：效果不重複、尾王比普通關強，收藏�
   assert.ok(fx.rewardPct <= CONFIG.collection.rewardCap + 1e-9);
   for (const v of Object.values(fx.genreBonus)) assert.ok(v <= CONFIG.collection.genreCap + 1e-9);
 });
+
+test("收藏的「少受一級」機率有上限 50%（第三批決策 5），不是減傷幅度", () => {
+  assert.equal(CONFIG.collection.injuryShieldCap, 0.5);
+  const state = createNewGame(1);
+  state.collection = DUNGEONS.flatMap((d) => d.specialRewards.filter((r) => r.effect.injuryShield).map((r) => r.id));
+  const raw = state.collection.reduce((n, id) => n + getSpecialReward(id).effect.injuryShield, 0);
+  assert.ok(raw > 0.5, `全收原始值 ${raw} 要超過上限才測得到`);
+  assert.ok(collectionEffects(state).injuryShield <= 0.5 + 1e-9);
+  assert.ok(DUNGEONS.flatMap((d) => d.specialRewards).filter((r) => r.effect.injuryShield).every((r) => r.desc.includes("少受一級")));
+});

@@ -1037,7 +1037,7 @@ function replaceNote(item, target) {
   return `<br /><small class="warn">⚠️ 會取代他現有的【${cur.name}】${target.soulbound?.[item.slot] ? "（🔒綁定）" : ""}</small>`;
 }
 
-const SHOP_CATS = [["medicine", "💊 藥品／消耗品"], ["bloodline", "🧬 血統"], ["gear", "⚔️ 裝備"], ["skill", "📖 技能"], ["special", "✨ 特殊道具"]];
+const SHOP_CATS = [["medicine", "💊 藥品／消耗品"], ["bloodline", "🧬 血統"], ["gear", "⚔️ 裝備"], /* ["skill", "📖 技能"], 技能系統尚未決定實裝，分頁先藏起來（資料與程式碼保留，第三批） */ ["special", "✨ 特殊道具"]];
 
 function shopStandardTab(tier, target) {
   const cat = modal.cat ?? "medicine"; // 預設先看常用的藥品

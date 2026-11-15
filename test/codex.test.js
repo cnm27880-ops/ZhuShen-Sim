@@ -95,3 +95,10 @@ test("詞條庫：好壞只有三類（好／壞／中性），名稱沒有現�
     assert.equal(p.summary, undefined, `${p.name} 不該再有 summary（跟 effect 重複又容易不一致）`);
   }
 });
+
+test("走火入魔（demon_path）分類為「看情況」（中性）：戰力 +8% 是好、好感減半與失控是壞", async () => {
+  const { PERSON_TAGS, toneOf } = await import("../src/data/tagCodex.js");
+  const t = PERSON_TAGS.find((x) => x.id === "demon_path");
+  assert.equal(t.tone, "mixed");
+  assert.equal(toneOf(t), "mixed");
+});
