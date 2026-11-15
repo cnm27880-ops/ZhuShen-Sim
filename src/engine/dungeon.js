@@ -160,12 +160,13 @@ export function clearChance(state, party, dungeon, env = null) {
 }
 
 /**
- * 通關率給玩家看的整數百分比（問題 6）：向下取整、最高只顯示 99%（99.9% 四捨五入成 100% 會讓人以為保證通關），
- * failPct = 100 - pct，至少 1。
+ * 通關率給玩家看的整數百分比（問題 6）：向下取整、最高只顯示 `CONFIG.dungeon.chanceDisplayCap`%（預設 95，
+ * 避免讓人以為保證通關），failPct = 100 - pct，至少 1；capped = 實際機率比顯示的還高（顯示成「95%＋」）。
  */
 export function chanceDisplay(chance) {
-  const pct = Math.max(0, Math.min(99, Math.floor(chance * 100 + 1e-9)));
-  return { pct, failPct: 100 - pct };
+  const cap = CONFIG.dungeon.chanceDisplayCap;
+  const pct = Math.max(0, Math.min(cap, Math.floor(chance * 100 + 1e-9)));
+  return { pct, failPct: 100 - pct, capped: Math.floor(chance * 100 + 1e-9) >= cap };
 }
 
 /**

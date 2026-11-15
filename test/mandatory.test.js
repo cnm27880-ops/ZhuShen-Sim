@@ -107,13 +107,16 @@ test("結算：通關給基礎獎勵（含氣運）、不計守門、不掉結�
   let plain = null;
   let bonus = null;
   for (let seed = 1; seed <= 40 && !(plain && bonus); seed++) {
+    // 只挑「沒有真實死亡」的種子：真死的人會和手動塞進去的假死亡重複計算，結果跟著隨機數流變（資料表一改就換種子）
+    // 也要沒有頓悟：頓悟會在結算「之後」加運氣，測試事後用新運氣算期望值就會差 1 分
+    const noRealDeath = (r) => r.report.success && r.state.samsarites.length === 4 && !r.report.insights?.length; // setup(4) 派了 4 個人，少一個就是真的死了
     if (!plain) {
       const r = runMandatory(seed);
-      if (r.report.success) plain = r;
+      if (noRealDeath(r)) plain = r;
     }
     if (!bonus) {
       const r = runMandatory(seed, (run) => run.deaths.push("某人", "某某"));
-      if (r.report.success) bonus = r;
+      if (noRealDeath(r)) bonus = r;
     }
   }
   assert.ok(plain && bonus, "40 個種子內要各出現一次成功");

@@ -120,6 +120,8 @@ export const CONFIG = {
     intel: { start: -0.03, perRun: 0.015, max: 0.09 },
     minPassRate: 0.05,
     maxPassRate: 0.95,
+    // 派遣畫面「預估通關率」最高顯示幾 %（2026-11 露葵：單房 85% 不是必過、還要 N 房過 K 房，不該顯示 99%）。只影響顯示，不影響實際判定
+    chanceDisplayCap: 95,
     // 房間失敗時，受害者傷勢「加重幾級」的機率權重（計畫只寫「隨機決定」）
     injuryRoll: [
       { levels: 1, weight: 65 },
@@ -561,6 +563,9 @@ export const CONFIG = {
   runReportMax: 20, // 排隊等玩家看的副本結算摘要最多留幾筆
 
   logMax: 300,
+  // 不寫進主神日誌的訊息種類（2026-11 露葵：每日結算、商店等級、錢包、市集、自動閒置、保底）。
+  // 這些事件照常產生（暫停事件、測試用的 state.events 不受影響），只是不佔日誌版面與 logMax 額度。
+  logHiddenTypes: ["dayEnd", "shopTier", "wallet", "market", "autoIdle", "gachaPity"],
 };
 
 // 階級：維持費附加（基礎費的百分比）+ 各屬性的隨機範圍。

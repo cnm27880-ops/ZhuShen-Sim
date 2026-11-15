@@ -889,3 +889,5 @@ button.pill:disabled { opacity: .45; cursor: not-allowed; }
 
 /* 名字改成「一字一行」由上往下疊（不用 writing-mode，各種裝置字型都穩） */
 .card-strip .strip-name { writing-mode: horizontal-tb; display: flex; flex-direction: column; align-items: center; height: auto; max-height: none; overflow: visible; font-size: 13px; font-weight: 700; line-height: 15px; }
+.cx-live { color: #1a7f4b; }
+.cx-todo { color: #92400e; }
