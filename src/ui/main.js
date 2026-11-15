@@ -6,6 +6,8 @@ import * as cloud from "./cloud.js";
 import { coverHtml } from "./cover.js";
 import { leaderboardHtml } from "./leaderboard.js";
 import { esc } from "./html.js";
+import { LOG_CATEGORIES, LOG_BADGE, categoryOf } from "../data/logCategories.js";
+import { createCodex } from "./codex.js";
 import { buildScorePayload } from "../engine/scoreboard.js";
 import { planSync } from "../engine/cloudSync.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
@@ -55,6 +57,7 @@ import { effectivePower, subStat, defenseChance, speedSaveChance } from "../engi
 import { shopTier, nextTierInfo, checkBuy, buyItem, collectionEffects, shopItemsOfTier } from "../engine/shop.js";
 import { SHOP_KIND_LABELS, SHOP_CATEGORY_LABELS, SHOP_SLOT_LABELS, getShopItem } from "../data/shopItems.js";
 import { getSpecialReward } from "../data/dungeons.js";
+import { firstRelicOf } from "../data/relics.js";
 import { getTag, getEnvTag } from "../data/tags.js";
 import { step, areEnemies } from "../engine/dispatch.js";
 import { pendingWishes, wishesOf, checkAccept, acceptWish, refuseWish, wishVars } from "../engine/wishes.js";
@@ -206,6 +209,7 @@ function render() {
   renderRoster();
   renderDaySummary();
   renderModal();
+  codex.sync(!coverOpen); // 詞條庫懸浮球：封面時藏起來，進遊戲後永遠在最上層
   for (const id of ["topbar", "actions", "roster", "modal", "log", "banner", "day-summary", "run-list"]) stripEmoji($(id));
 }
 
@@ -240,7 +244,7 @@ function renderTopbar() {
     .map((v) => `<button data-action="set-speed" data-value="${v}" class="${v === state.settings.speed ? "active" : ""}">${v}x</button>`)
     .join("");
   document.body.style.setProperty("--speed", state.settings.speed); // 讓小人滑動速度跟著遊戲速度變快
-  $("btn-pause").textContent = state.settings.paused ? "繼續" : "暫停";
+  $("btn-pause").textContent = state.settings.paused ? "繼續 (SPACE)" : "暫停 (SPACE)";
   const taxPct = Math.round(taxRateOf(state) * 100);
   document.querySelector('[data-action="tax-down"]').disabled = taxRateOf(state) <= CONFIG.tax.min + 1e-9; // #34：到上下限就 disabled，不要點了沒反應
   document.querySelector('[data-action="tax-up"]').disabled = taxRateOf(state) >= CONFIG.tax.max - 1e-9;
@@ -254,8 +258,10 @@ function renderTopbar() {
   $("banner").innerHTML = `${bannerText}<button data-action="toggle-pause">繼續</button>`;
 
   const waiting = pendingWishes(state).length;
-  $("btn-wishes").style.display = waiting > 0 ? "" : "none";
-  $("btn-wishes").textContent = `許願 (${waiting})`;
+  const ongoing = (state.wishes ?? []).filter((w) => w.status === "active").length;
+  $("btn-wishes").style.display = waiting + ongoing > 0 ? "" : "none";
+  $("btn-wishes").textContent = waiting > 0 ? `許願 (${waiting})` : `許願（進行中 ${ongoing}）`; // 沒有待回覆但有進行中的許願時，也要能點進去查清單
+  $("btn-wishes").classList.toggle("alert", waiting > 0);
 
   const godWaiting = Boolean(pendingGodEvent(state));
   $("btn-god").style.display = godWaiting || activeMission(state) ? "" : "none";
@@ -498,12 +504,25 @@ function renderRunList(viewing = null) {
     .join("");
 }
 
+// 詞條庫懸浮球：永遠在最上層，視窗可一直開著對照
+const codex = createCodex({ getState: () => state, describeTag: (t) => describeTag(t), onSave: () => saveGame() });
+
+let logFilter = "all"; // 主神日誌目前篩選的分類（只存在畫面，不進存檔）
+
 function renderLog() {
   const log = $("log");
+  const bar = LOG_CATEGORIES.map(([id, label]) => `<button data-action="log-filter" data-id="${id}" class="${logFilter === id ? "active" : ""}">${label}</button>`).join("");
+  if ($("log-filter").dataset.key !== logFilter) {
+    $("log-filter").innerHTML = bar;
+    $("log-filter").dataset.key = logFilter;
+  }
+  const wasAtBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
   log.innerHTML = state.log
-    .map((e) => `<div class="log-entry log-${e.type}"><span class="log-day">D${e.day}</span>${e.text}</div>`)
-    .join("");
-  log.scrollTop = log.scrollHeight;
+    .filter((e) => logFilter === "all" || categoryOf(e.type) === logFilter)
+    .map((e) => `<div class="log-entry log-${e.type}"><span class="log-day">D${e.day}</span><span class="log-cat cat-${categoryOf(e.type)}">${LOG_BADGE[categoryOf(e.type)]}</span>${e.text}</div>`)
+    .join("") || `<div class="muted" style="padding:8px 0">這一類還沒有紀錄。</div>`;
+  if (wasAtBottom || log.dataset.f !== logFilter) log.scrollTop = log.scrollHeight;
+  log.dataset.f = logFilter;
 }
 
 function injuryLabel(s) {
@@ -623,24 +642,84 @@ function renderDaySummary() {
     items.map((e) => `<div class="ds-item ds-${e.type}"><span class="ds-day">第 ${e.day} 天</span>${e.text}</div>`).join("");
 }
 
+/** 名冊卡露在外面那一條的警示徽章：受傷、理智低、副本中、許願…（疊起來也要看得到） */
+function cardAlerts(s) {
+  const out = [];
+  const add = (icon, tone, tip) => out.push(`<span class="alert-dot ${tone}" title="${esc(String(tip).replace(/<[^>]*>/g, ""))}">${icon}</span>`); // injuryLabel 回傳 HTML，提示文字要先去標籤
+  if (s.injury >= 1) add("🩹", s.injury >= 2 ? "red" : "amber", injuryLabel(s));
+  if (s.stats.sanity < 40) add("🧠", s.stats.sanity < 20 ? "red" : "amber", `理智偏低（${s.stats.sanity}）`);
+  if (s.location === "dungeon") add("🚪", "blue", "副本中");
+  if (s.location === "pod") add("🍼", "blue", "催熟艙");
+  const w = wishesOf(state, s.id)[0];
+  if (w) add("🙏", w.status === "pending" ? "red pulse" : "purple", `許願：${getWish(w.kind).name}${w.status === "pending" ? "（等你回覆）" : ""}`);
+  if (s.vacationDays > 0) add("🏖️", "blue", `休假中（${s.vacationDays} 天）`);
+  return out.join("");
+}
+
+let raisedId = null; // 觸控裝置：目前點開（浮起）的卡片
+
+function cardInner(s) {
+  return `<div class="card-strip">
+      ${rankBadge(s.rank)}
+      <div class="card-alerts">${cardAlerts(s)}</div>
+      <div class="strip-name" title="${esc(s.name)}">${[...s.name].slice(0, 5).map((ch) => `<span>${esc(ch)}</span>`).join("")}</div>
+      <div class="strip-power" title="戰力">${effectivePower(s)}</div>
+    </div>
+    <div class="card-rest">
+      <div class="card-top"><span class="grow">${s.name}</span><span class="tag-dots">${tagDots(s)}</span><span class="follow-btn ${s.id === state.settings.followId ? "on" : ""}" data-action="toggle-follow" data-id="${s.id}" title="${s.id === state.settings.followId ? "取消鎖定視角" : "鎖定視角（他下副本時畫面跟著切）"}">👁</span></div>
+      <div class="card-meta"><span>戰力 <b>${effectivePower(s)}</b></span><span>理智 <b>${s.stats.sanity}</b></span></div>
+      <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
+      <div class="card-status">${locationLabel(s)}${statusExtras(s)}</div>
+      <div class="card-recent" title="最近發生的事">${recentOf(s)}</div>
+      <button class="pill card-open" data-action="open-detail" data-id="${s.id}">查看檔案</button>
+    </div>`;
+}
+
+/** 堆疊卡片：卡片元素保留、只更新內容，滑過去的浮起動畫才不會被每個時間步的重繪打斷 */
 function renderRoster() {
+  const root = $("roster");
   if (state.samsarites.length === 0) {
-    $("roster").innerHTML = `<div class="empty">你手下一個輪迴者都沒有了。去抽卡吧。</div>`;
+    root.innerHTML = `<div class="empty">你手下一個輪迴者都沒有了。去抽卡吧。</div>`;
     return;
   }
-  $("roster").innerHTML = state.samsarites
-    .map(
-      (s) => `
-      <div class="card rank-border-${s.rank} ${s.location === "dungeon" ? "away" : s.location === "pod" ? "pod" : ""}" data-action="open-detail" data-id="${s.id}">
-        <div class="card-top">${rankBadge(s.rank)}<span class="grow">${s.name}</span><span class="tag-dots">${tagDots(s)}</span><span class="follow-btn ${s.id === state.settings.followId ? "on" : ""}" data-action="toggle-follow" data-id="${s.id}" title="${s.id === state.settings.followId ? "取消鎖定視角" : "鎖定視角（他下副本時畫面跟著切）"}">👁</span></div>
-        <div class="card-meta"><span>戰力 <b>${effectivePower(s)}</b></span><span>理智 <b>${s.stats.sanity}</b></span></div>
-        <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
-        <div class="card-status">${locationLabel(s)}${statusExtras(s)}</div>
-        <div class="card-recent" title="最近發生的事">${recentOf(s)}</div>
-      </div>`
-    )
-    .join("");
+  if (state.samsarites.length <= 4) root.style.setProperty("--overlap", "-10px"); // 人少時不疊（留 10px 間距），5 人以上才堆疊
+  else root.style.removeProperty("--overlap");
+  const ids = new Set(state.samsarites.map((s) => String(s.id)));
+  for (const c of [...root.children]) if (!ids.has(c.dataset.id)) c.remove();
+  state.samsarites.forEach((s, i) => {
+    let el = root.querySelector(`.card[data-id="${s.id}"]`);
+    if (!el) {
+      el = document.createElement("div");
+      el.dataset.action = "open-detail";
+      el.dataset.id = String(s.id);
+    }
+    const cls = `card stack rank-border-${s.rank} ${s.location === "dungeon" ? "away" : s.location === "pod" ? "pod" : ""}${raisedId === s.id ? " raised" : ""}`;
+    if (el.className !== cls) el.className = cls;
+    const html = cardInner(s);
+    if (el._html !== html) {
+      el.innerHTML = html;
+      el._html = html;
+    }
+    el.style.zIndex = raisedId === s.id ? "60" : String(i + 1);
+    if (root.children[i] !== el) root.insertBefore(el, root.children[i] ?? null);
+  });
 }
+
+// 觸控裝置（沒有 hover）：點一下浮起、再點一下收回；浮起後用「查看檔案」按鈕進檔案頁
+document.getElementById("roster").addEventListener(
+  "click",
+  (e) => {
+    if (!window.matchMedia("(hover: none)").matches) return;
+    const card = e.target.closest(".card.stack");
+    if (!card || e.target.closest(".card-open, .follow-btn")) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const id = Number(card.dataset.id);
+    raisedId = raisedId === id ? null : id;
+    renderRoster();
+  },
+  true
+);
 
 // ───────── 彈出視窗 ─────────
 
@@ -753,7 +832,7 @@ function dispatch() {
   const statLine = (d, mut) => {
     const st = state.dungeonStats[d.id] ?? { attempts: 0, clears: 0 };
     const rewardPct = mut?.rewardPct ?? 0;
-    return `推薦戰力 ${d.recommendedPower}<br />獎勵 ${Math.round(d.reward * (1 + rewardPct))} 分${hasIntel(state, d) ? "" : "（首通）"}`;
+    return `推薦戰力 ${d.recommendedPower}<br />獎勵 ${Math.round(d.reward * (1 + rewardPct))} 分${hasIntel(state, d) ? "" : ` <span class="first-chip">🎁 首通</span>`}`;
   };
   const mutChip = (mut) => (mut ? `<span class="mut-chip ${mut.id}" title="${mut.desc}">${mut.icon} ${mut.name}</span>` : "");
 
@@ -821,6 +900,20 @@ function dispatch() {
     if (injured.length > 0) summary += `<br /><span class="bad">帶傷出征：${injured.map((s) => s.name).join("、")}</span>`;
     summary += riskWarning(party);
   }
+  // 首通獎勵卡：選到還沒通關過的副本時，寫清楚第一次打有什麼好處
+  const firstClearBox = (() => {
+    if (isMand || isRivalPick || !dungeon || hasIntel(state, dungeon)) return "";
+    const relic = firstRelicOf(dungeon.id);
+    const specials = (dungeon.specialRewards ?? []).map((r) => r.name);
+    const lines = [
+      `<li><b>+${Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct)} 分</b><small>首通額外加成（基礎獎勵 ${Math.round(CONFIG.dungeon.firstClearBonusPct * 100)}%）</small></li>`,
+      relic ? `<li><b>${relic.icon} ${relic.name}</b><small>必得首通奇物：全隊戰力 +${(relic.powerPct * 100).toFixed(1)}%</small></li>` : "",
+      specials.length ? `<li><b>🎁 特殊獎勵 ×1</b><small>從 ${specials.length} 件裡隨機掉一件：${specials.join("、")}</small></li>` : "",
+      `<li><b>📡 解鎖副本情報</b><small>通關後情報條開始累積，之後通關率會慢慢提高</small></li>`,
+      dungeon.boss ? `<li><b>🏛️ 空間升級</b><small>首通尾王：空間等級 +1，解鎖下一章與更多商店／抽卡</small></li>` : "",
+    ].join("");
+    return `<div class="first-box"><div class="first-title">🎁 首通獎勵<small>第一次通關【${dungeon.name}】才拿得到</small></div><ul>${lines}</ul><small class="warn">⚠️ 首次開荒傷勢較重，建議帶傷藥再去。</small></div>`;
+  })();
   const erosionBox = canErode
     ? `<label class="toggle">位面侵蝕 <select data-erosion>${Array.from({ length: CONFIG.erosion.maxStar + 1 }, (_, k) => `<option value="${k}" ${k === dispatchPick.erosion ? "selected" : ""}>${k === 0 ? "無" : `${k}★`}</option>`).join("")}</select></label>`
     : "";
@@ -834,6 +927,7 @@ function dispatch() {
       <h4 class="chapter-head">尾王挑戰區</h4>${bossOptions}
       ${extraOptions ? `<h4 class="chapter-head">指定任務</h4>${extraOptions}` : ""}
     </div>
+    ${firstClearBox}
     <h3>選擇隊員（${party.length}/${CONFIG.partyMax}）</h3>
     <div class="option-list">${memberOptions}</div>
     <div class="summary">${dispatchHint ? `<div class="bad" style="margin-bottom:6px">⚠ ${dispatchHint}</div>` : ""}${summary}${erosionBox || greedyBox ? `<div class="summary-opts">${erosionBox}${greedyBox}</div>` : ""}</div>
@@ -894,7 +988,9 @@ function shop() {
           <small>戰力 ${effectivePower(s)}・理智 ${s.stats.sanity}</small></div>`)
         .join("")
     : `<div class="empty">主神空間裡沒有人可以用。</div>`;
-  const picker = `<h3>要給誰用？</h3>
+  const picker = modal.lockTarget
+    ? `<div class="shop-lock">🎯 收件人：<b>${target ? `${target.name}` : "（沒有人）"}</b> <small>已鎖定；要換人請回去點別的小人</small></div>`
+    : `<h3>要給誰用？</h3>
     <div class="option-list">${people}</div>`;
 
   let body = "";
@@ -905,9 +1001,11 @@ function shop() {
   return `<h3>商店 <small>Tier ${tier}</small></h3>
     <p>公庫 <b>${state.points}</b>・${next ? `再花 <b>${next.remaining}</b> 分解鎖 Tier ${next.tier}` : "已全部解鎖"}</p>
     <div class="tabs">${tabs}</div>
-    ${tab === "relics" || (tab === "shop" && ["medicine", "skill", "special"].includes(modal.cat ?? "medicine")) ? "" : picker}
+    ${tab === "relics" || (tab === "shop" && !modal.lockTarget && ["medicine", "skill", "special"].includes(modal.cat ?? "medicine")) ? "" : picker}
+    ${target && (tab === "market" || (tab === "shop" && ["gear", "bloodline"].includes(modal.cat))) ? `<div class="shop-now"><b>👀 ${target.name} 現在穿的</b>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => { const it = getShopItem(target.gear?.[slot]); return `<div class="shop-now-row"><span class="bio-gear-slot">${label}</span><span class="${it ? "" : "muted"}">${it ? `${it.name}${target.soulbound?.[slot] ? " 🔒" : ""}` : "（空）"}</span>${it ? `<small class="good">${Object.entries(it.stats ?? {}).map(([k, v]) => `${STAT_LABEL[k]}${v >= 0 ? "+" : ""}${v}`).join(" ")}</small>` : ""}</div>`; }).join("")}<small class="muted">買同一欄的裝備會直接換掉現有的那件。</small></div>` : ""}
+    ${modal.note ? `<div class="summary">${modal.note}</div>` : ""}
     ${body}
-    <div class="modal-actions">${closeButton}</div>`;
+    <div class="modal-actions">${modal.lockTarget ? `<button data-action="back-to-profile">↩ 回檔案頁</button>` : ""}${closeButton}</div>`;
 }
 
 const STAT_LABEL = { power: "戰力", hp: "生命", defense: "防禦", speed: "速度", luck: "氣運" };
@@ -917,6 +1015,14 @@ function itemFx(item) {
   const stats = Object.entries(item.stats ?? {}).map(([k, v]) => `${STAT_LABEL[k]}${v >= 0 ? "+" : ""}${v}`).join("　");
   const passive = Object.entries(item.passive ?? {}).map(([k, v]) => PASSIVE_LABEL[k]?.(v)).filter(Boolean).join("、");
   return `${stats ? `<br /><small class="good">${stats}</small>` : ""}${passive ? `<br /><small class="warn">⚠️ ${passive}</small>` : ""}`;
+}
+
+/** 商品要放進的欄位已經有東西時，在商品旁提醒「會取代」 */
+function replaceNote(item, target) {
+  if (!target || item.kind !== "gear") return "";
+  const cur = getShopItem(target.gear?.[item.slot]);
+  if (!cur) return `<br /><small class="muted">${SHOP_SLOT_LABELS[item.slot]}目前是空的</small>`;
+  return `<br /><small class="warn">⚠️ 會取代他現有的【${cur.name}】${target.soulbound?.[item.slot] ? "（🔒綁定）" : ""}</small>`;
 }
 
 const SHOP_CATS = [["medicine", "💊 藥品／消耗品"], ["bloodline", "🧬 血統"], ["gear", "⚔️ 裝備"], ["skill", "📖 技能"], ["special", "✨ 特殊道具"]];
@@ -937,7 +1043,7 @@ function shopStandardTab(tier, target) {
     const why = !locked && !check.ok ? `<br /><small class="bad">${check.reason}</small>` : "";
     return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
       <span class="option-icon">${item.icon}</span>
-      <span class="grow"><b>${item.name}</b> <small>${SHOP_SLOT_LABELS[item.slot] ?? ""}</small>${itemFx(item)}${why}</span>
+      <span class="grow"><b>${item.name}</b> <small>${SHOP_SLOT_LABELS[item.slot] ?? ""}</small>${itemFx(item)}${replaceNote(item, target)}${why}</span>
       <button class="primary" data-action="buy" data-id="${item.id}" ${check.ok ? "" : "disabled"}>${locked ? "🔒" : item.price + " 分"}</button>
     </div>`;
   };
@@ -977,10 +1083,11 @@ function shopMedicineTab(tier) {
         return `<button class="${n === 1 ? "primary" : ""}" data-action="buy-stock" data-id="${item.id}" data-qty="${n}" ${c.ok ? "" : `disabled title="${c.reason ?? ""}"`}>${locked ? "🔒" : `買 ${n}（${item.price * n}）`}</button>`;
       })
       .join("");
+    const useBtn = modal.lockTarget && !locked ? `<button class="primary" data-action="buy-use-stock" data-id="${item.id}" ${checkBuyStock(state, item.id, 1).ok ? "" : "disabled"}>買 1 並給他用</button>` : "";
     return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
       <span class="option-icon">${item.icon}</span>
       <span class="grow"><b>${item.name}</b> <small>現有 <b>${stockCount(state, item.id)}</b></small></span>
-      <span class="slot-actions">${buttons}</span>
+      <span class="slot-actions">${useBtn}${buttons}</span>
     </div>`;
   };
   const rest = all.filter((i) => !common.includes(i));
@@ -1031,7 +1138,7 @@ function shopMarketTab(home, target) {
       const priceHtml = slot.discounted ? `<s>${item.price}</s> <b class="good">${slot.price}</b> 分` : `${slot.price} 分`;
       return `<div class="slot ${slot.sold ? "sold" : ""} ${slot.locked ? "locked-slot" : ""}">
         <div class="slot-head"><span class="option-icon">${item.icon}</span><span class="grow"><b>${item.name}</b><br /><small>${SHOP_CATEGORY_LABELS[item.category]}・T${item.tier}${item.kind === "gear" ? "・" + SHOP_SLOT_LABELS[item.slot] : ""}</small></span>${slot.locked ? "🔒" : ""}</div>
-        <small>${item.desc}</small>${itemFx(item)}${world}
+        <small>${item.desc}</small>${itemFx(item)}${replaceNote(item, target)}${world}
         ${!slot.sold && !check.ok ? `<small class="bad">${check.reason}</small>` : ""}
         <div class="slot-actions">
           <button data-action="market-lock" data-id="${slot.index}" ${slot.sold || (!slot.locked && lockedCount >= info.lockLimit) ? "disabled" : ""} ${!slot.locked && lockedCount >= info.lockLimit && !slot.sold ? `title="已鎖滿 ${info.lockLimit} 格，先解除別格才能鎖這格"` : ""}>${slot.locked ? "🔓 解除鎖定" : "🔒 鎖定"}</button>
@@ -1067,8 +1174,8 @@ function detail() {
     return gb ? bioCard(gb, null) : `<h3>查無此人</h3><div class="modal-actions">${closeButton}</div>`;
   }
   const who = getSamsarite(state, modal.id);
-  if (who && (modal.view ?? "bio") === "bio") return bioCard(bioOf(state, who), who);
-  return manageDetail();
+  if (who) return bioCard(bioOf(state, who), who);
+  return `<h3>查無此人</h3><p>這個人已經不在了。</p><div class="modal-actions">${closeButton}</div>`;
 }
 
 const SLOT_ICON = { weapon: "", armor: "", accessory: "", bloodline: "" }; // 傳記不用 emoji，欄位名稱本身就夠清楚
@@ -1089,9 +1196,16 @@ function bioStory(b) {
   return parts.join("");
 }
 
-/** 人物傳記卡（功能 5）。s 有值 = 還活著、可轉移裝備；null = 墓園裡的人（只看，附復活入口） */
+/** 每個裝備欄的一行規則（裝備欄旁邊顯示，文字要短） */
+const SLOT_RULE = {
+  weapon: "只能裝 1 把，買新的會換掉舊的，不能疊加",
+  armor: "只能穿 1 件，買新的會換掉舊的，不能疊加",
+  accessory: "只能戴 1 件，買新的會換掉舊的，不能疊加",
+  bloodline: "血統只能套用一種，不能疊加（新的會覆蓋舊的）",
+};
+
+/** 人物檔案頁（功能 5，2026-11 改版）。s 有值 = 還活著；null = 墓園裡的人（只看，附復活入口） */
 function bioCard(b, s) {
-  const chips = b.tags.length ? b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}" title="${(t.desc ?? "").replace(/"/g, "&quot;")}">${t.rarity}｜${t.name}</span>`).join("") : `<small>（沒有標籤）</small>`;
   const rel = b.relations;
   const relRows = [
     rel.partner ? `<div>${rel.partner.status === "soulmate" ? "靈魂伴侶" : "戀人"}：<b>${rel.partner.name}</b></div>` : "",
@@ -1104,8 +1218,9 @@ function bioCard(b, s) {
   const gearRows = Object.entries(SHOP_SLOT_LABELS)
     .map(([slot, label]) => {
       const name = b.gear[slot];
-      const move = canMove && name ? `<button data-action="gear-pick" data-slot="${slot}" ${modal.transfer?.slot === slot ? 'class="active"' : ""}>卸下並轉給…</button>` : "";
-      return `<div class="bio-gear"><span>${SLOT_ICON[slot]} ${label}</span><b class="${name ? "" : "muted"}">${name ?? "（空）"}</b>${move}</div>`;
+      const bound = s?.soulbound?.[slot] ? ` <span class="badge-bound">🔒綁定</span>` : "";
+      const move = canMove && name ? `<button class="pill${modal.transfer?.slot === slot ? " active" : ""}" data-action="gear-pick" data-slot="${slot}">卸下並轉給…</button>` : "";
+      return `<div class="bio-gear"><div class="bio-gear-main"><span class="bio-gear-slot">${label}</span><b class="${name ? "" : "muted"}">${name ?? "（空）"}</b>${bound}${move}</div><small class="slot-rule">${SLOT_RULE[slot] ?? ""}</small></div>`;
     })
     .join("");
   let transfer = "";
@@ -1125,40 +1240,66 @@ function bioCard(b, s) {
   const revive = b.alive
     ? ""
     : `<div class="summary bio-revive"><b>復活</b><br /><small>使用氪金道具可以讓他回來。道具名稱：—　價格：—（尚未決定）</small><br /><button disabled title="道具與價格還沒決定，尚未開放">使用氪金道具復活（尚未開放）</button></div>`;
+
+  // 活著才有的區塊：成長（強化／突破直接在這裡做）、裝備買賣、操作
+  let growth = "";
+  let gearActions = "";
+  let ops = "";
+  if (s) {
+    const gain = enhanceGain(s);
+    const enh = checkEnhance(state, s.id);
+    const brk = checkBreakGene(state, s.id);
+    const cap = enhanceCapOf(s);
+    const pct = cap ? Math.min(100, Math.round(((s.enhanceCount ?? 0) / cap) * 100)) : 0;
+    const home = s.location === "space";
+    growth = `<section class="bio-sec sec-mint"><h4>💪 成長</h4>
+      <div class="bio-prog"><span>強化 <b>${s.enhanceCount ?? 0}/${cap}</b> 次</span><span class="bar"><i style="width:${pct}%"></i></span><span>基因鎖 <b>第 ${s.geneLock ?? 0} 階</b>／最高 ${maxGeneOf(s)} 階</span></div>
+      <small>每次強化：戰力 +${gain.power}、生命 +${gain.hp}、防禦／速度／運氣各 +${gain.defense}（成長倍率 ×${RANKS[s.rank].growthMult}）</small>
+      <div class="pill-row">
+        <button class="pill primary" data-action="enhance" data-id="${s.id}" ${enh.ok ? "" : "disabled"} title="${enh.ok ? "" : enh.reason}">💪 強化${enh.cost ? `（${enh.cost} 分）` : ""}</button>
+        <button class="pill primary" data-action="break-gene" data-id="${s.id}" ${brk.ok ? "" : "disabled"} title="${brk.ok ? "" : brk.reason}">🧬 突破基因鎖${brk.cost ? `（${brk.cost} 分）` : ""}</button>
+      </div>
+      ${enh.ok ? "" : `<small class="muted">強化：${enh.reason}</small>`}${brk.ok ? "" : `<small class="muted">基因鎖：${brk.reason}</small>`}
+    </section>`;
+    gearActions = `<div class="pill-row">${home ? `<button class="pill primary" data-action="shop-for" data-id="${s.id}">🛒 買道具給他</button>` : `<small class="muted">人在副本或催熟艙，現在不能買東西給他。</small>`}</div>`;
+    ops = `<section class="bio-sec"><h4>⚙️ 操作</h4><div class="pill-row">
+      <button class="pill" data-action="toggle-lock" data-id="${s.id}">${s.locked ? "🔓 解除鎖定" : "🔒 鎖定（不自動派遣）"}</button>
+      <button class="pill" data-action="toggle-follow" data-id="${s.id}">${s.id === state.settings.followId ? "👁️ 取消鎖定視角" : "👁 鎖定視角"}</button>
+      <button class="pill danger" data-action="ask-recycle" data-id="${s.id}" ${home ? "" : "disabled"}>♻️ 回收（+${RANKS[s.rank].recycleRefund} 分）</button>
+    </div></section>`;
+  }
   return `<div class="bio ${b.alive ? "" : "bio-dead"}">
     <div class="bio-head bio-rank-${b.rank}">
       <div class="bio-avatar">${b.name.slice(0, 1)}</div>
-      <div class="bio-title"><div class="bio-name">${rankBadge(b.rank)} ${b.name}${b.alive ? "" : "　<small>（已逝）</small>"}</div>
+      <div class="bio-title"><div class="bio-name">${rankBadge(b.rank)} ${b.name}${b.alive ? "" : "　<small>（已逝）</small>"}<span class="bio-name-tags">${b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}" ${s ? `data-action="codex-open" data-sid="${s.id}" data-tag="${t.id}"` : ""} title="點一下到詞條庫看說明">${t.rarity}｜${t.name}</span>`).join("")}${s ? `<button type="button" class="pill cx-compare" data-action="codex-open" data-sid="${s.id}" data-keep-emoji>對照詞條庫</button>` : ""}</span></div>
         <div class="bio-sub">第 ${b.generation} 代・基因鎖 ${b.geneLock} 階・出征 ${b.runs} 場</div></div>
     </div>
     ${statuses ? `<div class="bio-status">${statuses}</div>` : ""}
-    <p class="bio-story">${bioStory(b)}</p>
     <div class="bio-grid">
-      <div><small>戰力</small><b>${b.power}</b></div><div><small>理智</small><b>${Math.round(b.sanity)}</b></div>
-      <div><small>私房錢</small><b>${b.wallet}</b></div><div><small>階級</small><b>${b.rank}</b></div>
+      <div class="sec-cream"><small>戰力</small><b>${b.power}</b></div><div class="sec-coral"><small>理智</small><b>${Math.round(b.sanity)}</b></div>
+      <div class="sec-mint"><small>私房錢</small><b>${b.wallet}</b></div><div class="sec-lav"><small>階級</small><b>${b.rank}</b></div>
     </div>
-    <h4>標籤</h4><div class="bio-tags">${chips}</div>
-    <h4>關係</h4><div class="bio-rel">${relRows.join("")}</div>
-    <h4>裝備</h4><div>${gearRows}</div>${transfer}
+    <p class="bio-story">${bioStory(b)}</p>
+    ${growth}
+    <section class="bio-sec sec-cream"><h4>🎒 裝備</h4><div>${gearRows}</div>${transfer}${gearActions}</section>
     ${modal.note ? `<div class="summary">${modal.note}</div>` : ""}
-    <h4>一生大事記</h4><div class="bio-timeline">${timeline}</div>
-    <h4>子女與血脈</h4><div>${b.parentNames.length ? `父母：${b.parentNames.join("、")}<br />` : ""}子女：${kids}</div>
-    <h4>成就</h4><div class="bio-achs">${ach}</div>
+    ${ops}
+    <section class="bio-sec"><h4>💞 關係</h4><div class="bio-rel">${relRows.join("")}</div></section>
+    <section class="bio-sec"><h4>📜 一生大事記</h4><div class="bio-timeline">${timeline}</div></section>
+    <section class="bio-sec"><h4>👶 子女與血脈</h4><div>${b.parentNames.length ? `父母：${b.parentNames.join("、")}<br />` : ""}子女：${kids}</div></section>
+    <section class="bio-sec"><h4>🏆 成就</h4><div class="bio-achs">${ach}</div></section>
+    ${s ? `<details class="bio-more"><summary>📊 詳細數值（生命／防禦／維持費／標籤效果…）</summary>${statsTable(s)}<h4>人際關係（雙向數字）</h4><div class="rel-list">${relationRows(s)}</div></details>` : ""}
     ${revive}
-    <div class="modal-actions">${s ? `<button data-action="view-manage" data-id="${s.id}">管理（強化／突破／鎖定／回收）</button>` : `<button data-action="open-settings">↩ 回設定</button>`}${closeButton}</div>
+    <div class="modal-actions">${s ? "" : `<button data-action="open-settings">↩ 回設定</button>`}${closeButton}</div>
   </div>`;
 }
 
-function manageDetail() {
-  const s = getSamsarite(state, modal.id);
-  if (!s) return `<h3>查無此人</h3><p>這個人已經不在了。</p><div class="modal-actions">${closeButton}</div>`;
+/** 詳細數值表（收在檔案頁最下面的折疊區；強化／突破／鎖定／回收已搬到檔案頁各區） */
+function statsTable(s) {
   const home = s.location === "space";
   const gene = geneTierOf(s);
   const gain = enhanceGain(s);
-  const enh = checkEnhance(state, s.id);
-  const brk = checkBreakGene(state, s.id);
-  return `<h3>${rankBadge(s.rank)} ${s.name} <button data-action="view-bio" data-id="${s.id}">📖 人物傳記</button></h3>
-    <table class="stats">
+  return `<table class="stats">
       <tr><td>狀態</td><td>${s.location === "pod" ? `🍼 催熟艙（還要 ${s.podDaysLeft} 天）` : `${home ? "主神空間" : "副本中"}・${injuryLabel(s)}`}</td></tr>
       ${s.parents ? `<tr><td>家長</td><td>${parentNames(state, s).join("、") || "（已不在世）"}${s.inheritedTags?.length ? `<br /><small>繼承標籤：${s.inheritedTags.map((id) => getTag(id)?.name ?? id).join("、")}</small>` : ""}</td></tr>` : ""}
       ${s.mood || s.vacationDays > 0 || wishesOf(state, s.id).length ? `<tr><td>心情／許願</td><td>${statusExtras(s).replace("<br />", "")}</td></tr>` : ""}
@@ -1177,25 +1318,7 @@ function manageDetail() {
       <tr><td>私房錢</td><td>💰 <b>${s.wallet ?? 0}</b> 分<br /><small>副本結算先抽 ${Math.round(taxRateOf(state) * 100)}% 稅入公庫，其餘由存活隊員平分；他會自己逛街、強化（戰死 ${Math.round(CONFIG.wallet.deathForfeitPct * 100)}% 充公，回收 100% 歸公庫）</small></td></tr>
       <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}${s.soulbound?.[slot] ? ' <span class="badge-bound">🔒綁定</span>' : ""}`).join("<br />")}${s.consumables?.length ? `<br />🎒 出征耗材：${s.consumables.map((id) => getShopItem(id)?.name ?? id).join("、")}` : ""}${s.podLockDays > 0 ? `<br />🛏️ 被鎖在私人休眠艙（還要 ${s.podLockDays} 天）` : ""}</td></tr>
       <tr><td>自主購買</td><td class="shop-log">${s.shopLog?.length ? s.shopLog.slice().reverse().map((l) => `第 ${l.day} 天：${l.text}`).join("<br />") : "（還沒有）"}</td></tr>
-      <tr><td>標籤</td><td>${(s.tags ?? [])
-        .map(getTag)
-        .filter(Boolean)
-        .map((t) => `<div><span class="tag-chip tag-${t.rarity}">${t.rarity}・${t.name}</span> <small>${t.desc}${t.pending ? `<br /><i>（${t.pending}）</i>` : ""}<br />效果：${describeTag(t).effects}<br />${describeTag(t).lead}</small></div>`)
-        .join("")}</td></tr>
-    </table>
-    <h3 style="margin-top:12px">💞 人際關係</h3>
-    <div class="rel-list">${relationRows(s)}</div>
-    <p style="margin-top:12px"><small>💪 強化：${enh.ok ? `可以強化（${enh.cost} 分）` : enh.reason}<br />🧬 基因鎖：${brk.ok ? `可以突破到第 ${brk.next} 階（${brk.cost} 分）` : brk.reason}</small></p>
-    <div class="modal-actions">
-      <button class="primary" data-action="enhance" data-id="${s.id}" ${enh.ok ? "" : "disabled"} title="${enh.ok ? "" : enh.reason}">💪 強化${enh.cost ? `（${enh.cost} 分）` : ""}</button>
-      <button class="primary" data-action="break-gene" data-id="${s.id}" ${brk.ok ? "" : "disabled"} title="${brk.ok ? "" : brk.reason}">🧬 突破基因鎖${brk.cost ? `（${brk.cost} 分）` : ""}</button>
-    </div>
-    <div class="modal-actions">
-      <button class="danger" data-action="ask-recycle" data-id="${s.id}" ${home ? "" : "disabled"}>♻️ 推進回收爐（+${RANKS[s.rank].recycleRefund} 分）</button>
-      <button data-action="toggle-follow" data-id="${s.id}">${s.id === state.settings.followId ? "👁️ 取消鎖定視角" : "👁 鎖定視角"}</button>
-      <button data-action="toggle-lock" data-id="${s.id}">${s.locked ? "🔓 解除鎖定" : "🔒 鎖定（不參與自動派遣）"}</button>
-      ${closeButton}
-    </div>`;
+</table>`;
 }
 
 /** 一對關係的文字：等級／狀態、雙向好感、雙向仇恨 */
@@ -1519,10 +1642,30 @@ function runResult() {
     <div class="modal-actions"><button class="primary" data-action="close-run-report">${waiting > 0 ? "下一場" : "知道了"}</button></div>`;
 }
 
+/** 進行中（已答應）的許願清單：誰許的、要什麼、期限剩幾天；剩 1 天以內標紅 */
+function activeWishList() {
+  const day = currentDay(state);
+  const rows = (state.wishes ?? [])
+    .filter((x) => x.status === "active")
+    .map((x) => {
+      const who = getSamsarite(state, x.samsariteId);
+      const def = getWish(x.kind);
+      const isRest = x.mode === "rest";
+      const left = isRest ? (who?.vacationDays ?? 0) : x.deadlineDay - day;
+      const urgent = !isRest && left <= 1;
+      const what = renderTemplate(def.doneDesc, wishVars(state, x));
+      const time = isRest ? `放假中，還剩 ${left} 天` : `期限第 ${x.deadlineDay} 天前，還剩 ${Math.max(0, left)} 天`;
+      return { left: isRest ? 999 : left, html: `<li class="wish-row${urgent ? " urgent" : ""}"><b>${def.icon} ${esc(who?.name ?? "?")}</b>：${esc(def.name)}<br /><small>${esc(what)}</small><br /><span class="wish-time${urgent ? " bad" : ""}">${urgent ? "⚠️ 快到期！" : "⏳"} ${time}</span></li>` };
+    })
+    .sort((a, b) => a.left - b.left);
+  if (rows.length === 0) return `<p class="muted">目前沒有進行中的許願。</p>`;
+  return `<ul class="wish-list">${rows.map((r) => r.html).join("")}</ul>`;
+}
+
 function wish() {
   const list = pendingWishes(state);
   const w = list[0];
-  if (!w) return `<h3>🙏 許願</h3><p>目前沒有等你回覆的許願。</p><div class="modal-actions">${closeButton}</div>`;
+  if (!w) return `<h3>🙏 許願</h3><h4>進行中的許願</h4>${activeWishList()}<div class="modal-actions">${closeButton}</div>`;
   const s = getSamsarite(state, w.samsariteId);
   const def = getWish(w.kind);
   const vars = wishVars(state, w);
@@ -1543,6 +1686,7 @@ function wish() {
       ${list.length > 1 ? `<br /><small>還有 ${list.length - 1} 個許願排隊中</small>` : ""}
     </div>
     ${statusPanel([s, ...home.filter((x) => x.id !== s.id)].filter((x) => x.location === "space"))}
+    <h4>進行中的許願</h4>${activeWishList()}
     <div class="modal-actions">
       <button class="danger" data-action="refuse-wish" data-id="${w.id}">拒絕</button>
       <button class="primary" data-action="accept-wish" data-id="${w.id}" ${check.ok ? "" : "disabled"}>答應</button>
@@ -1846,6 +1990,13 @@ const actions = {
     state.settings.paused = !state.settings.paused;
     bannerText = "";
   },
+  "codex-open"(el) {
+    // 小人檔案頁「對照詞條庫」或點某個詞條：開詞條庫，那個小人的詞條置頂
+    codex.open({ samsariteId: el.dataset.sid ? Number(el.dataset.sid) : null, tagId: el.dataset.tag || null });
+  },
+  "log-filter"(el) {
+    logFilter = el.dataset.id;
+  },
   "set-speed"(el) {
     state.settings.speed = Number(el.dataset.value);
   },
@@ -1953,7 +2104,23 @@ const actions = {
     saveGame();
   },
   "shop-target"(el) {
+    if (modal.lockTarget) return; // 從小人檔案頁進來的商店：收件人鎖定，不能在這裡換人
     modal.targetId = Number(el.dataset.id);
+  },
+  "shop-for"(el) {
+    // 小人檔案頁 →「買道具給他」：收件人固定，預設先看裝備
+    modal = { name: "shop", tab: "shop", cat: "gear", targetId: Number(el.dataset.id), victimId: null, lockTarget: true, fromId: Number(el.dataset.id) };
+  },
+  "back-to-profile"() {
+    modal = { name: "detail", id: modal.fromId, view: "bio" };
+  },
+  "buy-use-stock"(el) {
+    // 鎖定收件人時買藥：買 1 份直接用在他身上
+    const b = buyStock(state, el.dataset.id, 1);
+    if (!b.ok) return void alert(b.reason);
+    const u = useStock(state, el.dataset.id, modal.targetId);
+    modal.note = u.ok ? `✅ ${u.note}` : `<span class="bad">${u.reason}（已先放進倉庫）</span>`;
+    saveGame();
   },
   buy(el) {
     const result = buyItem(state, el.dataset.id, modal.targetId);
@@ -2111,6 +2278,11 @@ const actions = {
     dispatchPick.dungeonId = dispatchPick.slotId = null; // 那一槽出發了，下次開派遣畫面重選
     dispatchPick.greedy = false;
     dispatchPick.erosion = 0;
+    // 出發 = 遊戲進入進行中。先作廢「開窗前的暫停狀態」，否則關窗時 syncAutoPause 會把暫停蓋回去，右上角顯示跟實際狀態脫節
+    if (autoPause) {
+      state.settings.speed = autoPause.speed;
+      autoPause = null;
+    }
     modal = null;
     state.settings.paused = false;
     bannerText = "";
@@ -2227,6 +2399,13 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault(); // 防止空白鍵同時觸發已聚焦按鈕的 click
     if (el && el !== document.body && typeof el.blur === "function") el.blur();
     actions["toggle-pause"]();
+    afterChange();
+  } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    // 左右方向鍵：流速降／升一檔，到最慢或最快就不動
+    e.preventDefault();
+    const i = CONFIG.speeds.indexOf(state.settings.speed);
+    const next = Math.max(0, Math.min(CONFIG.speeds.length - 1, (i < 0 ? CONFIG.speeds.indexOf(1) : i) + (e.key === "ArrowRight" ? 1 : -1)));
+    state.settings.speed = CONFIG.speeds[next];
     afterChange();
   } else if (/^[1-5]$/.test(e.key) && CONFIG.speeds[Number(e.key) - 1] !== undefined) {
     state.settings.speed = CONFIG.speeds[Number(e.key) - 1];
