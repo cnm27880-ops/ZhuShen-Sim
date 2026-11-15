@@ -55,6 +55,7 @@ import { effectivePower, subStat, defenseChance, speedSaveChance } from "../engi
 import { shopTier, nextTierInfo, checkBuy, buyItem, collectionEffects, shopItemsOfTier } from "../engine/shop.js";
 import { SHOP_KIND_LABELS, SHOP_CATEGORY_LABELS, SHOP_SLOT_LABELS, getShopItem } from "../data/shopItems.js";
 import { getSpecialReward } from "../data/dungeons.js";
+import { firstRelicOf } from "../data/relics.js";
 import { getTag, getEnvTag } from "../data/tags.js";
 import { step, areEnemies } from "../engine/dispatch.js";
 import { pendingWishes, wishesOf, checkAccept, acceptWish, refuseWish, wishVars } from "../engine/wishes.js";
@@ -755,7 +756,7 @@ function dispatch() {
   const statLine = (d, mut) => {
     const st = state.dungeonStats[d.id] ?? { attempts: 0, clears: 0 };
     const rewardPct = mut?.rewardPct ?? 0;
-    return `推薦戰力 ${d.recommendedPower}<br />獎勵 ${Math.round(d.reward * (1 + rewardPct))} 分${hasIntel(state, d) ? "" : "（首通）"}`;
+    return `推薦戰力 ${d.recommendedPower}<br />獎勵 ${Math.round(d.reward * (1 + rewardPct))} 分${hasIntel(state, d) ? "" : ` <span class="first-chip">🎁 首通</span>`}`;
   };
   const mutChip = (mut) => (mut ? `<span class="mut-chip ${mut.id}" title="${mut.desc}">${mut.icon} ${mut.name}</span>` : "");
 
@@ -823,6 +824,20 @@ function dispatch() {
     if (injured.length > 0) summary += `<br /><span class="bad">帶傷出征：${injured.map((s) => s.name).join("、")}</span>`;
     summary += riskWarning(party);
   }
+  // 首通獎勵卡：選到還沒通關過的副本時，寫清楚第一次打有什麼好處
+  const firstClearBox = (() => {
+    if (isMand || isRivalPick || !dungeon || hasIntel(state, dungeon)) return "";
+    const relic = firstRelicOf(dungeon.id);
+    const specials = (dungeon.specialRewards ?? []).map((r) => r.name);
+    const lines = [
+      `<li><b>+${Math.round(dungeon.reward * CONFIG.dungeon.firstClearBonusPct)} 分</b><small>首通額外加成（基礎獎勵 ${Math.round(CONFIG.dungeon.firstClearBonusPct * 100)}%）</small></li>`,
+      relic ? `<li><b>${relic.icon} ${relic.name}</b><small>必得首通奇物：全隊戰力 +${(relic.powerPct * 100).toFixed(1)}%</small></li>` : "",
+      specials.length ? `<li><b>🎁 特殊獎勵 ×1</b><small>從 ${specials.length} 件裡隨機掉一件：${specials.join("、")}</small></li>` : "",
+      `<li><b>📡 解鎖副本情報</b><small>通關後情報條開始累積，之後通關率會慢慢提高</small></li>`,
+      dungeon.boss ? `<li><b>🏛️ 空間升級</b><small>首通尾王：空間等級 +1，解鎖下一章與更多商店／抽卡</small></li>` : "",
+    ].join("");
+    return `<div class="first-box"><div class="first-title">🎁 首通獎勵<small>第一次通關【${dungeon.name}】才拿得到</small></div><ul>${lines}</ul><small class="warn">⚠️ 首次開荒傷勢較重，建議帶傷藥再去。</small></div>`;
+  })();
   const erosionBox = canErode
     ? `<label class="toggle">位面侵蝕 <select data-erosion>${Array.from({ length: CONFIG.erosion.maxStar + 1 }, (_, k) => `<option value="${k}" ${k === dispatchPick.erosion ? "selected" : ""}>${k === 0 ? "無" : `${k}★`}</option>`).join("")}</select></label>`
     : "";
@@ -836,6 +851,7 @@ function dispatch() {
       <h4 class="chapter-head">尾王挑戰區</h4>${bossOptions}
       ${extraOptions ? `<h4 class="chapter-head">指定任務</h4>${extraOptions}` : ""}
     </div>
+    ${firstClearBox}
     <h3>選擇隊員（${party.length}/${CONFIG.partyMax}）</h3>
     <div class="option-list">${memberOptions}</div>
     <div class="summary">${dispatchHint ? `<div class="bad" style="margin-bottom:6px">⚠ ${dispatchHint}</div>` : ""}${summary}${erosionBox || greedyBox ? `<div class="summary-opts">${erosionBox}${greedyBox}</div>` : ""}</div>
