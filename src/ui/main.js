@@ -240,7 +240,7 @@ function renderTopbar() {
     .map((v) => `<button data-action="set-speed" data-value="${v}" class="${v === state.settings.speed ? "active" : ""}">${v}x</button>`)
     .join("");
   document.body.style.setProperty("--speed", state.settings.speed); // 讓小人滑動速度跟著遊戲速度變快
-  $("btn-pause").textContent = state.settings.paused ? "繼續" : "暫停";
+  $("btn-pause").textContent = state.settings.paused ? "繼續 (SPACE)" : "暫停 (SPACE)";
   const taxPct = Math.round(taxRateOf(state) * 100);
   document.querySelector('[data-action="tax-down"]').disabled = taxRateOf(state) <= CONFIG.tax.min + 1e-9; // #34：到上下限就 disabled，不要點了沒反應
   document.querySelector('[data-action="tax-up"]').disabled = taxRateOf(state) >= CONFIG.tax.max - 1e-9;
@@ -2298,6 +2298,13 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault(); // 防止空白鍵同時觸發已聚焦按鈕的 click
     if (el && el !== document.body && typeof el.blur === "function") el.blur();
     actions["toggle-pause"]();
+    afterChange();
+  } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    // 左右方向鍵：流速降／升一檔，到最慢或最快就不動
+    e.preventDefault();
+    const i = CONFIG.speeds.indexOf(state.settings.speed);
+    const next = Math.max(0, Math.min(CONFIG.speeds.length - 1, (i < 0 ? CONFIG.speeds.indexOf(1) : i) + (e.key === "ArrowRight" ? 1 : -1)));
+    state.settings.speed = CONFIG.speeds[next];
     afterChange();
   } else if (/^[1-5]$/.test(e.key) && CONFIG.speeds[Number(e.key) - 1] !== undefined) {
     state.settings.speed = CONFIG.speeds[Number(e.key) - 1];
