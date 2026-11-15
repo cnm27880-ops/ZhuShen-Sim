@@ -1718,7 +1718,7 @@ function godEvent() {
         目標：通關「${getDungeon(m.dungeonId).name}」<br />
         期限：第 ${m.deadlineDay} 天前（還剩 ${m.deadlineDay - currentDay(state)} 天）<br />
         <span class="good">完成 → +${m.reward} 分，${s.name} 高興</span><br />
-        <span class="bad">逾期 → 扣 ${CONFIG.godEvent.kinds.raid.penaltyPoints} 分，${s.name} 不爽</span>
+        <span class="bad">逾期 → 扣 ${m.penalty ?? CONFIG.godEvent.kinds.raid.penaltyPoints} 分，${s.name} 不爽</span>
       </div>
       <div class="modal-actions">${closeButton}</div>`;
   }

@@ -519,3 +519,102 @@ test("自動派遣：派出任務目標後，通關即領獎", () => {
   assert.equal(target.location, "dungeon");
   assert.ok(state.runs.some((r) => r.dungeonId === "ghost_village" && r.partyIds.includes(target.id)));
 });
+
+// ───────── 第四批 7、8：天數章節 ─────────
+import { dayChapterOf, godMultOf, targetDungeons } from "../src/engine/dayChapter.js";
+import { resolveCostOf } from "../src/engine/godEvents.js";
+import { maybeWish } from "../src/engine/wishes.js";
+import { DUNGEONS } from "../src/data/dungeons.js";
+
+const atDay = (state, day) => {
+  state.tick = (day - 1) * CONFIG.ticksPerDay;
+};
+
+test("天數對應章節：Day <30 → 1、30~69 → 2、70~174 → 3、175~319 → 4、320 以上 → 5；倍率 ×1／3／10／30／100", () => {
+  const got = [1, 29, 30, 69, 70, 174, 175, 319, 320, 999].map(dayChapterOf);
+  assert.deepEqual(got, [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+  assert.deepEqual([1, 30, 70, 175, 320].map(godMultOf), [1, 3, 10, 30, 100]);
+});
+
+test("主神搞事積分跟著天數章節乘倍率：Day 150（第 3 章 ×10）化解費不再是 20 分，化解仍比不化解便宜", () => {
+  for (const [day, mult] of [[1, 1], [40, 3], [150, 10], [250, 30], [400, 100]]) {
+    for (const kind of ["tax", "shock", "checkup", "raid"]) {
+      const { state } = setup(3);
+      state.points = 1e9;
+      atDay(state, day);
+      state.samsarites.forEach((s) => (s.stats.power = 100000));
+      const ev = forceEvent(state, kind);
+      if (!ev) continue; // 突襲任務可能沒有可指定的副本
+      assert.equal(ev.params.mult, mult, `${kind} Day ${day}`);
+      const cost = resolveCostOf(state, ev);
+      assert.equal(cost, K()[kind].resolveCost * mult);
+      if (kind === "tax") {
+        assert.ok(ev.params.loss >= K().tax.loss[0] * mult && ev.params.loss <= K().tax.loss[1] * mult);
+        assert.ok(cost < ev.params.loss, "化解費要比損失便宜");
+      }
+      if (kind === "raid") assert.ok(ev.params.reward >= K().raid.rewardPoints[0] * mult);
+      const before = state.points;
+      assert.equal(resolveGodEvent(state).ok, true);
+      assert.equal(before - state.points, cost, "實際扣的就是倍率後的化解費");
+    }
+  }
+  const { state } = setup(2);
+  atDay(state, 150);
+  assert.equal(resolveCostOf(state, { kind: "checkup", params: {} }, "checkup"), 200);
+});
+
+test("突襲任務抗命罰金與任務獎勵也乘倍率，罰金鎖進任務", () => {
+  const { state, a } = setup(3);
+  state.points = 1e9;
+  atDay(state, 150);
+  state.samsarites.forEach((s) => (s.stats.power = 100000));
+  const ev = forceEvent(state, "raid");
+  assert.ok(ev);
+  acceptGodEvent(state);
+  const m = activeMission(state);
+  assert.equal(m.penalty, K().raid.penaltyPoints * 10);
+  assert.ok(m.reward >= K().raid.rewardPoints[0] * 10);
+});
+
+test("許願「想去副本」與突襲任務選副本跟著天數與戰力走：Day 150、隊伍夠強時不再出第一章副本", () => {
+  const { state } = setup(4);
+  atDay(state, 150);
+  state.spaceLevel = 3; // 空間 Lv.3 = 前兩章尾王都打過，第 3 章解鎖（沒解鎖的副本不會被許願指定）
+  state.samsarites.forEach((s) => (s.stats.power = 4000));
+  const opts = targetDungeons(state, CONFIG.wish.dungeonPowerCap);
+  assert.ok(opts.length > 0);
+  assert.ok(opts.every((d) => d.chapter === 3), `章節 ${[...new Set(opts.map((d) => d.chapter))]}`);
+  // 該章沒有打得動的就逐章往下
+  state.samsarites.forEach((s) => (s.stats.power = 60));
+  const lower = targetDungeons(state, CONFIG.wish.dungeonPowerCap);
+  assert.ok(lower.every((d) => d.chapter < 3));
+  // 全都打不動才退回固定上限（第一章）
+  state.samsarites.forEach((s) => (s.stats.power = 1));
+  assert.ok(targetDungeons(state, CONFIG.wish.dungeonPowerCap).every((d) => d.recommendedPower <= CONFIG.wish.dungeonPowerCap));
+  // 已通關的最高章節比天數章節高時以它為準（Day 5 但已通關第 3 章）
+  const st2 = setup(4).state;
+  atDay(st2, 5);
+  st2.spaceLevel = 3;
+  st2.samsarites.forEach((s) => (s.stats.power = 5000));
+  st2.dungeonStats.ch3_01 = { clears: 1 };
+  assert.ok(targetDungeons(st2, 150).every((d) => d.chapter === 3));
+  // 實際許願：多次許願都不是第一章
+  const st3 = setup(4).state;
+  atDay(st3, 150);
+  st3.spaceLevel = 3;
+  st3.samsarites.forEach((s) => (s.stats.power = 4000));
+  const saved = JSON.stringify(CONFIG.wish);
+  CONFIG.wish.chance = 1;
+  for (const k of Object.keys(CONFIG.wish.kinds)) CONFIG.wish.kinds[k].weight = k === "dungeon" ? 1 : 0;
+  try {
+    for (let i = 0; i < 20; i++) {
+      st3.wishes = [];
+      maybeWish(st3, st3.samsarites[0]);
+      const w = st3.wishes.find((x) => x.mode === "dungeon");
+      if (w) assert.ok(DUNGEONS.find((d) => d.id === w.params.dungeonId).chapter >= 2, w.params.dungeonId);
+    }
+  } finally {
+    Object.assign(CONFIG.wish, JSON.parse(saved));
+    for (const k of Object.keys(CONFIG.wish.kinds)) Object.assign(CONFIG.wish.kinds[k], JSON.parse(saved).kinds[k]);
+  }
+});

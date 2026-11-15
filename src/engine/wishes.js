@@ -9,6 +9,7 @@ import { CONFIG } from "../data/config.js";
 import { WISHES, getWish } from "../data/wishes.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
 import { SHOP_ITEMS, getShopItem } from "../data/shop.js";
+import { targetDungeons } from "./dayChapter.js";
 import { randInt, pick, rand, weighted } from "./rng.js";
 import { emit, currentDay, spend, canAfford, getSamsarite, shopTier } from "./core.js";
 import { logText } from "./templates.js";
@@ -47,7 +48,7 @@ function possibleWishes(state, s) {
     if (def.mode === "pay") out.push({ def, weight: k.weight, params: { cost: randInt(state, ...k.cost) } });
     else if (def.mode === "rest") out.push({ def, weight: k.weight, params: { rest: randInt(state, ...k.restDays) } });
     else if (def.mode === "dungeon") {
-      const options = DUNGEONS.filter((d) => d.recommendedPower <= W().dungeonPowerCap);
+      const options = targetDungeons(state, W().dungeonPowerCap); // 跟著天數與進度走（第四批 7）；全部打不動才退回固定上限
       if (options.length > 0) out.push({ def, weight: k.weight, params: { dungeonId: pick(state, options).id } });
     } else if (def.mode === "gear") {
       const tier = shopTier(state);

@@ -412,9 +412,9 @@ test("日常互動靜默：好感／仇恨照算，但不寫 social 日誌；告
   }
 });
 
-test("每天全隊社交互動上限 2 則；12 人規模人際類日誌每天不超過 3 則", () => {
+test("每天全隊社交互動上限 3 則；12 人規模人際類日誌每天不超過 3 則", () => {
   assert.deepEqual(CONFIG.relations.dailyRoll, { work: 0.65, social: 0.15 });
-  assert.equal(CONFIG.relations.socialDailyCap, 2);
+  assert.equal(CONFIG.relations.socialDailyCap, 3);
   let worst = 0;
   let total = 0;
   let days = 0;

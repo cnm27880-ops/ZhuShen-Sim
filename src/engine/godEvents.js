@@ -15,6 +15,7 @@ import { randInt, pick, rand, weighted } from "./rng.js";
 import { emit, currentDay, spend, canAfford, getSamsarite, setInjury, announceDebtIfNew, debtLimitOf } from "./core.js";
 import { setMood, isOnVacation } from "./wishes.js";
 import { logText } from "./templates.js";
+import { godMult, targetDungeons } from "./dayChapter.js";
 
 const G = () => CONFIG.godEvent;
 
@@ -28,6 +29,13 @@ export const pendingGodEvent = (state) => state.god?.pending ?? null;
 export const activeMission = (state) => state.god?.mission ?? null;
 const atHome = (state) => state.samsarites.filter((s) => s.location === "space");
 
+/** 這個事件的積分倍率：事件產生時就鎖進 params.mult（天數章節倍率，第四批 8），沒有的舊事件用現在的倍率 */
+const multOf = (state, ev) => ev?.params?.mult ?? godMult(state);
+/** 化解費（含倍率）。ev 省略 = 用現在的倍率 */
+export const resolveCostOf = (state, ev, kind = ev.kind) => Math.round(G().kinds[kind].resolveCost * multOf(state, ev));
+/** 抗命／逾期罰金（含倍率） */
+export const raidPenaltyOf = (state, ev) => Math.round(G().kinds.raid.penaltyPoints * multOf(state, ev));
+
 /** 文字模板用的變數（也給畫面彈窗填 acceptDesc／payDesc／ignoreDesc） */
 export function godVars(state, ev) {
   const k = G().kinds[ev.kind];
@@ -36,11 +44,11 @@ export function godVars(state, ev) {
     A: s,
     loss: ev.params.loss,
     san: k.sanityLoss,
-    cost: k.resolveCost,
+    cost: resolveCostOf(state, ev),
     days: k.days,
     dungeon: getDungeon(ev.params.dungeonId)?.name,
     reward: ev.params.reward,
-    penalty: k.penaltyPoints,
+    penalty: raidPenaltyOf(state, ev),
     extra: k.resolveSanityAll,
   };
 }
@@ -57,7 +65,7 @@ function possibleEvents(state) {
     if (!k || k.weight <= 0) continue;
     if (def.mode === "raid") {
       const ready = home.some((s) => !isOnVacation(s) && s.injury === 0);
-      const dungeons = DUNGEONS.some((d) => d.recommendedPower <= k.dungeonPowerCap);
+      const dungeons = targetDungeons(state, k.dungeonPowerCap).length > 0;
       if (!ready || !dungeons || state.god.mission) continue; // 沒人能出任務、沒副本可指定、或已有任務在身
     }
     out.push({ def, weight: k.weight });
@@ -79,7 +87,7 @@ export function dailyGod(state) {
   if (m) {
     const target = getSamsarite(state, m.samsariteId);
     if (!target) g.mission = null;
-    else if (day >= m.deadlineDay && target.location !== "dungeon") raidPenalty(state, target, m.dungeonId, "godRaidFail");
+    else if (day >= m.deadlineDay && target.location !== "dungeon") raidPenalty(state, target, m.dungeonId, "godRaidFail", m.penalty);
   }
 
   // 沒回覆的事件：視同照辦（突襲任務視同抗命）
@@ -97,13 +105,14 @@ export function dailyGod(state) {
   const def = weighted(g, choices).def;
   const params = {};
   let targetId = null;
-  if (def.mode === "tax") params.loss = randInt(g, ...G().kinds.tax.loss);
+  params.mult = godMult(state); // 天數章節倍率鎖進事件（回覆前跨章也不變）
+  if (def.mode === "tax") params.loss = randInt(g, ...G().kinds.tax.loss) * params.mult;
   else if (def.mode === "raid") {
     const k = G().kinds.raid;
     const ready = atHome(state).filter((s) => !isOnVacation(s) && s.injury === 0);
     targetId = pick(g, ready).id;
-    params.dungeonId = pick(g, DUNGEONS.filter((d) => d.recommendedPower <= k.dungeonPowerCap)).id;
-    params.reward = randInt(g, ...k.rewardPoints);
+    params.dungeonId = pick(g, targetDungeons(state, k.dungeonPowerCap)).id;
+    params.reward = randInt(g, ...k.rewardPoints) * params.mult;
   } else targetId = pick(g, atHome(state)).id;
 
   const ev = {
@@ -128,7 +137,7 @@ export function dailyGod(state) {
 export function checkResolve(state) {
   const ev = state.god?.pending;
   if (!ev) return { ok: false, reason: "這個事件已經處理過了" };
-  if (!canAfford(state, G().kinds[ev.kind].resolveCost)) return { ok: false, reason: "積分不夠（連主神高利貸都借不到）" };
+  if (!canAfford(state, resolveCostOf(state, ev))) return { ok: false, reason: "積分不夠（連主神高利貸都借不到）" };
   return { ok: true };
 }
 
@@ -147,7 +156,7 @@ export function resolveGodEvent(state) {
   if (!check.ok) return check;
   const ev = state.god.pending;
   const k = G().kinds[ev.kind];
-  spend(state, k.resolveCost, false); // 事件化解費不計入商店階級（#16）
+  spend(state, resolveCostOf(state, ev), false); // 事件化解費不計入商店階級（#16）
   if (k.resolveSanityAll) for (const s of atHome(state)) s.stats.sanity = Math.max(0, s.stats.sanity - k.resolveSanityAll); // 異質代價：全體留守者理智下降（4-E-7）
   state.god.pending = null;
   emit(state, "god", logText(state, `godResolve_${ev.kind}`, godVars(state, ev)));
@@ -177,7 +186,7 @@ function applyEvent(state, ev, timedOut) {
       setInjury(target, Math.min(INJURIES.length - 1, target.injury + k.injuryLevels));
       vars.injury = INJURIES[target.injury].name;
     } else if (outcome === "points") {
-      vars.reward = randInt(god(state), ...k.rewardPoints);
+      vars.reward = randInt(god(state), ...k.rewardPoints) * multOf(state, ev);
       state.points += vars.reward;
     } else {
       target.stats.sanity = Math.min(100, target.stats.sanity + k.rewardSanity);
@@ -185,25 +194,25 @@ function applyEvent(state, ev, timedOut) {
     }
     emit(state, "god", logText(state, `godDone_checkup_${outcome}`, vars));
   } else if (ev.mode === "raid") {
-    if (timedOut) return raidPenalty(state, target, ev.params.dungeonId, "godRaidIgnore");
+    if (timedOut) return raidPenalty(state, target, ev.params.dungeonId, "godRaidIgnore", raidPenaltyOf(state, ev));
     state.god.mission = {
       samsariteId: target.id,
       dungeonId: ev.params.dungeonId,
       deadlineDay: currentDay(state) + k.days,
       reward: ev.params.reward,
+      penalty: raidPenaltyOf(state, ev), // 抗命／逾期罰金鎖進任務
     };
     emit(state, "god", logText(state, "godRaidStart", vars));
   }
 }
 
 /** 抗命或任務逾期：扣積分（可扣到負債，不低於上限）、被點名的人不爽、任務結束 */
-function raidPenalty(state, target, dungeonId, logKey) {
-  const k = G().kinds.raid;
+function raidPenalty(state, target, dungeonId, logKey, penalty = raidPenaltyOf(state, null)) {
   const wasInDebt = state.points < 0;
-  state.points = Math.max(debtLimitOf(state), state.points - k.penaltyPoints);
+  state.points = Math.max(debtLimitOf(state), state.points - penalty);
   announceDebtIfNew(state, wasInDebt);
   state.god.mission = null;
-  const text = logText(state, logKey, { A: target, dungeon: getDungeon(dungeonId)?.name, penalty: k.penaltyPoints });
+  const text = logText(state, logKey, { A: target, dungeon: getDungeon(dungeonId)?.name, penalty });
   emit(state, "god", text + "\n" + setMood(state, target, "upset"));
 }
 
@@ -242,5 +251,5 @@ export function godEventEconomics(id) {
   const k = G().kinds[id];
   const def = GOD_EVENTS.find((e) => e.id === id);
   const directPointsMax = def.mode === "tax" ? k.loss[1] : def.mode === "raid" ? k.penaltyPoints : 0;
-  return { directPointsMax, directNonPoint: def.mode !== "tax", resolvePoints: k.resolveCost, resolveNonPoint: !!k.resolveSanityAll };
+  return { directPointsMax, directNonPoint: def.mode !== "tax", resolvePoints: k.resolveCost, /* 基準（第 1 章）數字；其他章同乘倍率，比例不變 */ resolveNonPoint: !!k.resolveSanityAll };
 }
