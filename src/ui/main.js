@@ -7,6 +7,7 @@ import { coverHtml } from "./cover.js";
 import { leaderboardHtml } from "./leaderboard.js";
 import { esc } from "./html.js";
 import { LOG_CATEGORIES, LOG_BADGE, categoryOf } from "../data/logCategories.js";
+import { createCodex } from "./codex.js";
 import { buildScorePayload } from "../engine/scoreboard.js";
 import { planSync } from "../engine/cloudSync.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
@@ -208,6 +209,7 @@ function render() {
   renderRoster();
   renderDaySummary();
   renderModal();
+  codex.sync(!coverOpen); // 詞條庫懸浮球：封面時藏起來，進遊戲後永遠在最上層
   for (const id of ["topbar", "actions", "roster", "modal", "log", "banner", "day-summary", "run-list"]) stripEmoji($(id));
 }
 
@@ -502,6 +504,9 @@ function renderRunList(viewing = null) {
     .join("");
 }
 
+// 詞條庫懸浮球：永遠在最上層，視窗可一直開著對照
+const codex = createCodex({ getState: () => state, describeTag: (t) => describeTag(t), onSave: () => saveGame() });
+
 let logFilter = "all"; // 主神日誌目前篩選的分類（只存在畫面，不進存檔）
 
 function renderLog() {
@@ -655,10 +660,10 @@ let raisedId = null; // 觸控裝置：目前點開（浮起）的卡片
 
 function cardInner(s) {
   return `<div class="card-strip">
+      ${rankBadge(s.rank)}
       <div class="card-alerts">${cardAlerts(s)}</div>
-      <div class="mini-avatar">${s.name.slice(0, 1)}</div>
-      <div class="strip-name">${rankBadge(s.rank)}<span>${s.name}</span></div>
-      <div class="strip-power">戰力 <b>${effectivePower(s)}</b></div>
+      <div class="strip-name" title="${esc(s.name)}">${[...s.name].slice(0, 5).map((ch) => `<span>${esc(ch)}</span>`).join("")}</div>
+      <div class="strip-power" title="戰力">${effectivePower(s)}</div>
     </div>
     <div class="card-rest">
       <div class="card-top"><span class="grow">${s.name}</span><span class="tag-dots">${tagDots(s)}</span><span class="follow-btn ${s.id === state.settings.followId ? "on" : ""}" data-action="toggle-follow" data-id="${s.id}" title="${s.id === state.settings.followId ? "取消鎖定視角" : "鎖定視角（他下副本時畫面跟著切）"}">👁</span></div>
@@ -677,7 +682,8 @@ function renderRoster() {
     root.innerHTML = `<div class="empty">你手下一個輪迴者都沒有了。去抽卡吧。</div>`;
     return;
   }
-  root.style.setProperty("--overlap", state.samsarites.length <= 4 ? "-10px" : "138px"); // 人少時不疊（留 10px 間距），5 人以上才堆疊
+  if (state.samsarites.length <= 4) root.style.setProperty("--overlap", "-10px"); // 人少時不疊（留 10px 間距），5 人以上才堆疊
+  else root.style.removeProperty("--overlap");
   const ids = new Set(state.samsarites.map((s) => String(s.id)));
   for (const c of [...root.children]) if (!ids.has(c.dataset.id)) c.remove();
   state.samsarites.forEach((s, i) => {
@@ -1265,7 +1271,7 @@ function bioCard(b, s) {
   return `<div class="bio ${b.alive ? "" : "bio-dead"}">
     <div class="bio-head bio-rank-${b.rank}">
       <div class="bio-avatar">${b.name.slice(0, 1)}</div>
-      <div class="bio-title"><div class="bio-name">${rankBadge(b.rank)} ${b.name}${b.alive ? "" : "　<small>（已逝）</small>"}<span class="bio-name-tags">${b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}">${t.rarity}｜${t.name}</span>`).join("")}</span></div>
+      <div class="bio-title"><div class="bio-name">${rankBadge(b.rank)} ${b.name}${b.alive ? "" : "　<small>（已逝）</small>"}<span class="bio-name-tags">${b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}" ${s ? `data-action="codex-open" data-sid="${s.id}" data-tag="${t.id}"` : ""} title="點一下到詞條庫看說明">${t.rarity}｜${t.name}</span>`).join("")}${s ? `<button type="button" class="pill cx-compare" data-action="codex-open" data-sid="${s.id}" data-keep-emoji>對照詞條庫</button>` : ""}</span></div>
         <div class="bio-sub">第 ${b.generation} 代・基因鎖 ${b.geneLock} 階・出征 ${b.runs} 場</div></div>
     </div>
     ${statuses ? `<div class="bio-status">${statuses}</div>` : ""}
@@ -1312,12 +1318,7 @@ function statsTable(s) {
       <tr><td>私房錢</td><td>💰 <b>${s.wallet ?? 0}</b> 分<br /><small>副本結算先抽 ${Math.round(taxRateOf(state) * 100)}% 稅入公庫，其餘由存活隊員平分；他會自己逛街、強化（戰死 ${Math.round(CONFIG.wallet.deathForfeitPct * 100)}% 充公，回收 100% 歸公庫）</small></td></tr>
       <tr><td>裝備</td><td>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => `${label}：${getShopItem(s.gear?.[slot])?.name ?? "（空）"}${s.soulbound?.[slot] ? ' <span class="badge-bound">🔒綁定</span>' : ""}`).join("<br />")}${s.consumables?.length ? `<br />🎒 出征耗材：${s.consumables.map((id) => getShopItem(id)?.name ?? id).join("、")}` : ""}${s.podLockDays > 0 ? `<br />🛏️ 被鎖在私人休眠艙（還要 ${s.podLockDays} 天）` : ""}</td></tr>
       <tr><td>自主購買</td><td class="shop-log">${s.shopLog?.length ? s.shopLog.slice().reverse().map((l) => `第 ${l.day} 天：${l.text}`).join("<br />") : "（還沒有）"}</td></tr>
-      <tr><td>標籤</td><td>${(s.tags ?? [])
-        .map(getTag)
-        .filter(Boolean)
-        .map((t) => `<div><span class="tag-chip tag-${t.rarity}">${t.rarity}・${t.name}</span> <small>${t.desc}${t.pending ? `<br /><i>（${t.pending}）</i>` : ""}<br />效果：${describeTag(t).effects}<br />${describeTag(t).lead}</small></div>`)
-        .join("")}</td></tr>
-    </table>`;
+</table>`;
 }
 
 /** 一對關係的文字：等級／狀態、雙向好感、雙向仇恨 */
@@ -1988,6 +1989,10 @@ const actions = {
   "toggle-pause"() {
     state.settings.paused = !state.settings.paused;
     bannerText = "";
+  },
+  "codex-open"(el) {
+    // 小人檔案頁「對照詞條庫」或點某個詞條：開詞條庫，那個小人的詞條置頂
+    codex.open({ samsariteId: el.dataset.sid ? Number(el.dataset.sid) : null, tagId: el.dataset.tag || null });
   },
   "log-filter"(el) {
     logFilter = el.dataset.id;

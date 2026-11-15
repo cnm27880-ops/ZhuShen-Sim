@@ -119,6 +119,7 @@ export function createNewGame(seed = freshSeed()) {
       pauseOn,
     },
     log: [],
+    codex: { categories: [] }, // 詞條庫的自訂分類：[{ id, name, tags: [詞條 id] }]（玩家自己建，跟著存檔走）
     events: [], // 暫存、不進存檔
   };
 
@@ -636,6 +637,7 @@ export function deserialize(json) {
   state.squad.style ??= null;
   state.squadRngState ??= (state.rngState ^ 0x5ad0) | 0;
   state.autoStrategy ??= CONFIG.auto.defaultStrategy;
+  state.codex ??= { categories: [] };
   state.autoRiskLogDay ??= null;
   state.settings.autoPause ??= true; // 設定頁「自動暫停」總開關：開窗自動暫停（4-E-8）
   state.chronicles ??= [];
