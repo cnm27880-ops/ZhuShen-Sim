@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test test/*.test.js",
-    "sim": "node scripts/sim.mjs"
+    "sim": "node scripts/sim.mjs",
+    "dev:cloud": "node scripts/dev-cloud.mjs"
   }
 }

@@ -61,6 +61,14 @@
 | `GOOGLE_CLIENT_SECRET` | **密鑰 (Secret)** | 步驟一第 9 點的用戶端密鑰 |
 | `PUBLIC_ORIGIN` | 文字 | `https://ZhuShen-Sim.yuci8660.uk` |
 
+## 本機預覽（不需要 Cloudflare 與 Google）
+
+```bash
+npm run dev:cloud
+```
+
+打開 http://localhost:5174 ，登入會直接以「開發者」身分登入；要測多個玩家，登入網址後面加 `?as=名字`（例如 `/api/auth/google/login?as=乙玩家`）。資料只存在記憶體，關掉就消失。需要 Node 22 以上。這個預覽用的是假的 Google 與假的資料庫，真正的 Google 登入只能部署後實測。
+
 ## 後端 API 一覽（給前端用）
 
 | 網址 | 用途 |

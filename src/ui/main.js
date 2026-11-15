@@ -1,7 +1,13 @@
 // 畫面層：只負責「把 state 畫出來」跟「把玩家的點擊轉成引擎呼叫」。
 // 所有遊戲規則都在 src/engine/，這裡不做任何數值計算以外的決定。
 
-import { CONFIG, RANKS, INJURIES, PAUSE_EVENTS, AUTO_MODES } from "../data/config.js";
+import { CONFIG, CLOUD, RANKS, INJURIES, PAUSE_EVENTS, AUTO_MODES } from "../data/config.js";
+import * as cloud from "./cloud.js";
+import { coverHtml } from "./cover.js";
+import { leaderboardHtml } from "./leaderboard.js";
+import { esc } from "./html.js";
+import { buildScorePayload } from "../engine/scoreboard.js";
+import { planSync } from "../engine/cloudSync.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
 import {
   createNewGame,
@@ -94,6 +100,16 @@ const dispatchPick = { dungeonId: null, slotId: null, party: new Set(), greedy: 
 let peekRunId = null; // 玩家點右側卡片、手動想看的那一場副本 id（只給畫面用，不存檔）
 let lastFollowRunId = null; // 上一次鎖定對象所在的副本 id，用來偵測他進／出副本
 
+// ───────── 雲端：封面、登入、同步、排行榜 ─────────
+let coverOpen = true; // 封面開著時遊戲不跑（boot() 決定要不要顯示封面）
+let account = { available: false, user: null }; // available：這個網站有雲端後端；user：登入的人
+let coverBoard = null; // 封面排行榜預覽的資料
+const lb = { board: CLOUD.defaultBoard, data: null, loading: false }; // 排行榜面板
+const syncer = cloud.createSyncer({ getUser: () => account.user, getScorePayload: () => buildScorePayload(state), onConflict: () => openSyncChoice("cloud-newer") });
+syncer.onChange(() => {
+  if (modal?.name === "settings") render(); // 設定頁開著時，同步狀態文字即時更新
+});
+
 // ───────── 存檔 ─────────
 
 function loadGame() {
@@ -113,6 +129,7 @@ function saveGame() {
     const json = serialize(state);
     state.settings.paused = real;
     localStorage.setItem(SAVE_KEY, json);
+    syncer.notifySaved(json); // 登入的玩家：排程背景同步到雲端
   } catch {
     /* 存不了就算了，遊戲照常進行 */
   }
@@ -122,7 +139,7 @@ function saveGame() {
 
 function schedule() {
   clearTimeout(timer);
-  if (state.settings.paused || state.gameOver || modal) return;
+  if (coverOpen || state.settings.paused || state.gameOver || modal) return;
   const ms = (state.runs.length ? CONFIG.roomMs / CONFIG.roomTicks : CONFIG.tickMs) / state.settings.speed; // 有副本在跑時節奏稍快（房間間隔 ÷ 每房時段數）
   timer = setTimeout(() => {
     step(state);
@@ -197,7 +214,7 @@ const EMOJI_RE = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]/gu;
 const EMOJI_TEST = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]/u; // 判斷用（不帶 g，避免 lastIndex 跳過節點）
 function stripEmoji(root) {
   if (!root) return;
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement?.closest("[data-keep-emoji]") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
   const hits = [];
   for (let n = walker.nextNode(); n; n = walker.nextNode()) if (EMOJI_TEST.test(n.nodeValue)) hits.push(n);
   for (const n of hits) {
@@ -665,7 +682,7 @@ function renderModal() {
   document.body.classList.toggle("modal-open", Boolean(modal)); // 開著放大視窗時，角落的副本迷你小窗（#run-list）自動隱藏，關窗恢復（雙視窗互斥，4-E-7）
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel, inventory };
+  const builders = { leaderboard: leaderboardPanel, syncChoice, guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel, inventory };
   $("modal").innerHTML = builders[modal.name]();
   if (modal.name === "gossip") drawGossipCard($("gossip-canvas"), buildGossip(state)); // 畫報紙圖卡（Canvas，要等 innerHTML 寫完才拿得到元素）
 }
@@ -1383,6 +1400,8 @@ function settings() {
     ? state.graveyard.map((g, i) => `<div class="grave-row" data-action="open-grave" data-id="${i}" title="查看他的一生">第 ${g.day} 天・${rankBadge(g.rank)} ${g.name}・${g.cause}${g.killer ? `（兇手：${g.killer}）` : ""} 📖</div>`).join("")
     : "（還沒有人死）";
   return `<h3>設定</h3>
+    ${accountSection()}
+    <h3>遊戲</h3>
     <label class="option"><input type="checkbox" data-setting-key="autoPause" ${state.settings.autoPause !== false ? "checked" : ""} />
       <span class="grow"><b>自動暫停（總開關）</b></span></label>
     <h4>自動暫停的事件</h4>
@@ -1593,6 +1612,8 @@ GUIDE_PAGES.rules = [
   ["基建", () => `基建是全隊永久加成，升一次永遠有效。高階等級要侵蝕結晶（打位面侵蝕才掉）。**自動建設**：每天結算時公庫高於 ${CONFIG.facility.safeWaterPerLevel} × 空間等級才動用超出的部分，優先升最便宜的。**自動挑戰侵蝕**：主線卡關或全通後，改打已通關世界的侵蝕星級。`],
   ["自動派遣策略", () => `穩健＝通關率 85%、每天 1 隊、留 2 人在家、不派傷員；均衡＝75%／2 隊／留 1 人／可接受輕傷；激進＝60%／不限隊數／不留人／受傷也派。`],
   ["英靈碑與小隊", () => `基因鎖 ${CONFIG.stele.minGene} 階以上或出征滿 ${CONFIG.stele.minRuns} 場的人，戰死在副本或被主神抹殺會入碑；碑上加成最高的前 ${CONFIG.stele.topN} 名生效。隊長個人戰力 +${Math.round(CONFIG.squad.captainPowerPct * 100)}%，**流派由隊長的性格詞條決定**，不能直接切換。撤換令要花公庫與因果結晶。隊長陣亡時依原流派順延；戰力前兩名太接近且互相討厭會爆發爭奪戰。`],
+  ["登入與雲端存檔", () => `用 Google 登入後，存檔會自動同步到雲端（最快每 ${CLOUD.saveIntervalMs / 60000} 分鐘一次），換裝置登入同一個帳號就能繼續玩。訪客模式的存檔只留在這台裝置。第一次登入時，如果雲端與這台裝置都有存檔，遊戲會問你要用哪一份，**不會自己覆蓋**。到設定可以按「立即同步」或登出。`],
+  ["排行榜", () => `四個榜單：**空間等級**、**副本通關**（累計成功通關次數）、**最強輪迴者**（歷來最高戰力的一位）、**最長壽輪迴者**（存活天數最長的一位）。每項都記錄歷來最高，重開新局不會洗掉。名次變化是跟昨天比。想隱藏自己，到設定勾「不上排行榜」。`],
   ["暫停與自動暫停", () => `設定裡的「自動暫停」總開關開著時，派遣、抽卡、許願、主神事件、小隊指揮部的視窗開著會自動暫停，關窗後恢復原本的播放狀態與倍速。`],
   ["關係", () => `一起出戰的單房通過率加成（全隊上限 ±${Math.round(CONFIG.relations.bonusCap * 100)}%）：${Object.entries(CONFIG.relations.passBonus).map(([k, v]) => `${LEVEL_LABELS[k]} ${v > 0 ? "+" : ""}${Math.round(v * 100)}%`).join("・")}。關係總覽的數字是「甲→乙／乙→甲」的好感與仇恨。`],
 ];
@@ -1615,9 +1636,206 @@ function gameOver() {
     <div class="modal-actions"><button class="primary" data-action="reset-game">重新開始</button></div>`;
 }
 
+// ───────── 雲端：面板、同步、封面 ─────────
+
+const localSummary = () => ({ day: currentDay(state), roster: state.samsarites.length });
+const hasLocalProgress = () => currentDay(state) > 1 || state.totalSpent > 0;
+const timeText = (ms) => new Date(ms).toLocaleString("zh-TW", { hour12: false, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+let toastTimer = null;
+function showToast(text) {
+  const el = $("toast");
+  el.textContent = text;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 4500);
+}
+
+function renderCover() {
+  const el = $("cover");
+  el.style.display = coverOpen ? "flex" : "none";
+  if (coverOpen) el.innerHTML = coverHtml({ loading: coverLoading, available: account.available, board: CLOUD.defaultBoard, boardData: coverBoard });
+}
+let coverLoading = true;
+
+async function loadBoard() {
+  lb.loading = true;
+  render();
+  const requested = lb.board;
+  const data = await cloud.fetchBoard(requested);
+  if (lb.board !== requested) return; // 玩家已經切到別的榜單
+  lb.data = data;
+  lb.loading = false;
+  render();
+}
+
+function leaderboardPanel() {
+  return leaderboardHtml({ board: lb.board, data: lb.data, loading: lb.loading, available: account.available, loggedIn: Boolean(account.user), hidden: Boolean(account.user?.hidden) });
+}
+
+const SYNC_TEXT = { idle: "尚未同步（下次自動存檔時上傳）", syncing: "同步中…", error: "同步失敗，稍後會自動重試", conflict: "雲端存檔有衝突，請按「立即同步」處理" };
+function accountSection() {
+  if (!account.available) return `<h3>帳號</h3><p>這個版本還沒有連上雲端，存檔只留在這台裝置。</p>`;
+  if (!account.user) return `<h3>帳號</h3><p>訪客模式：存檔只留在這台裝置。</p><div class="modal-actions" style="justify-content:flex-start"><a class="g-btn" href="${cloud.LOGIN_URL}">使用 Google 登入</a></div>`;
+  const u = account.user;
+  const status = syncer.status === "ok" && syncer.lastOkAt ? `已同步（${timeText(syncer.lastOkAt)}）` : SYNC_TEXT[syncer.status] ?? SYNC_TEXT.idle;
+  return `<h3>帳號</h3>
+    <div class="option-list"><div class="option" style="cursor:default" data-keep-emoji>${typeof u.picture === "string" && u.picture.startsWith("https://") ? `<img class="lb-avatar" src="${esc(u.picture)}" alt="" referrerpolicy="no-referrer" />` : ""}<span class="grow"><b>${esc(u.name)}</b><br /><small>${status}</small></span></div>
+    <label class="option"><input type="checkbox" id="lb-hidden" ${u.hidden ? "checked" : ""} /><span class="grow">不上排行榜</span></label></div>
+    <div class="modal-actions" style="justify-content:flex-start"><button data-action="sync-now">立即同步</button><button data-action="do-logout">登出</button></div>`;
+}
+
+/** 本機存檔與雲端存檔對不上時，由玩家決定（絕不自己覆蓋） */
+function syncChoice() {
+  const c = modal.cloud;
+  const l = localSummary();
+  const line = (label, s) => `<div class="option" style="cursor:default"><span class="grow"><b>${label}</b></span><small>第 ${s.day} 天・${s.roster} 位輪迴者${s.updatedAt ? `・${timeText(s.updatedAt)}` : ""}</small></div>`;
+  if (modal.reason === "offer-upload") {
+    return `<h3>要把這台裝置的存檔上傳到雲端嗎？</h3>
+      <div class="option-list">${line("這台裝置", l)}</div>
+      <div class="modal-actions"><button data-action="sync-skip">先不要</button><button class="primary" data-action="sync-upload">上傳</button></div>`;
+  }
+  return `<h3>${modal.reason === "cloud-newer" ? "雲端存檔比這台裝置新" : "雲端已經有一份存檔"}</h3>
+    <div class="option-list">${c ? line("雲端", c) : ""}${line("這台裝置", l)}</div>
+    <div class="modal-actions"><button data-action="sync-skip">先不同步</button><button class="danger" data-action="sync-upload">用這台裝置覆蓋雲端</button><button class="primary" data-action="sync-load">載入雲端存檔</button></div>`;
+}
+
+async function openSyncChoice(reason) {
+  if (modal) {
+    showToast("雲端存檔有衝突，請到「設定」按「立即同步」處理");
+    return;
+  }
+  const r = await cloud.fetchCloudSave(false);
+  let summary = null;
+  if (r.ok && r.save) {
+    try {
+      const s = deserialize(r.save.data);
+      summary = { day: currentDay(s), roster: s.samsarites.length, updatedAt: r.save.updatedAt };
+    } catch {
+      /* 雲端存檔讀不懂：只顯示本機那邊 */
+    }
+  }
+  modal = { name: "syncChoice", reason, cloud: summary, forced: true };
+  afterChange();
+}
+
+/** 把雲端存檔寫進本機並重新載入頁面（最單純，不用處理畫面上殘留的舊小人） */
+async function adoptCloudSave() {
+  const r = await cloud.fetchCloudSave(false);
+  if (!r.ok || !r.save) {
+    showToast("讀取雲端存檔失敗，請稍後再試");
+    return;
+  }
+  try {
+    deserialize(r.save.data); // 先確認讀得懂，免得壞檔蓋掉本機
+    localStorage.setItem(SAVE_KEY, r.save.data);
+    cloud.setMeta(account.user.id, r.save.updatedAt);
+    location.reload();
+  } catch {
+    showToast("雲端存檔格式不對，已保留這台裝置的存檔");
+  }
+}
+
+/** 開遊戲（或剛登入）時比對本機與雲端存檔 */
+async function startupSync() {
+  const user = account.user;
+  const res = await cloud.fetchCloudSave(true);
+  if (!res.ok) return; // 後端暫時有問題：之後存檔時會再試
+  let exists = false;
+  try {
+    exists = localStorage.getItem(SAVE_KEY) !== null;
+  } catch {
+    /* 沒有 localStorage 就當作沒有本機存檔 */
+  }
+  const meta = cloud.getMeta();
+  const plan = planSync({ userId: user.id, local: { exists, hasProgress: hasLocalProgress() }, cloud: res.save, meta });
+  if (plan.action === "adopt-cloud") await adoptCloudSave();
+  else if (plan.action === "offer-upload" || plan.action === "conflict") {
+    syncer.blocked = true; // 玩家決定之前不自動上傳
+    await openSyncChoice(plan.action === "offer-upload" ? "offer-upload" : plan.reason);
+  }
+}
+
+/** 開機流程：先問後端有沒有登入，再決定要不要顯示封面，最後才讓遊戲開始跑 */
+async function boot() {
+  coverLoading = true;
+  renderCover();
+  const params = new URLSearchParams(location.search);
+  const loginResult = params.get("login");
+  if (loginResult) history.replaceState(null, "", location.pathname);
+  try {
+    account = await cloud.loadMe();
+    if (account.user) {
+      cloud.setGuest(false);
+      coverOpen = false;
+      if (loginResult === "ok") showToast(`歡迎回來，${account.user.name}`);
+      await startupSync();
+    } else if (cloud.isGuest() && !loginResult) {
+      coverOpen = false;
+    } else {
+      if (account.available) coverBoard = await cloud.fetchBoard(CLOUD.defaultBoard);
+      if (loginResult === "failed") showToast("登入失敗，請再試一次");
+      else if (loginResult === "cancelled") showToast("已取消登入");
+    }
+  } catch {
+    coverOpen = false; // 雲端流程出任何問題都不能擋住遊戲
+  } finally {
+    coverLoading = false;
+    renderCover();
+    afterChange();
+  }
+}
+
 // ───────── 玩家操作 ─────────
 
 const actions = {
+  "cover-guest"() {
+    cloud.setGuest(true);
+    coverOpen = false;
+    renderCover();
+  },
+  "open-leaderboard"() {
+    modal = { name: "leaderboard" };
+    loadBoard();
+  },
+  "lb-tab"(el) {
+    lb.board = el.dataset.id;
+    lb.data = null;
+    loadBoard();
+  },
+  "sync-upload"() {
+    modal = null;
+    syncer.blocked = false;
+    saveGame();
+    syncer.pushNow({ force: true }).then((ok) => {
+      showToast(ok ? "已上傳到雲端" : "上傳失敗，稍後會自動重試");
+      afterChange();
+    });
+  },
+  "sync-load"() {
+    adoptCloudSave();
+  },
+  "sync-skip"() {
+    modal = null;
+    syncer.blocked = true;
+    showToast("這次先不同步，之後可以到「設定」按「立即同步」");
+  },
+  "sync-now"() {
+    if (syncer.blocked) {
+      modal = null;
+      openSyncChoice("cloud-newer");
+      return;
+    }
+    saveGame();
+    syncer.pushNow().then(() => afterChange());
+  },
+  "do-logout"() {
+    cloud.logout().then(() => {
+      cloud.clearMeta();
+      cloud.setGuest(false);
+      location.reload();
+    });
+  },
   "toggle-more"() {
     $("more-menu").hidden = !$("more-menu").hidden;
   },
@@ -1936,7 +2154,7 @@ const actions = {
     saveGame();
   },
   "reset-game"() {
-    if (!state.gameOver && !confirm("確定要刪除存檔、重新開始嗎？")) return;
+    if (!state.gameOver && !confirm(account.user ? "確定要刪除存檔、重新開始嗎？\n（你已登入，雲端存檔之後也會被新的一局取代）" : "確定要刪除存檔、重新開始嗎？")) return;
     try {
       localStorage.removeItem(SAVE_KEY);
     } catch {
@@ -1973,7 +2191,10 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("change", (event) => {
   const el = event.target;
-  if (el.id === "auto-dispatch") state.settings.autoDispatch = el.checked;
+  if (el.id === "lb-hidden") {
+    if (account.user) account.user.hidden = el.checked;
+    cloud.setHidden(el.checked);
+  } else if (el.id === "auto-dispatch") state.settings.autoDispatch = el.checked;
   else if (el.id === "protect-injured") state.settings.protect.noInjured = el.checked;
   else if (el.id === "protect-enemies") state.settings.protect.noEnemies = el.checked;
   else if (el.dataset.pauseKey) state.settings.pauseOn[el.dataset.pauseKey] = el.checked;
@@ -2001,7 +2222,7 @@ document.addEventListener("keydown", (e) => {
   const el = document.activeElement;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable)) return; // 輸入中不攔截
-  if (modal) return; // 彈窗開著（自動暫停中）不切換，免得和關窗恢復打架
+  if (modal || coverOpen) return; // 彈窗或封面開著（自動暫停中）不切換，免得和關窗恢復打架
   if (e.code === "Space") {
     e.preventDefault(); // 防止空白鍵同時觸發已聚焦按鈕的 click
     if (el && el !== document.body && typeof el.blur === "function") el.blur();
@@ -2020,4 +2241,4 @@ window.zhushen = {
   },
 };
 
-afterChange();
+boot();

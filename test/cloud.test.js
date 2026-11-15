@@ -81,7 +81,9 @@ test("登入：state 對不上、沒帶 cookie 都失敗；成功後 /api/me 看
   assert.equal(r.headers.get("location"), "/?login=failed");
   assert.equal((await w.call("GET", "/api/auth/google/callback?code=abc&state=s")).headers.get("location"), "/?login=failed");
   const cookie = await w.login();
-  assert.equal((await (await w.call("GET", "/api/me", { cookie })).json()).user.name, "小明");
+  const me = (await (await w.call("GET", "/api/me", { cookie })).json()).user;
+  assert.equal(me.name, "小明");
+  assert.equal(me.id, "u1"); // 前端用它判斷同步紀錄是不是這個帳號留下的
   assert.equal((await (await w.call("GET", "/api/me")).json()).user, null);
   await w.call("POST", "/api/logout", { cookie });
   assert.equal((await (await w.call("GET", "/api/me", { cookie })).json()).user, null);
@@ -149,7 +151,7 @@ test("雲端存檔：太大、不是 JSON 都拒絕；每人只能碰自己的",
 test("成績檢查：不合理的數字拒絕", () => {
   const ok = sc({ level: 2, roster: 5, clears: 3 });
   assert.deepEqual(cleanScore(ok), ok);
-  for (const bad of [{ ...ok, level: 6 }, { ...ok, level: 0 }, { ...ok, roster: 1.5 }, { ...ok, clears: 999 }, { ...ok, level: "9" }, { ...ok, power: -5 }, { ...ok, life: 1e9 }, { ...ok, powerName: 123 }, { ...ok, power: undefined }, null]) assert.equal(cleanScore(bad), null);
+  for (const bad of [{ ...ok, level: 6 }, { ...ok, level: 0 }, { ...ok, roster: 1.5 }, { ...ok, clears: 10_000_000 }, { ...ok, level: "9" }, { ...ok, power: -5 }, { ...ok, life: 1e9 }, { ...ok, powerName: 123 }, { ...ok, power: undefined }, null]) assert.equal(cleanScore(bad), null);
   // 輪迴者名字：拿掉控制字元與 < >、限制長度
   const dirty = cleanScore({ ...ok, powerName: "<b>阿\n角</b>" + "長".repeat(40) });
   assert.ok(!/[<>\n]/.test(dirty.powerName) && dirty.powerName.length <= 20);

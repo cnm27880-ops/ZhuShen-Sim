@@ -666,3 +666,50 @@ button.primary:disabled { background: #f1f1f1; color: #6b6b6b; border-color: #e6
 .card-meta { justify-content: flex-start; gap: 14px; }
 #roster .card { flex-basis: 170px; }
 .summary-opts { display: flex; gap: 16px; margin-top: 8px; }
+
+/* ── 封面（登入畫面＋宣傳頁） ── */
+.cover { position: fixed; inset: 0; z-index: 100; background: #fff; overflow-y: auto; justify-content: center; align-items: flex-start; padding: 48px 16px; }
+.cover-card { width: min(520px, 100%); display: flex; flex-direction: column; align-items: center; text-align: center; gap: 20px; }
+.cover-orb { width: 96px; height: 96px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff6d6, #f1cf6a 45%, #d4a017 100%); box-shadow: 0 0 48px 12px rgba(212, 160, 23, 0.35); animation: breathe 3s ease-in-out infinite; }
+.cover h1 { margin: 8px 0 0; font-size: 28px; font-weight: 700; line-height: 1.3; letter-spacing: 2px; }
+.cover h1 .gold { color: #d4a017; }
+.cover h2 { margin: 16px 0 0; font-size: 20px; font-weight: 700; align-self: flex-start; }
+.cover h2 small, .cover h3 small, #modal h3 small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 6px; }
+.cover-tag { margin: -8px 0 0; font-size: 16px; }
+.cover-hint { margin: 0; font-size: 13px; color: var(--muted); }
+.cover-actions { display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(320px, 100%); }
+.cover-actions .big, .cover-actions .g-btn { width: 100%; }
+.cover-actions small { color: var(--muted); }
+.g-btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 10px 24px; border: 1px solid var(--line); border-radius: 50px; background: #fff; color: #000; font-weight: 600; font-size: 16px; text-decoration: none; cursor: pointer; }
+.g-btn:hover { border-color: #000; }
+.g-btn:disabled { opacity: 1; background: #f1f1f1; color: #6b6b6b; cursor: not-allowed; }
+.discord-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 24px; border-radius: 50px; background: #5865f2; color: #fff; font-weight: 600; text-decoration: none; }
+.discord-btn:hover { background: #4752c4; }
+.cover-intro { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; font-size: 16px; text-align: left; }
+.cover-intro li::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 10px; border-radius: 50%; background: #000; vertical-align: middle; }
+
+/* ── 排行榜 ── */
+.lb-tabs { margin-bottom: 12px; }
+.lb-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; width: 100%; text-align: left; }
+.lb-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.lb-row:first-child { border-top: 0; }
+.lb-row.me, .lb-mine { background: #f7f7f5; }
+.lb-mine { border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; }
+.lb-rank { flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 700; font-family: ui-monospace, "JetBrains Mono", monospace; }
+.medal-gold { background: #d4a017; color: #fff; } .medal-silver { background: #9ca3af; color: #fff; } .medal-bronze { background: #b45309; color: #fff; }
+.lb-avatar { flex: none; width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #f1f1f1; }
+.lb-initial { display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
+.lb-name { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.lb-name b, .lb-name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-name small { color: var(--muted); font-size: 12px; }
+.lb-change { flex: none; width: 36px; text-align: right; font-size: 12px; font-weight: 700; }
+.lb-up { color: #1ea64a; } .lb-down { color: #dc2626; } .lb-flat { color: var(--muted); }
+.lb-value { flex: none; font-weight: 700; font-family: ui-monospace, "JetBrains Mono", monospace; }
+.lb-empty, .lb-note { padding: 24px 12px; text-align: center; color: var(--muted); }
+.lb-note { padding: 12px 0 0; }
+.lb-you { margin-top: 12px; text-align: center; }
+.cover .lb-list { width: 100%; }
+
+/* ── 提示訊息 ── */
+#toast { position: fixed; left: 50%; bottom: 24px; z-index: 200; transform: translate(-50%, 20px); padding: 10px 20px; border-radius: 50px; background: #000; color: #fff; font-size: 14px; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; max-width: calc(100vw - 32px); }
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
