@@ -80,6 +80,10 @@ const E8_R_MULT = [1.4, 1.5, 1.5, 1.65, 2.2];
 // 4-F-3 校正：5 座永久基建（重力修煉室 +30% 戰力…）與位面侵蝕結晶讓後期成長更快（未校正時 900 天自然演化的第 4／5 章尾王約 Day 219／318），
 // 所以第 4、5 章 R 再乘這組倍率（常規關與尾王；第 1～3 章維持既有節奏）。實測（npm run sim -- --seeds=50 --days=900）：
 //   ×1.6／1.7 → 尾王首通中位數 Day 333／485；×1.9／3.1 → 354／717（第 5 章只剩 40% 局能在 900 天內通關，太慢）。
+// A1（主線節奏）：讓 R 曲線單調——每章尾王 ≈ 該章最高一般關 × 1.5～2.3，下一章第 1 關 > 上一章尾王（原本第 3 章第 1 關 < 第 2 章尾王、第 5 章第 1 關 < 第 4 章尾王，尾王有 3～5 倍的斷崖）。
+// 一般關／尾王各一組倍率（疊在 E8 × F 之後）。實測（npm run sim -- --seeds=10 --days=700）：尾王首通中位數 Day 34／113／219／298／380，遊戲結束 0%。
+const A1_REG_MULT = [1, 2.5, 3.4, 1.2, 1.15];
+const A1_BOSS_MULT = [1, 1.5, 1, 0.7, 1];
 const F_R_MULT = [1, 1, 0.85, 1.6, 1.7]; // 第 3 章 ×0.85（第三批決策 2：商店改綁章節後第 3 章尾王偏慢 Day 148 → 201。×0.95 實測仍 Day 212，×0.855 → 185、×0.76 → 185、×0.67 → 154，取 0.85）
 const REAL_WORLDS = [
   {
@@ -161,7 +165,7 @@ export const DUNGEONS = WORLD_LIST.map((w) => {
   const named = t ? { ...base, name: t.name, intro: t.intro } : base;
   const extra = WORLD_ROOMS[w.id] ?? (HAJIMI_ROOMS[w.id] ? { rooms: HAJIMI_ROOMS[w.id] } : {}); // 哈基米的房間文字（worldRooms.js）；沒有稿的世界維持佔位 // 前 3 個世界的房間文字對齊新世界觀（4-E-8 收尾）
   const specialRewards = named.specialRewards?.length ? named.specialRewards : buildWorldRewards(named); // 原本沒有首通獎勵的世界補上（Phase 3-1，見 worldRewards.js）
-  return { ...named, ...extra, specialRewards, recommendedPower: Math.round(base.recommendedPower * E8_R_MULT[w.chapter - 1] * F_R_MULT[w.chapter - 1]) }; // 200 件商店總表（4-E-8）與基建（4-F-3）上線後的 R 校正
+  return { ...named, ...extra, specialRewards, recommendedPower: Math.round(base.recommendedPower * E8_R_MULT[w.chapter - 1] * F_R_MULT[w.chapter - 1] * (base.boss ? A1_BOSS_MULT : A1_REG_MULT)[w.chapter - 1]) }; // 200 件商店總表（4-E-8）與基建（4-F-3）上線後的 R 校正
 });
 function buildWorld(w) {
   if (REAL.has(w.id)) return REAL.get(w.id);
