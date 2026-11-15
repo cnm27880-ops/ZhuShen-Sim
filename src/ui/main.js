@@ -910,6 +910,7 @@ function shop() {
     <p>公庫 <b>${state.points}</b>・${next ? `再花 <b>${next.remaining}</b> 分解鎖 Tier ${next.tier}` : "已全部解鎖"}</p>
     <div class="tabs">${tabs}</div>
     ${tab === "relics" || (tab === "shop" && !modal.lockTarget && ["medicine", "skill", "special"].includes(modal.cat ?? "medicine")) ? "" : picker}
+    ${target && (tab === "market" || (tab === "shop" && ["gear", "bloodline"].includes(modal.cat))) ? `<div class="shop-now"><b>👀 ${target.name} 現在穿的</b>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => { const it = getShopItem(target.gear?.[slot]); return `<div class="shop-now-row"><span class="bio-gear-slot">${label}</span><span class="${it ? "" : "muted"}">${it ? `${it.name}${target.soulbound?.[slot] ? " 🔒" : ""}` : "（空）"}</span>${it ? `<small class="good">${Object.entries(it.stats ?? {}).map(([k, v]) => `${STAT_LABEL[k]}${v >= 0 ? "+" : ""}${v}`).join(" ")}</small>` : ""}</div>`; }).join("")}<small class="muted">買同一欄的裝備會直接換掉現有的那件。</small></div>` : ""}
     ${modal.note ? `<div class="summary">${modal.note}</div>` : ""}
     ${body}
     <div class="modal-actions">${modal.lockTarget ? `<button data-action="back-to-profile">↩ 回檔案頁</button>` : ""}${closeButton}</div>`;
@@ -922,6 +923,14 @@ function itemFx(item) {
   const stats = Object.entries(item.stats ?? {}).map(([k, v]) => `${STAT_LABEL[k]}${v >= 0 ? "+" : ""}${v}`).join("　");
   const passive = Object.entries(item.passive ?? {}).map(([k, v]) => PASSIVE_LABEL[k]?.(v)).filter(Boolean).join("、");
   return `${stats ? `<br /><small class="good">${stats}</small>` : ""}${passive ? `<br /><small class="warn">⚠️ ${passive}</small>` : ""}`;
+}
+
+/** 商品要放進的欄位已經有東西時，在商品旁提醒「會取代」 */
+function replaceNote(item, target) {
+  if (!target || item.kind !== "gear") return "";
+  const cur = getShopItem(target.gear?.[item.slot]);
+  if (!cur) return `<br /><small class="muted">${SHOP_SLOT_LABELS[item.slot]}目前是空的</small>`;
+  return `<br /><small class="warn">⚠️ 會取代他現有的【${cur.name}】${target.soulbound?.[item.slot] ? "（🔒綁定）" : ""}</small>`;
 }
 
 const SHOP_CATS = [["medicine", "💊 藥品／消耗品"], ["bloodline", "🧬 血統"], ["gear", "⚔️ 裝備"], ["skill", "📖 技能"], ["special", "✨ 特殊道具"]];
@@ -942,7 +951,7 @@ function shopStandardTab(tier, target) {
     const why = !locked && !check.ok ? `<br /><small class="bad">${check.reason}</small>` : "";
     return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
       <span class="option-icon">${item.icon}</span>
-      <span class="grow"><b>${item.name}</b> <small>${SHOP_SLOT_LABELS[item.slot] ?? ""}</small>${itemFx(item)}${why}</span>
+      <span class="grow"><b>${item.name}</b> <small>${SHOP_SLOT_LABELS[item.slot] ?? ""}</small>${itemFx(item)}${replaceNote(item, target)}${why}</span>
       <button class="primary" data-action="buy" data-id="${item.id}" ${check.ok ? "" : "disabled"}>${locked ? "🔒" : item.price + " 分"}</button>
     </div>`;
   };
@@ -1037,7 +1046,7 @@ function shopMarketTab(home, target) {
       const priceHtml = slot.discounted ? `<s>${item.price}</s> <b class="good">${slot.price}</b> 分` : `${slot.price} 分`;
       return `<div class="slot ${slot.sold ? "sold" : ""} ${slot.locked ? "locked-slot" : ""}">
         <div class="slot-head"><span class="option-icon">${item.icon}</span><span class="grow"><b>${item.name}</b><br /><small>${SHOP_CATEGORY_LABELS[item.category]}・T${item.tier}${item.kind === "gear" ? "・" + SHOP_SLOT_LABELS[item.slot] : ""}</small></span>${slot.locked ? "🔒" : ""}</div>
-        <small>${item.desc}</small>${itemFx(item)}${world}
+        <small>${item.desc}</small>${itemFx(item)}${replaceNote(item, target)}${world}
         ${!slot.sold && !check.ok ? `<small class="bad">${check.reason}</small>` : ""}
         <div class="slot-actions">
           <button data-action="market-lock" data-id="${slot.index}" ${slot.sold || (!slot.locked && lockedCount >= info.lockLimit) ? "disabled" : ""} ${!slot.locked && lockedCount >= info.lockLimit && !slot.sold ? `title="已鎖滿 ${info.lockLimit} 格，先解除別格才能鎖這格"` : ""}>${slot.locked ? "🔓 解除鎖定" : "🔒 鎖定"}</button>
