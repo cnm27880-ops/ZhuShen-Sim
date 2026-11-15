@@ -292,8 +292,9 @@ export const DRAMA_EVENTS = [
     ],
   },
   {
-    id: "undercover_exposed", group: "melee", name: "臥底曝光", cast: "captainAndOne", chronicle: true,
-    fx: { aff: [-20, -10], hate: [10, 0], sanityB: -10 },
+    id: "undercover_exposed", group: "melee", name: "臥底曝光", cast: "pair", chronicle: true,
+    // 第四批後續：哈基米文案是 A＝內鬼、B＝撞破的人，所以選角由「隊長與一人」改成任意兩人（隊長不再固定當內鬼），數字改成 B 對 A 的信任崩塌
+    fx: { aff: [-10, -25], hate: [0, 15], sanityA: -10, sanityB: -3 },
     texts: [
       "🕵️ {A} 洗澡時不小心掉出了洲際宿敵小隊的聯絡徽章，被路過的 {B} 撿個正著，全隊瞬間拔槍將 {A} 團團包圍！",
       "🕵️ 決戰前夕，{B} 發現隊伍的公共傳送座標被人偷偷改成了敵方伏擊點，順著系統日誌一查，內鬼竟然是一直裝乖的 {A}！",

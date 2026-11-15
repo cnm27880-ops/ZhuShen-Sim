@@ -309,3 +309,24 @@ test("Tier 6 商品換成哈基米第二批名稱；破限鑰匙描述是折抵 
   assert.equal(getShopItem("t6_40").name, "主神賣身契");
   assert.equal(SHOP_ITEMS.filter((i) => i.tier === 6).length, 40);
 });
+
+test("Tier 6 耗材與黑貨的名稱／描述依「效果」配對（不是依編號硬配）：描述講什麼，效果就真的做什麼", () => {
+  const e = (id) => getShopItem(id).effect;
+  const name = (id) => getShopItem(id).name;
+  assert.equal(name("t6_27"), "時間膠水"); assert.ok(e("t6_27").healInjury);
+  assert.equal(name("t6_28"), "孟婆特調冰美式"); assert.ok(e("t6_28").sanity);
+  assert.equal(name("t6_30"), "平行替死鬼"); assert.ok(e("t6_30").deathWard);
+  assert.equal(name("t6_31"), "阿卡西盜版碟"); assert.ok(e("t6_31").intelGain);
+  assert.equal(name("t6_32"), "宿命剪刀"); assert.ok(e("t6_32").clearHate);
+  assert.equal(name("t6_38"), "奇點手榴彈"); assert.ok(e("t6_38").partyNextRunPowerMult);
+  assert.equal(name("t6_39"), "創世神草稿紙"); assert.ok(e("t6_39").inducePregnancy);
+  assert.ok(!getShopItem("t6_40").desc.includes("兩百"), "t6_40 描述不能再寫結算多給錢（實際效果是政變戰力）");
+  assert.equal(new Set(SHOP_ITEMS.filter((i) => i.tier === 6).map((i) => i.name)).size, 40, "40 個名字都不重複");
+});
+
+test("舊存檔用舊名字找回首通獎勵：猛鬼宿舍、極寒列車改名後仍找得到", async () => {
+  const { findSpecialRewardByName } = await import("../src/data/dungeons.js");
+  assert.equal(findSpecialRewardByName("桃木驅鬼釘").id, "ark_cutter");
+  assert.equal(findSpecialRewardByName("魔法・火焰箭").id, "ember_firebolt");
+  assert.equal(findSpecialRewardByName("破銅鈴").id, "ark_cutter");
+});

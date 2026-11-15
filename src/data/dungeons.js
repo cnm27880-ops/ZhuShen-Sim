@@ -191,5 +191,14 @@ export function findSpecialRewardByName(name) {
     const hit = (d.specialRewards ?? []).find((r) => r.name === name);
     if (hit) return hit;
   }
-  return undefined;
+  // 第四批改名前的舊名字（猛鬼宿舍、極寒列車的首通獎勵）：用 id 找回
+  return getSpecialReward(RENAMED_REWARDS[name]);
 }
+const RENAMED_REWARDS = {
+  夜巡者的警覺: "ark_accelerator",
+  辟邪護身符: "ark_prosthetic",
+  桃木驅鬼釘: "ark_cutter",
+  "魔法・火焰箭": "ember_firebolt",
+  "魔杖・燼木法杖": "ember_staff",
+  "魔法血統・燼裔": "ember_blood",
+};

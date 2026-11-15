@@ -263,3 +263,11 @@ test("哈基米第二批修羅場：8 則新標題、文案要三個不同的人
     for (const c of o.casts) assert.ok(c.A.id !== c.B.id && c.B.id !== c.C.id && c.A.id !== c.C.id);
   }
 });
+
+test("臥底曝光：任意兩人（A 內鬼、B 撞破），隊長不再固定當內鬼", () => {
+  const e = DRAMA_EVENTS.find((x) => x.id === "undercover_exposed");
+  assert.equal(e.cast, "pair");
+  const state = setup(4);
+  const o = playable(state, "melee", state.samsarites, "day").find((x) => x.ev.id === "undercover_exposed");
+  assert.ok(o.casts.length >= 12, "4 人有 12 種有序組合");
+});
