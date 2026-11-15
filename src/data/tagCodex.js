@@ -1,8 +1,9 @@
 // 詞條庫（懸浮球圖鑑）用的資料整理：好壞標示、類別名稱、關卡詞條的克制／優勢關係。
-// 好壞「不是人工標的」，是照 tags.js 的數值欄位機械判定（規則見 toneOf），所以資料表一改，這裡自動跟著變。
-// 若之後哈基米補標了好壞，在 tags.js 的標籤上加 `tone: "good"|"bad"|"mixed"|"neutral"` 就會優先採用。
+// 好壞：哈基米的 171 個詞條用該檔總表的綠／黃／紅色（codexTags.js 的 tone）；
+// 其餘遊戲內標籤（事件獲得）照 tags.js 的數值欄位機械判定（規則見 toneOf）。標籤上有 `tone` 欄位時一律優先採用。
 
 import { TAGS, ACQUIRED_TAGS, ENV_TAGS } from "./tags.js";
+import { CODEX_PEOPLE, CODEX_ENVS } from "./codexTags.js";
 
 export const TONE_LABEL = { good: "好", bad: "壞", mixed: "看情況", neutral: "中性" };
 export const KIND_LABEL = { stat: "基礎", trait: "人格", soul: "靈魂核心", acquired: "事件獲得" };
@@ -58,3 +59,13 @@ export function envRelations(envId) {
 }
 
 export const ENV_LIST = ENV_TAGS;
+
+/** 詞條庫顯示的人物詞條：哈基米的 171 個（codexTags.js）＋遊戲裡有、但不在那 171 個裡的事件標籤 */
+const inFile = new Set(CODEX_PEOPLE.map((p) => p.gameId).filter(Boolean));
+export const CODEX_ALL = [
+  ...CODEX_PEOPLE,
+  ...PERSON_TAGS.filter((t) => !inFile.has(t.id)).map((t) => ({ id: t.id, gameId: t.id, name: t.name, rarity: t.rarity, kind: t.kind, tone: toneOf(t), section: "事件獲得", desc: t.desc, effect: "" })),
+];
+
+/** 詞條庫顯示的關卡詞條：哈基米的 22 個（每個有「極度克制」「極大優勢」名單） */
+export const CODEX_ENV_ALL = CODEX_ENVS;

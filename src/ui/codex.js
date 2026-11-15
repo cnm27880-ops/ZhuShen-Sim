@@ -6,7 +6,8 @@
 // 好壞標示由 data/tagCodex.js 依數值機械判定。
 
 import { esc } from "./html.js";
-import { PERSON_TAGS, ENV_LIST, toneOf, TONE_LABEL, KIND_LABEL, RARITIES, envRelations } from "../data/tagCodex.js";
+import { CODEX_ALL, CODEX_ENV_ALL, toneOf, TONE_LABEL, KIND_LABEL, RARITIES } from "../data/tagCodex.js";
+import { getTag, getEnvTag } from "../data/tags.js";
 
 const POS_KEY = "zhushen-codex-win";
 const pct = (v) => `${v >= 0 ? "+" : ""}${Math.round(v * 1000) / 10}%`;
@@ -139,7 +140,7 @@ export function createCodex({ getState, describeTag, onSave }) {
       const c = cats().find((x) => x.id === ui.cat);
       if (!c || !c.tags.includes(t.id)) return false;
     }
-    if (ui.q && !(`${t.name}${t.desc}`.toLowerCase().includes(ui.q.toLowerCase()))) return false;
+    if (ui.q && !(`${t.name}${t.fullName ?? ""}${t.desc}${t.effect ?? ""}`.toLowerCase().includes(ui.q.toLowerCase()))) return false;
     return true;
   }
 
@@ -174,25 +175,29 @@ export function createCodex({ getState, describeTag, onSave }) {
 
   function personRow(t) {
     const tone = toneOf(t);
+    const real = t.gameId ? getTag(t.gameId) : null; // 遊戲內已實裝的對應標籤
+    const design = t.effect ? `<div class="cx-fx">${real ? "設計稿效果" : "效果"}：${esc(t.effect)}</div>` : "";
+    const live = real ? `<div class="cx-fx cx-live">遊戲內目前實際效果：${esc(describeTag(real).effects)}</div>` : `<div class="cx-fx cx-todo">尚未實裝（設計稿，抽卡抽不到）</div>`;
+    const ev = t.event ? `<details class="cx-cats"><summary>事件舉例</summary><div class="cx-fx">${esc(t.event)}</div></details>` : "";
     return `<div class="cx-item ${ui.tagId === t.id ? "hl" : ""}" data-tag="${t.id}">
-      <div class="cx-head"><span class="tag-chip tag-${t.rarity}">${t.rarity}｜${esc(t.name)}</span><span class="cx-tone tone-${tone}">${TONE_LABEL[tone]}</span><small>${KIND_LABEL[t.kind] ?? ""}</small></div>
+      <div class="cx-head"><span class="tag-chip tag-${t.rarity}">${t.rarity}｜${esc(t.name)}</span><span class="cx-tone tone-${tone}">${TONE_LABEL[tone]}</span><small>${KIND_LABEL[t.kind] ?? ""}${t.section ? `・${esc(t.section)}` : ""}</small></div>
       <div class="cx-desc">${esc(t.desc)}</div>
-      <div class="cx-fx">效果：${esc(describeTag(t).effects)}</div>
-      ${catMenu(t)}
+      ${design}${live}
+      ${ev}${catMenu(t)}
     </div>`;
   }
 
   function envRow(e) {
-    const rel = envRelations(e.id);
-    const names = (arr) => arr.map((x) => `${esc(x.tag.name)}（${pct(x.value)}）`).join("、");
-    const fx = [e.passMod ? `全隊通過率 ${pct(e.passMod)}` : "", e.rewardMult && e.rewardMult !== 1 ? `通關積分 ×${e.rewardMult}` : ""].filter(Boolean).join("；") || "沒有直接數值（影響特定詞條）";
-    const tone = (e.passMod ?? 0) < 0 && !(e.rewardMult > 1) ? "bad" : (e.passMod ?? 0) > 0 && !(e.rewardMult < 1) ? "good" : (e.passMod ?? 0) !== 0 || e.rewardMult > 1 ? "mixed" : "neutral";
+    const real = e.gameId ? getEnvTag(e.gameId) : null;
+    const liveFx = real ? [real.passMod ? `全隊通過率 ${pct(real.passMod)}` : "", real.rewardMult && real.rewardMult !== 1 ? `通關積分 ×${real.rewardMult}` : ""].filter(Boolean).join("；") || "沒有直接數值（只影響特定詞條）" : "";
     return `<div class="cx-item" data-env="${e.id}">
-      <div class="cx-head"><b>${esc(e.name)}</b><span class="cx-tone tone-${tone}">${TONE_LABEL[tone]}</span></div>
+      <div class="cx-head"><b>${esc(e.name)}</b>${e.sub ? `<small>${esc(e.sub)}</small>` : ""}</div>
       <div class="cx-desc">${esc(e.desc)}</div>
-      <div class="cx-fx">效果：${esc(fx)}</div>
-      <div class="cx-fx">它克誰：${rel.victims.length ? names(rel.victims) : "（目前沒有資料）"}</div>
-      <div class="cx-fx">誰克它：${rel.counters.length ? names(rel.counters) : "（目前沒有資料）"}</div>
+      <div class="cx-fx">${real ? "設計稿效果" : "效果"}：${esc(e.effect)}</div>
+      ${real ? `<div class="cx-fx cx-live">遊戲內目前實際效果：${esc(liveFx)}</div>` : `<div class="cx-fx cx-todo">尚未實裝（設計稿，副本抽不到）</div>`}
+      <div class="cx-fx"><b>它克誰（極度克制）</b>：${esc(e.countered || "（無）")}</div>
+      <div class="cx-fx"><b>誰佔優勢（極大優勢）</b>：${esc(e.favored || "（無）")}</div>
+      ${e.event ? `<details class="cx-cats"><summary>事件舉例</summary><div class="cx-fx">${esc(e.event)}</div></details>` : ""}
     </div>`;
   }
 
@@ -200,17 +205,17 @@ export function createCodex({ getState, describeTag, onSave }) {
     const st = getState();
     const box = win.querySelector(".cx-list");
     if (ui.tab === "env") {
-      const list = ENV_LIST.filter((e) => !ui.q || `${e.name}${e.desc}`.toLowerCase().includes(ui.q.toLowerCase()));
-      box.innerHTML = `<div class="cx-count">關卡詞條共 ${list.length} 個（每次進副本隨機抽 1 個）</div>${list.map(envRow).join("") || `<div class="cx-empty">沒有符合的詞條。</div>`}`;
+      const list = CODEX_ENV_ALL.filter((e) => !ui.q || `${e.name}${e.sub ?? ""}${e.desc}${e.effect}${e.countered}${e.favored}`.toLowerCase().includes(ui.q.toLowerCase()));
+      box.innerHTML = `<div class="cx-count">關卡詞條 ${list.length} 個符合（共 ${CODEX_ENV_ALL.length} 個；目前遊戲已實裝 ${CODEX_ENV_ALL.filter((e) => e.gameId).length} 個，其餘是設計稿）</div>${list.map(envRow).join("") || `<div class="cx-empty">沒有符合的詞條。</div>`}`;
       return;
     }
     const who = ui.sid != null ? st?.samsarites.find((s) => s.id === ui.sid) : null;
     const mineIds = new Set(who?.tags ?? []);
-    const pinned = who ? PERSON_TAGS.filter((t) => mineIds.has(t.id)) : [];
-    const rest = PERSON_TAGS.filter((t) => !mineIds.has(t.id) && matches(t));
+    const pinned = who ? CODEX_ALL.filter((t) => mineIds.has(t.id)) : [];
+    const rest = CODEX_ALL.filter((t) => !mineIds.has(t.id) && matches(t));
     box.innerHTML =
       (who ? `<div class="cx-sec">這個小人的詞條（${esc(who.name)}）</div>${pinned.map(personRow).join("") || `<div class="cx-empty">他沒有詞條。</div>`}<div class="cx-sec">其他詞條</div>` : "") +
-      `<div class="cx-count">人物詞條 ${rest.length} 個符合${who ? "（不含他身上的）" : ""}</div>` +
+      `<div class="cx-count">人物詞條 ${rest.length} 個符合${who ? "（不含他身上的）" : ""}（共 ${CODEX_ALL.length} 個；已實裝 ${CODEX_ALL.filter((t) => t.gameId).length} 個，其餘是設計稿）</div>` +
       (rest.map(personRow).join("") || `<div class="cx-empty">沒有符合的詞條，換個篩選看看。</div>`);
     const hl = box.querySelector(".hl");
     if (hl) {

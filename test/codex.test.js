@@ -64,3 +64,21 @@ test("日誌不寫入的種類：每日結算、商店等級、錢包、市集�
   old.log.push({ day: 1, type: "dayEnd", text: "舊的每日結算" });
   assert.deepEqual(deserialize(JSON.stringify(old)).log.map((e) => e.type), ["social"]);
 });
+
+test("哈基米標籤庫：171 個人物詞條＋22 個關卡詞條齊全，每個都有描述、稀有度與好壞", async () => {
+  const { CODEX_PEOPLE, CODEX_ENVS } = await import("../src/data/codexTags.js");
+  const { CODEX_ALL, CODEX_ENV_ALL } = await import("../src/data/tagCodex.js");
+  const { TAGS } = await import("../src/data/tags.js");
+  assert.equal(CODEX_PEOPLE.length, 171);
+  assert.equal(new Set(CODEX_PEOPLE.map((p) => p.no)).size, 171, "編號不重複");
+  assert.equal(new Set(CODEX_ALL.map((p) => p.id)).size, CODEX_ALL.length, "詞條 id 不重複（自訂分類靠它）");
+  for (const p of CODEX_PEOPLE) {
+    assert.ok(p.desc && p.effect, `${p.no}.${p.name} 缺描述或效果`);
+    assert.ok(["N", "R", "SR", "SSR", "UR"].includes(p.rarity), `${p.name} 稀有度`);
+    assert.ok(["good", "mixed", "bad"].includes(p.tone), `${p.name} 好壞`);
+  }
+  assert.equal(CODEX_ENVS.length, 22);
+  for (const e of CODEX_ENV_ALL) assert.ok(e.desc && e.effect && e.countered && e.favored, `${e.name} 欄位不全`);
+  // 遊戲內已實裝的 30 個抽卡標籤都要對得上，詞條庫才能顯示「實際效果」與小人對照置頂
+  for (const t of TAGS) assert.ok(CODEX_PEOPLE.some((p) => p.gameId === t.id), `${t.name} 沒對應到詞條庫`);
+});
