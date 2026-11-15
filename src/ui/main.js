@@ -254,8 +254,10 @@ function renderTopbar() {
   $("banner").innerHTML = `${bannerText}<button data-action="toggle-pause">繼續</button>`;
 
   const waiting = pendingWishes(state).length;
-  $("btn-wishes").style.display = waiting > 0 ? "" : "none";
-  $("btn-wishes").textContent = `許願 (${waiting})`;
+  const ongoing = (state.wishes ?? []).filter((w) => w.status === "active").length;
+  $("btn-wishes").style.display = waiting + ongoing > 0 ? "" : "none";
+  $("btn-wishes").textContent = waiting > 0 ? `許願 (${waiting})` : `許願（進行中 ${ongoing}）`; // 沒有待回覆但有進行中的許願時，也要能點進去查清單
+  $("btn-wishes").classList.toggle("alert", waiting > 0);
 
   const godWaiting = Boolean(pendingGodEvent(state));
   $("btn-god").style.display = godWaiting || activeMission(state) ? "" : "none";
@@ -1519,10 +1521,30 @@ function runResult() {
     <div class="modal-actions"><button class="primary" data-action="close-run-report">${waiting > 0 ? "下一場" : "知道了"}</button></div>`;
 }
 
+/** 進行中（已答應）的許願清單：誰許的、要什麼、期限剩幾天；剩 1 天以內標紅 */
+function activeWishList() {
+  const day = currentDay(state);
+  const rows = (state.wishes ?? [])
+    .filter((x) => x.status === "active")
+    .map((x) => {
+      const who = getSamsarite(state, x.samsariteId);
+      const def = getWish(x.kind);
+      const isRest = x.mode === "rest";
+      const left = isRest ? (who?.vacationDays ?? 0) : x.deadlineDay - day;
+      const urgent = !isRest && left <= 1;
+      const what = renderTemplate(def.doneDesc, wishVars(state, x));
+      const time = isRest ? `放假中，還剩 ${left} 天` : `期限第 ${x.deadlineDay} 天前，還剩 ${Math.max(0, left)} 天`;
+      return { left: isRest ? 999 : left, html: `<li class="wish-row${urgent ? " urgent" : ""}"><b>${def.icon} ${esc(who?.name ?? "?")}</b>：${esc(def.name)}<br /><small>${esc(what)}</small><br /><span class="wish-time${urgent ? " bad" : ""}">${urgent ? "⚠️ 快到期！" : "⏳"} ${time}</span></li>` };
+    })
+    .sort((a, b) => a.left - b.left);
+  if (rows.length === 0) return `<p class="muted">目前沒有進行中的許願。</p>`;
+  return `<ul class="wish-list">${rows.map((r) => r.html).join("")}</ul>`;
+}
+
 function wish() {
   const list = pendingWishes(state);
   const w = list[0];
-  if (!w) return `<h3>🙏 許願</h3><p>目前沒有等你回覆的許願。</p><div class="modal-actions">${closeButton}</div>`;
+  if (!w) return `<h3>🙏 許願</h3><h4>進行中的許願</h4>${activeWishList()}<div class="modal-actions">${closeButton}</div>`;
   const s = getSamsarite(state, w.samsariteId);
   const def = getWish(w.kind);
   const vars = wishVars(state, w);
@@ -1543,6 +1565,7 @@ function wish() {
       ${list.length > 1 ? `<br /><small>還有 ${list.length - 1} 個許願排隊中</small>` : ""}
     </div>
     ${statusPanel([s, ...home.filter((x) => x.id !== s.id)].filter((x) => x.location === "space"))}
+    <h4>進行中的許願</h4>${activeWishList()}
     <div class="modal-actions">
       <button class="danger" data-action="refuse-wish" data-id="${w.id}">拒絕</button>
       <button class="primary" data-action="accept-wish" data-id="${w.id}" ${check.ok ? "" : "disabled"}>答應</button>

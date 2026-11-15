@@ -758,3 +758,10 @@ button.primary:disabled { background: #f1f1f1; color: #6b6b6b; border-color: #e6
 /* ── 提示訊息 ── */
 #toast { position: fixed; left: 50%; bottom: 24px; z-index: 200; transform: translate(-50%, 20px); padding: 10px 20px; border-radius: 50px; background: #000; color: #fff; font-size: 14px; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; max-width: calc(100vw - 32px); }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ── 許願清單（進行中） ── */
+.wish-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.wish-row { padding: 10px 14px; border-radius: 16px; background: #fff6d6; font-size: 14px; line-height: 1.6; }
+.wish-row.urgent { background: #ffe4dc; }
+.wish-row small { color: var(--muted); }
+.wish-time.bad { color: #dc2626; font-weight: 700; }
