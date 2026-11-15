@@ -59,6 +59,12 @@ if (args.upkeep) {
   CONFIG.space.upkeepGene = CONFIG.space.upkeepGene.map((v) => v * args.upkeep);
   CONFIG.space.upkeepSpace = CONFIG.space.upkeepSpace.map((v) => v * args.upkeep);
 }
+if (args.growcost) {
+  // --growcost=3：成長花費倍率（基因鎖突破費、個人強化費、四卡池基礎價與週漲價同乘；維持費與獎勵不動）。A1 調主線節奏用
+  for (const t of CONFIG.gene.tiers) t.cost = Math.round(t.cost * args.growcost);
+  for (const t of CONFIG.enhance.costTiers) t.cost = Math.round(t.cost * args.growcost);
+  for (const p of CONFIG.gacha.pools) { p.base = Math.round(p.base * args.growcost); p.step = Math.round(p.step * args.growcost); }
+}
 if (args.minClear) CONFIG.auto.minClearChance = args.minClear;
 if (args.mpower) CONFIG.forcedMission.powerMult = args.mpower;
 const TAX = args.tax ?? CONFIG.tax.default; // --tax=0.4：公庫稅率
