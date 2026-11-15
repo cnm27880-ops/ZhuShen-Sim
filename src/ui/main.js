@@ -207,11 +207,10 @@ function render() {
   renderStage();
   renderLog();
   renderRoster();
-  renderDaySummary();
   renderModal();
   codex.sync(!coverOpen); // 詞條庫懸浮球：封面時藏起來，進遊戲後永遠在最上層
   codex.setFocus(modal?.name === "detail" && modal.id != null && modal.dead == null ? modal.id : null); // 開著小人檔案頁：詞條庫自動把他的詞條置頂，關掉就取消
-  for (const id of ["topbar", "actions", "roster", "modal", "log", "banner", "day-summary", "run-list"]) stripEmoji($(id));
+  for (const id of ["topbar", "actions", "roster", "modal", "log", "banner", "run-list"]) stripEmoji($(id));
 }
 
 /** DESIGN.md：不用 emoji 當裝飾。畫面文字統一在這裡濾掉（小人頭頂泡泡是 CSS 圖形，不受影響；副本路線圖保留原樣） */
@@ -281,7 +280,7 @@ function renderTopbar() {
   $("btn-god").textContent = godWaiting ? "主神搞事 (1)" : "突襲任務";
 
   const am = currentAutoMode(state);
-  $("btn-auto").textContent = `自動：${AUTO_MODES[am]?.label ?? "自訂"}`;
+  $("btn-auto").textContent = state.settings.autoDispatch ? `自動：${AUTO_MODES[am]?.label ?? "自訂"}` : "自動：關閉";
   $("btn-auto").classList.toggle("active", state.settings.autoDispatch);
   const stockTotal = Object.values(state.inventory ?? {}).reduce((n, v) => n + v, 0);
   $("btn-inventory").textContent = `物資${stockTotal ? ` (${stockTotal})` : ""}`;
@@ -626,21 +625,6 @@ function tagPanel() {
 function recentOf(s) {
   const e = s.life?.[s.life.length - 1];
   return e ? `<b>第 ${e.day} 天</b>　${e.text}` : "<small>還沒發生什麼事</small>";
-}
-
-// ── 今日摘要：玩家暫停時，列出最近一天發生的大事，免得一直派遣錯過劇情 ──
-const SUMMARY_TYPES = new Set(["death", "relation", "scheme", "drama", "injurySevere", "lowSanity", "sanityCrash", "birth", "squad", "rival", "stele"]);
-let summaryHiddenKey = "";
-function renderDaySummary() {
-  const box = $("day-summary");
-  const day = currentDay(state);
-  const items = state.log.filter((e) => e.day >= day - 1 && SUMMARY_TYPES.has(e.type)).slice(-8);
-  const key = `${day}:${items.length}`;
-  const show = state.settings.paused && !modal && items.length > 0 && summaryHiddenKey !== key;
-  box.style.display = show ? "block" : "none";
-  if (!show) return;
-  box.innerHTML = `<div class="ds-head"><b>近兩天大事</b><button data-action="close-summary" data-key="${key}" aria-label="關閉">×</button></div>` +
-    items.map((e) => `<div class="ds-item ds-${e.type}"><span class="ds-day">第 ${e.day} 天</span>${e.text}</div>`).join("");
 }
 
 let raisedId = null; // 觸控裝置：目前點開（浮起）的卡片
@@ -1569,8 +1553,10 @@ function autoPanel() {
         <label class="option"><input type="checkbox" id="protect-enemies" ${state.settings.protect.noEnemies ? "checked" : ""} /><span class="grow">禁止仇恨／死敵同隊</span></label>
         <h4>自動暫停的事件</h4><div class="option-list">${toggles}</div></div>`
     : "";
+  const on = !!state.settings.autoDispatch;
+  const master = `<div class="option ${on ? "selected" : ""}" data-action="toggle-auto-dispatch"><span class="option-icon">${on ? "🟢" : "⏹️"}</span><span class="grow"><b>自動派遣：${on ? "開啟中" : "已關閉"}</b><br /><small>${on ? "點一下關閉，之後所有派遣都由你自己下（暫停事件設定不變）。" : "點一下重新開啟自動派遣。"}</small></span></div>`;
   return `<h3>自動小幫手</h3>
-    <div class="option-list">${cards}</div>${note}
+    <div class="option-list">${master}${cards}</div>${note}
     <div style="margin-top:8px"><button data-action="toggle-auto-advanced">${modal.advanced ? "▲ 收起進階自訂" : "▼ 進階自訂（展開全部開關）"}</button></div>
     ${advanced}
     <div class="modal-actions">${closeButton}</div>`;
@@ -1995,9 +1981,6 @@ const actions = {
   "toggle-more"() {
     $("more-menu").hidden = !$("more-menu").hidden;
   },
-  "close-summary"(el) {
-    summaryHiddenKey = el.dataset.key;
-  },
   "toggle-pause"() {
     state.settings.paused = !state.settings.paused;
     bannerText = "";
@@ -2209,6 +2192,10 @@ const actions = {
   },
   "open-auto"() {
     modal = { name: "auto", advanced: false };
+  },
+  "toggle-auto-dispatch"() {
+    state.settings.autoDispatch = !state.settings.autoDispatch;
+    saveGame();
   },
   "set-auto-mode"(el) {
     applyAutoMode(state, el.dataset.id);

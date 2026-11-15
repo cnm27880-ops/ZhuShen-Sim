@@ -909,3 +909,46 @@ button.pill:disabled { opacity: .45; cursor: not-allowed; }
 #roster .card.stack:hover, #roster .card.stack.raised { transform: translateY(-48px); }
 /* 詞條庫：開著的小人檔案頁裡，他身上的詞條置頂並標底色 */
 .cx-item.pinned { background: #fff6d6; border-color: #e5c84f; }
+
+/* ── 2026-11 介面整理：頂欄單行、操作列單行、小人卡精緻化 ── */
+@media (min-width: 1100px) {
+  #topbar { flex-wrap: nowrap; gap: 0 18px; }
+  #topbar .tb-group { flex-wrap: nowrap; gap: 18px; white-space: nowrap; }
+  #topbar .tb-group + .tb-group { padding-left: 18px; }
+  /* 每個資源「標籤 + 數值」排成同一行 */
+  #topbar .stat { flex-direction: row; align-items: center; gap: 8px; min-width: 0; }
+  #topbar .stat-label { font-size: 12px; }
+  #topbar .stat-value { font-size: 20px; }
+  #topbar .stat-value.small { font-size: 15px; }
+  #topbar .stat #day-bar { margin-top: 0; width: 110px; }
+  #topbar .stat:has(#day-bar) { flex-direction: row-reverse; }
+  #actions { flex-wrap: nowrap; gap: 0 16px; }
+  #actions .act-main, #actions .act-sub, #actions .act-alert { flex-wrap: nowrap; gap: 8px; }
+  #actions .act-sub, #actions .act-alert { padding-left: 16px; }
+  #actions .act-alert { margin-left: auto; }
+  #actions button.big { font-size: 15px; padding: 8px 22px; min-height: 42px; }
+  #actions button { white-space: nowrap; }
+}
+
+/* 小人卡片：保留堆疊，換成柔和漸層、階級色邊條與較精緻的字級 */
+#roster .card.stack { --rk: #d4a017; --rk-soft: #fff3c4; border-radius: 18px; border: 1px solid rgba(17,17,17,.08); background: linear-gradient(180deg, #fff, #fbfbf8); box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 6px 14px rgba(0,0,0,.06); }
+#roster .card.stack.rank-border-B { --rk: #3b82f6; --rk-soft: #dbe9ff; }
+#roster .card.stack.rank-border-A { --rk: #8b5cf6; --rk-soft: #e6dfff; }
+#roster .card.stack.rank-border-S { --rk: #ef6a43; --rk-soft: #ffe0d4; }
+#roster .card.stack:hover, #roster .card.stack.raised { border-color: var(--rk); box-shadow: 0 0 0 1px var(--rk), 0 18px 34px rgba(0,0,0,.18); }
+#roster .card-strip { background: linear-gradient(180deg, var(--rk-soft), #fff 115%) !important; border-right: 0; box-shadow: inset -1px 0 0 rgba(0,0,0,.06), inset 3px 0 0 var(--rk); }
+#roster .card-strip .rank { border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.35); }
+#roster .card-strip .strip-name { color: #1b1b1b; }
+#roster .card-strip .strip-power { padding: 1px 6px; border-radius: 99px; background: rgba(255,255,255,.85); box-shadow: 0 0 0 1px rgba(0,0,0,.07); font-size: 11px; }
+#roster .card-rest { padding: 12px 14px 12px 12px; gap: 4px; }
+#roster .card-top { font-size: 15px; letter-spacing: .5px; }
+#roster .card-meta { margin-top: 2px; gap: 12px; font-size: 12px; }
+#roster .card-meta b { color: #111; font-family: ui-monospace, "JetBrains Mono", monospace; }
+#roster .card-rest .bar { height: 5px; background: #ececea; }
+#roster .card-rest .bar > i { background: linear-gradient(90deg, #34a873, #7bd3a4); }
+#roster .card-rest .bar.low > i { background: linear-gradient(90deg, #dc2626, #f97316); }
+#roster .card-status { display: inline-block; align-self: flex-start; margin-top: 4px; padding: 2px 10px; border-radius: 99px; background: #f3f3f0; font-size: 12px; color: #4b5563; }
+#roster .card-recent { margin-top: 4px; padding: 6px 8px; border-top: 0; border-radius: 10px; background: var(--rk-soft); font-size: 11.5px; color: #333; }
+#roster .card-open { margin-top: 6px; border-radius: 99px !important; background: #111; border-color: #111; color: #fff; font-weight: 600; }
+#roster .card-open:hover:not(:disabled) { background: #333; }
+#roster .card.stack.away .card-strip { filter: saturate(.45); }
