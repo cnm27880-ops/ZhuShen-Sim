@@ -626,24 +626,83 @@ function renderDaySummary() {
     items.map((e) => `<div class="ds-item ds-${e.type}"><span class="ds-day">第 ${e.day} 天</span>${e.text}</div>`).join("");
 }
 
+/** 名冊卡露在外面那一條的警示徽章：受傷、理智低、副本中、許願…（疊起來也要看得到） */
+function cardAlerts(s) {
+  const out = [];
+  const add = (icon, tone, tip) => out.push(`<span class="alert-dot ${tone}" title="${esc(String(tip).replace(/<[^>]*>/g, ""))}">${icon}</span>`); // injuryLabel 回傳 HTML，提示文字要先去標籤
+  if (s.injury >= 1) add("🩹", s.injury >= 2 ? "red" : "amber", injuryLabel(s));
+  if (s.stats.sanity < 40) add("🧠", s.stats.sanity < 20 ? "red" : "amber", `理智偏低（${s.stats.sanity}）`);
+  if (s.location === "dungeon") add("🚪", "blue", "副本中");
+  if (s.location === "pod") add("🍼", "blue", "催熟艙");
+  const w = wishesOf(state, s.id)[0];
+  if (w) add("🙏", w.status === "pending" ? "red pulse" : "purple", `許願：${getWish(w.kind).name}${w.status === "pending" ? "（等你回覆）" : ""}`);
+  if (s.vacationDays > 0) add("🏖️", "blue", `休假中（${s.vacationDays} 天）`);
+  return out.join("");
+}
+
+let raisedId = null; // 觸控裝置：目前點開（浮起）的卡片
+
+function cardInner(s) {
+  return `<div class="card-strip">
+      <div class="card-alerts">${cardAlerts(s)}</div>
+      <div class="mini-avatar">${s.name.slice(0, 1)}</div>
+      <div class="strip-name">${rankBadge(s.rank)}<span>${s.name}</span></div>
+      <div class="strip-power">戰力 <b>${effectivePower(s)}</b></div>
+    </div>
+    <div class="card-rest">
+      <div class="card-top"><span class="grow">${s.name}</span><span class="tag-dots">${tagDots(s)}</span><span class="follow-btn ${s.id === state.settings.followId ? "on" : ""}" data-action="toggle-follow" data-id="${s.id}" title="${s.id === state.settings.followId ? "取消鎖定視角" : "鎖定視角（他下副本時畫面跟著切）"}">👁</span></div>
+      <div class="card-meta"><span>戰力 <b>${effectivePower(s)}</b></span><span>理智 <b>${s.stats.sanity}</b></span></div>
+      <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
+      <div class="card-status">${locationLabel(s)}${statusExtras(s)}</div>
+      <div class="card-recent" title="最近發生的事">${recentOf(s)}</div>
+      <button class="pill card-open" data-action="open-detail" data-id="${s.id}">查看檔案</button>
+    </div>`;
+}
+
+/** 堆疊卡片：卡片元素保留、只更新內容，滑過去的浮起動畫才不會被每個時間步的重繪打斷 */
 function renderRoster() {
+  const root = $("roster");
   if (state.samsarites.length === 0) {
-    $("roster").innerHTML = `<div class="empty">你手下一個輪迴者都沒有了。去抽卡吧。</div>`;
+    root.innerHTML = `<div class="empty">你手下一個輪迴者都沒有了。去抽卡吧。</div>`;
     return;
   }
-  $("roster").innerHTML = state.samsarites
-    .map(
-      (s) => `
-      <div class="card rank-border-${s.rank} ${s.location === "dungeon" ? "away" : s.location === "pod" ? "pod" : ""}" data-action="open-detail" data-id="${s.id}">
-        <div class="card-top">${rankBadge(s.rank)}<span class="grow">${s.name}</span><span class="tag-dots">${tagDots(s)}</span><span class="follow-btn ${s.id === state.settings.followId ? "on" : ""}" data-action="toggle-follow" data-id="${s.id}" title="${s.id === state.settings.followId ? "取消鎖定視角" : "鎖定視角（他下副本時畫面跟著切）"}">👁</span></div>
-        <div class="card-meta"><span>戰力 <b>${effectivePower(s)}</b></span><span>理智 <b>${s.stats.sanity}</b></span></div>
-        <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
-        <div class="card-status">${locationLabel(s)}${statusExtras(s)}</div>
-        <div class="card-recent" title="最近發生的事">${recentOf(s)}</div>
-      </div>`
-    )
-    .join("");
+  root.style.setProperty("--overlap", state.samsarites.length <= 4 ? "-10px" : "138px"); // 人少時不疊（留 10px 間距），5 人以上才堆疊
+  const ids = new Set(state.samsarites.map((s) => String(s.id)));
+  for (const c of [...root.children]) if (!ids.has(c.dataset.id)) c.remove();
+  state.samsarites.forEach((s, i) => {
+    let el = root.querySelector(`.card[data-id="${s.id}"]`);
+    if (!el) {
+      el = document.createElement("div");
+      el.dataset.action = "open-detail";
+      el.dataset.id = String(s.id);
+    }
+    const cls = `card stack rank-border-${s.rank} ${s.location === "dungeon" ? "away" : s.location === "pod" ? "pod" : ""}${raisedId === s.id ? " raised" : ""}`;
+    if (el.className !== cls) el.className = cls;
+    const html = cardInner(s);
+    if (el._html !== html) {
+      el.innerHTML = html;
+      el._html = html;
+    }
+    el.style.zIndex = raisedId === s.id ? "60" : String(i + 1);
+    if (root.children[i] !== el) root.insertBefore(el, root.children[i] ?? null);
+  });
 }
+
+// 觸控裝置（沒有 hover）：點一下浮起、再點一下收回；浮起後用「查看檔案」按鈕進檔案頁
+document.getElementById("roster").addEventListener(
+  "click",
+  (e) => {
+    if (!window.matchMedia("(hover: none)").matches) return;
+    const card = e.target.closest(".card.stack");
+    if (!card || e.target.closest(".card-open, .follow-btn")) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const id = Number(card.dataset.id);
+    raisedId = raisedId === id ? null : id;
+    renderRoster();
+  },
+  true
+);
 
 // ───────── 彈出視窗 ─────────
 
@@ -1130,7 +1189,6 @@ const SLOT_RULE = {
 
 /** 人物檔案頁（功能 5，2026-11 改版）。s 有值 = 還活著；null = 墓園裡的人（只看，附復活入口） */
 function bioCard(b, s) {
-  const chips = b.tags.length ? b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}">${t.rarity}｜${t.name}</span>`).join("") : `<small>（沒有標籤）</small>`;
   const rel = b.relations;
   const relRows = [
     rel.partner ? `<div>${rel.partner.status === "soulmate" ? "靈魂伴侶" : "戀人"}：<b>${rel.partner.name}</b></div>` : "",
@@ -1196,7 +1254,7 @@ function bioCard(b, s) {
   return `<div class="bio ${b.alive ? "" : "bio-dead"}">
     <div class="bio-head bio-rank-${b.rank}">
       <div class="bio-avatar">${b.name.slice(0, 1)}</div>
-      <div class="bio-title"><div class="bio-name">${rankBadge(b.rank)} ${b.name}${b.alive ? "" : "　<small>（已逝）</small>"}</div>
+      <div class="bio-title"><div class="bio-name">${rankBadge(b.rank)} ${b.name}${b.alive ? "" : "　<small>（已逝）</small>"}<span class="bio-name-tags">${b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}">${t.rarity}｜${t.name}</span>`).join("")}</span></div>
         <div class="bio-sub">第 ${b.generation} 代・基因鎖 ${b.geneLock} 階・出征 ${b.runs} 場</div></div>
     </div>
     ${statuses ? `<div class="bio-status">${statuses}</div>` : ""}
@@ -1205,7 +1263,6 @@ function bioCard(b, s) {
       <div class="sec-mint"><small>私房錢</small><b>${b.wallet}</b></div><div class="sec-lav"><small>階級</small><b>${b.rank}</b></div>
     </div>
     <p class="bio-story">${bioStory(b)}</p>
-    <section class="bio-sec"><h4>🏷️ 標籤</h4><div class="bio-tags">${chips}</div></section>
     ${growth}
     <section class="bio-sec sec-cream"><h4>🎒 裝備</h4><div>${gearRows}</div>${transfer}${gearActions}</section>
     ${modal.note ? `<div class="summary">${modal.note}</div>` : ""}
