@@ -829,3 +829,11 @@ button.pill:disabled { opacity: .45; cursor: not-allowed; }
 .bio-name-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .bio-name-tags .tag-chip { font-size: 12px; padding: 1px 8px; font-weight: 600; }
 #roster { position: relative; z-index: 0; isolation: isolate; } /* 卡片的 z-index 只在名冊內部比，不能蓋過彈出視窗 */
+
+/* ── 主神日誌分類篩選 ── */
+#log-filter { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 0; }
+#log-filter button { min-height: 28px; padding: 2px 12px; border-radius: 999px; border: 1px solid #3a4152; background: transparent; color: #aab2c5; font-size: 12px; cursor: pointer; }
+#log-filter button.active { background: #fff; color: #111; border-color: #fff; font-weight: 700; }
+.log-cat { display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 99px; font-size: 10px; font-weight: 700; color: #111; background: #dfe3ee; vertical-align: 1px; }
+.log-cat.cat-drama { background: #ffc9d9; } .log-cat.cat-battle { background: #ffd8a8; } .log-cat.cat-death { background: #ff8787; }
+.log-cat.cat-wish { background: #e5dbff; } .log-cat.cat-god { background: #ffec99; } .log-cat.cat-daily { background: #c3fae8; }

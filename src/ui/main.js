@@ -6,6 +6,7 @@ import * as cloud from "./cloud.js";
 import { coverHtml } from "./cover.js";
 import { leaderboardHtml } from "./leaderboard.js";
 import { esc } from "./html.js";
+import { LOG_CATEGORIES, LOG_BADGE, categoryOf } from "../data/logCategories.js";
 import { buildScorePayload } from "../engine/scoreboard.js";
 import { planSync } from "../engine/cloudSync.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
@@ -501,12 +502,22 @@ function renderRunList(viewing = null) {
     .join("");
 }
 
+let logFilter = "all"; // 主神日誌目前篩選的分類（只存在畫面，不進存檔）
+
 function renderLog() {
   const log = $("log");
+  const bar = LOG_CATEGORIES.map(([id, label]) => `<button data-action="log-filter" data-id="${id}" class="${logFilter === id ? "active" : ""}">${label}</button>`).join("");
+  if ($("log-filter").dataset.key !== logFilter) {
+    $("log-filter").innerHTML = bar;
+    $("log-filter").dataset.key = logFilter;
+  }
+  const wasAtBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
   log.innerHTML = state.log
-    .map((e) => `<div class="log-entry log-${e.type}"><span class="log-day">D${e.day}</span>${e.text}</div>`)
-    .join("");
-  log.scrollTop = log.scrollHeight;
+    .filter((e) => logFilter === "all" || categoryOf(e.type) === logFilter)
+    .map((e) => `<div class="log-entry log-${e.type}"><span class="log-day">D${e.day}</span><span class="log-cat cat-${categoryOf(e.type)}">${LOG_BADGE[categoryOf(e.type)]}</span>${e.text}</div>`)
+    .join("") || `<div class="muted" style="padding:8px 0">這一類還沒有紀錄。</div>`;
+  if (wasAtBottom || log.dataset.f !== logFilter) log.scrollTop = log.scrollHeight;
+  log.dataset.f = logFilter;
 }
 
 function injuryLabel(s) {
@@ -1977,6 +1988,9 @@ const actions = {
   "toggle-pause"() {
     state.settings.paused = !state.settings.paused;
     bannerText = "";
+  },
+  "log-filter"(el) {
+    logFilter = el.dataset.id;
   },
   "set-speed"(el) {
     state.settings.speed = Number(el.dataset.value);
