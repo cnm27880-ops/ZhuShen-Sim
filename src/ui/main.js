@@ -2111,6 +2111,11 @@ const actions = {
     dispatchPick.dungeonId = dispatchPick.slotId = null; // 那一槽出發了，下次開派遣畫面重選
     dispatchPick.greedy = false;
     dispatchPick.erosion = 0;
+    // 出發 = 遊戲進入進行中。先作廢「開窗前的暫停狀態」，否則關窗時 syncAutoPause 會把暫停蓋回去，右上角顯示跟實際狀態脫節
+    if (autoPause) {
+      state.settings.speed = autoPause.speed;
+      autoPause = null;
+    }
     modal = null;
     state.settings.paused = false;
     bannerText = "";
