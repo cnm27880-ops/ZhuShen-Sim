@@ -210,6 +210,7 @@ function render() {
   renderDaySummary();
   renderModal();
   codex.sync(!coverOpen); // 詞條庫懸浮球：封面時藏起來，進遊戲後永遠在最上層
+  codex.setFocus(modal?.name === "detail" && modal.id != null && modal.dead == null ? modal.id : null); // 開著小人檔案頁：詞條庫自動把他的詞條置頂，關掉就取消
   for (const id of ["topbar", "actions", "roster", "modal", "log", "banner", "day-summary", "run-list"]) stripEmoji($(id));
 }
 
@@ -505,7 +506,7 @@ function renderRunList(viewing = null) {
 }
 
 // 詞條庫懸浮球：永遠在最上層，視窗可一直開著對照
-const codex = createCodex({ getState: () => state, describeTag: (t) => describeTag(t), onSave: () => saveGame() });
+const codex = createCodex({ getState: () => state, describeTag: (t) => describeTag(t) });
 
 let logFilter = "all"; // 主神日誌目前篩選的分類（只存在畫面，不進存檔）
 
@@ -642,17 +643,26 @@ function renderDaySummary() {
     items.map((e) => `<div class="ds-item ds-${e.type}"><span class="ds-day">第 ${e.day} 天</span>${e.text}</div>`).join("");
 }
 
-/** 名冊卡露在外面那一條的警示徽章：受傷、理智低、副本中、許願…（疊起來也要看得到） */
+/** 名冊卡左條的狀態圖示（SVG，不是 emoji；會被遊戲的 emoji 清除機制拿掉）：受傷、理智低、副本中、許願、休假… */
+const STATUS_SVG = {
+  injury: `<path d="M8 3.5v9M3.5 8h9"/><circle cx="8" cy="8" r="6.2"/>`,
+  sanity: `<path d="M8 8.2c0-1 1.4-1 1.4 0S8 10.6 6.6 9.4 5.3 5.2 8 4.6s4.6 1.6 4.2 4.4"/>`,
+  dungeon: `<rect x="4" y="2.8" width="8" height="10.4" rx="1.2"/><circle cx="9.8" cy="8" r=".7" fill="currentColor"/>`,
+  pod: `<ellipse cx="8" cy="8.6" rx="4" ry="5"/>`,
+  wish: `<path d="M8 2.6l1.6 3.3 3.6.5-2.6 2.5.6 3.6L8 10.8 4.8 12.5l.6-3.6L2.8 6.4l3.6-.5z"/>`,
+  vacation: `<circle cx="8" cy="8" r="2.6"/><path d="M8 2v1.6M8 12.4V14M2 8h1.6M12.4 8H14M3.8 3.8l1.1 1.1M11.1 11.1l1.1 1.1M12.2 3.8l-1.1 1.1M4.9 11.1l-1.1 1.1"/>`,
+};
 function cardAlerts(s) {
   const out = [];
-  const add = (icon, tone, tip) => out.push(`<span class="alert-dot ${tone}" title="${esc(String(tip).replace(/<[^>]*>/g, ""))}">${icon}</span>`); // injuryLabel 回傳 HTML，提示文字要先去標籤
-  if (s.injury >= 1) add("🩹", s.injury >= 2 ? "red" : "amber", injuryLabel(s));
-  if (s.stats.sanity < 40) add("🧠", s.stats.sanity < 20 ? "red" : "amber", `理智偏低（${s.stats.sanity}）`);
-  if (s.location === "dungeon") add("🚪", "blue", "副本中");
-  if (s.location === "pod") add("🍼", "blue", "催熟艙");
+  const add = (kind, tone, tip) =>
+    out.push(`<span class="st-ico ${tone}" title="${esc(String(tip).replace(/<[^>]*>/g, ""))}"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${STATUS_SVG[kind]}</svg></span>`); // injuryLabel 回傳 HTML，提示文字要先去標籤
+  if (s.injury >= 1) add("injury", s.injury >= 2 ? "red" : "amber", injuryLabel(s));
+  if (s.stats.sanity < 40) add("sanity", s.stats.sanity < 20 ? "red" : "amber", `理智偏低（${s.stats.sanity}）`);
+  if (s.location === "dungeon") add("dungeon", "blue", "副本中");
+  if (s.location === "pod") add("pod", "blue", "催熟艙");
   const w = wishesOf(state, s.id)[0];
-  if (w) add("🙏", w.status === "pending" ? "red pulse" : "purple", `許願：${getWish(w.kind).name}${w.status === "pending" ? "（等你回覆）" : ""}`);
-  if (s.vacationDays > 0) add("🏖️", "blue", `休假中（${s.vacationDays} 天）`);
+  if (w) add("wish", w.status === "pending" ? "red pulse" : "purple", `許願：${getWish(w.kind).name}${w.status === "pending" ? "（等你回覆）" : ""}`);
+  if (s.vacationDays > 0) add("vacation", "blue", `休假中（${s.vacationDays} 天）`);
   return out.join("");
 }
 
@@ -661,8 +671,8 @@ let raisedId = null; // 觸控裝置：目前點開（浮起）的卡片
 function cardInner(s) {
   return `<div class="card-strip">
       ${rankBadge(s.rank)}
-      <div class="card-alerts">${cardAlerts(s)}</div>
       <div class="strip-name" title="${esc(s.name)}">${[...s.name].slice(0, 5).map((ch) => `<span>${esc(ch)}</span>`).join("")}</div>
+      <div class="card-alerts">${cardAlerts(s)}</div>
       <div class="strip-power" title="戰力">${effectivePower(s)}</div>
     </div>
     <div class="card-rest">
@@ -1272,7 +1282,7 @@ function bioCard(b, s) {
   return `<div class="bio ${b.alive ? "" : "bio-dead"}">
     <div class="bio-head bio-rank-${b.rank}">
       <div class="bio-avatar">${b.name.slice(0, 1)}</div>
-      <div class="bio-title"><div class="bio-name">${rankBadge(b.rank)} ${b.name}${b.alive ? "" : "　<small>（已逝）</small>"}<span class="bio-name-tags">${b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}" ${s ? `data-action="codex-open" data-sid="${s.id}" data-tag="${t.id}"` : ""} title="點一下到詞條庫看說明">${t.rarity}｜${t.name}</span>`).join("")}${s ? `<button type="button" class="pill cx-compare" data-action="codex-open" data-sid="${s.id}" data-keep-emoji>對照詞條庫</button>` : ""}</span></div>
+      <div class="bio-title"><div class="bio-name">${rankBadge(b.rank)} ${b.name}${b.alive ? "" : "　<small>（已逝）</small>"}<span class="bio-name-tags">${b.tags.map((t) => `<span class="tag-chip tag-${t.rarity}" ${s ? `data-action="codex-open" data-tag="${t.id}"` : ""} title="點一下到詞條庫看說明">${t.rarity}｜${t.name}</span>`).join("")}</span></div>
         <div class="bio-sub">第 ${b.generation} 代・基因鎖 ${b.geneLock} 階・出征 ${b.runs} 場</div></div>
     </div>
     ${statuses ? `<div class="bio-status">${statuses}</div>` : ""}
@@ -1992,8 +2002,8 @@ const actions = {
     bannerText = "";
   },
   "codex-open"(el) {
-    // 小人檔案頁「對照詞條庫」或點某個詞條：開詞條庫，那個小人的詞條置頂
-    codex.open({ samsariteId: el.dataset.sid ? Number(el.dataset.sid) : null, tagId: el.dataset.tag || null });
+    // 點檔案頁上的某個詞條：開詞條庫並標出那個詞條（檔案頁開著時，這個小人的詞條會自動置頂）
+    codex.open({ tagId: el.dataset.tag || null });
   },
   "log-filter"(el) {
     logFilter = el.dataset.id;

@@ -40,7 +40,7 @@
 | `src/data/mutations.js` | 6 大突變詞綴（吊橋效應／斷電黑夜／分贓誘惑／血月狂躁／濃霧走散／風平浪靜 35%）：欄位 `weight`／`loveMult`／`failSanity`／`rewardPct`／`clashMult`／`rMult`／`speedSaveMod`／`relicChanceMult` |
 | `src/data/relics.js` | 60 件奇物（每世界 1 首通奇物 `first` + 1 隱藏奇物 `hidden`），`powerPct` 微幅被動；`RELIC_TEXT[id]` 預留長文案 |
 | `src/data/tags.js` | 30 個 MVP 標籤 + 5 個副本環境標籤（資料表，加標籤只改這裡） |
-| `src/data/codexTags.js`、`src/data/tagCodex.js`、`src/ui/codex.js` | **詞條庫（懸浮球圖鑑，2026-11 試玩回饋第 9 項）**：`codexTags.js` 是哈基米標籤庫（upload.txt）解析出的 171 個人物詞條＋22 個關卡詞條（稀有度、綠黃紅好壞、設計稿效果、事件舉例；`gameId` = 對應到 `tags.js` 已實裝標籤，空 = 設計稿尚未實裝，是 4-J 標籤庫擴充的規格來源；文字欄位可直接改，編號／id／稀有度／好壞色不要動，詳見檔頭說明）；`tagCodex.js` 整理成詞條庫用的清單（`CODEX_ALL`／`CODEX_ENV_ALL`）與好壞判定 `toneOf`（有 `tone` 欄位優先，否則照數值欄位機械判定）；`codex.js` 是懸浮球＋視窗（z-index 最大、可拖曳縮放、人物／關卡分頁、篩選搜尋、自訂分類存 `state.codex.categories`、小人對照置頂） |
+| `src/data/codexTags.js`、`src/data/tagCodex.js`、`src/ui/codex.js` | **詞條庫（懸浮球圖鑑，2026-11 試玩回饋第 9 項）**：`codexTags.js` 是哈基米標籤庫（upload.txt）解析出的 171 個人物詞條＋22 個關卡詞條（稀有度、綠黃紅好壞、設計稿效果、事件舉例；`gameId` = 對應到 `tags.js` 已實裝標籤，空 = 設計稿尚未實裝，是 4-J 標籤庫擴充的規格來源；文字欄位可直接改，編號／id／稀有度／好壞色不要動，詳見檔頭說明；已有 `gameId` 的詞條畫面顯示引擎實際效果，其餘顯示 `effect`；好壞三類 好／壞／中性〔`mixed` 叫中性〕）；`tagCodex.js` 整理成詞條庫用的清單（`CODEX_ALL`／`CODEX_ENV_ALL`）與好壞判定 `toneOf`（有 `tone` 欄位優先，否則照數值欄位機械判定）；`codex.js` 是懸浮球＋視窗（z-index 最大、可拖曳縮放、人物／關卡分頁、只有階級與好／壞／中性篩選加搜尋；小人檔案頁開著時 `setFocus` 自動把他的詞條置頂、關掉就取消；自訂分類功能已拿掉，`state.codex.categories` 只留給舊存檔相容） |
 | `src/data/logCategories.js` | 主神日誌七類篩選（全部／狗血劇情／戰鬥／死亡／日常／許願／主神）：日誌 `type` → 分類；沒列到的歸日常。**不寫進日誌的種類**在 `CONFIG.logHiddenTypes`（每日結算 dayEnd、商店等級 shopTier、錢包 wallet、市集 market、自動閒置 autoIdle、保底 gachaPity；事件 `state.events` 照常產生，舊存檔讀取時清掉） |
 | `src/engine/tags.js` | 抽標籤、戰力／通過率／獎勵／傷勢減免的標籤計算；`effectivePower` 與傷勢減免／閃避也會算入商店強化與裝備（`shopBonus`）；心情加成 `moodPowerPct`／`moodPassBonus` 也在這裡；Phase 4-B 起 `effectivePower` = max(1, round((本體值 × 基因鎖乘區 + 武器防具白值) × (1 + 詞條% + 心情%)))，本體值 = `stats.power + inheritPower`；`shopBonus` 只剩裝備；新增 `bodyPower`／`genePowerMult` |
 | `src/data/relations.js` | 關係系統資料表：互動事件、借刀殺人手法、標籤特殊事件（每個事件的 `texts` 是多版本模板，加事件只改這裡） |
@@ -185,12 +185,12 @@
 npm test
 ```
 
-445 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
+446 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
 
 ## 不可違反的規則
 
 1. 這是獨立專案，與舊 AI-TRPG 專案無關；舊專案的規則（六維十技能、Prompt 快取契約等）不適用。
-2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，445 項都要通過。
+2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，446 項都要通過。
 3. 所有可調數字都要放在 `src/data/config.js`，不要寫死在引擎裡。
 4. 引擎不要碰 DOM，畫面邏輯不要寫進引擎。
 5. 機密（Token、金鑰）永遠不能進 git。
@@ -200,7 +200,7 @@ npm test
 - 推上 `main` ＝ Cloudflare Workers 自動建置並執行 `npx wrangler deploy`（建置指令留空、根目錄 `/`，後台設定不要改）。合併前先確認 `npm test` 都過。
 - `wrangler.jsonc`：assets 目錄是專案根目錄，所以 `.assetsignore` 負責把 `worker/`、`test/`、`docs/`、`CLAUDE.md` 等非網站內容擋掉；**新增遊戲需要的檔案時不要被它誤擋**（`index.html`、`styles.css`、`src/` 必須能被讀到）。`keep_vars: true` 讓後台填的 `GOOGLE_CLIENT_ID`／`PUBLIC_ORIGIN` 不會被部署洗掉；`GOOGLE_CLIENT_SECRET` 只能在後台用 Secret 類型填，**不進 git**。
 - 本機完整預覽（真的 Worker＋本機 D1，不用 Cloudflare 帳號）：`npx wrangler d1 execute zhushen-sim --local --file worker/schema.sql`，然後 `npx wrangler dev --port 8799`。
-- 部署前確認 `npm test` 445 項全過。
+- 部署前確認 `npm test` 446 項全過。
 
 ## 開發階段（現在不要做，除非我明確要求）
 

@@ -5,7 +5,7 @@
 import { TAGS, ACQUIRED_TAGS, ENV_TAGS } from "./tags.js";
 import { CODEX_PEOPLE, CODEX_ENVS } from "./codexTags.js";
 
-export const TONE_LABEL = { good: "好", bad: "壞", mixed: "看情況", neutral: "中性" };
+export const TONE_LABEL = { good: "好", bad: "壞", mixed: "中性", neutral: "中性" }; // 有加有減（mixed）畫面上統稱「中性」
 export const KIND_LABEL = { stat: "基礎", trait: "人格", soul: "靈魂核心", acquired: "事件獲得" };
 export const RARITIES = ["N", "R", "SR", "SSR", "UR"];
 

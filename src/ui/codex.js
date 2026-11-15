@@ -1,28 +1,20 @@
 // 詞條庫（懸浮球圖鑑，2026-11 試玩回饋第 9 項）：
 //   · 一顆永遠在最上層的懸浮球，點開是可拖曳、可調整大小的視窗；關視窗後懸浮球還在
-//   · 兩個分頁：人物詞條／關卡詞條；篩選（稀有度／好壞／類別／自訂分類）＋搜尋
-//   · 自訂分類存在 state.codex.categories，跟著存檔走
-//   · 從小人檔案頁開啟時（openFor）：這個小人身上的詞條置頂
-// 好壞標示由 data/tagCodex.js 依數值機械判定。
+//   · 兩個分頁：人物詞條／關卡詞條；篩選只有「階級」與「好／壞／中性」，另有搜尋
+//   · 小人檔案頁開著時（main.js 呼叫 setFocus），這個小人身上的詞條自動置頂；關掉檔案頁就取消置頂
+//   · 效果只顯示一行「效果」：已做進引擎的詞條顯示引擎實際在算的效果，其餘顯示 codexTags.js 的 effect
 
 import { esc } from "./html.js";
-import { CODEX_ALL, CODEX_ENV_ALL, toneOf, TONE_LABEL, KIND_LABEL, RARITIES } from "../data/tagCodex.js";
+import { CODEX_ALL, CODEX_ENV_ALL, toneOf, TONE_LABEL, RARITIES } from "../data/tagCodex.js";
 import { getTag, getEnvTag } from "../data/tags.js";
 
 const POS_KEY = "zhushen-codex-win";
 const pct = (v) => `${v >= 0 ? "+" : ""}${Math.round(v * 1000) / 10}%`;
 
-export function createCodex({ getState, describeTag, onSave }) {
-  const ui = { open: false, tab: "person", rarity: new Set(), tone: "all", kind: "all", cat: "all", q: "", sid: null, tagId: null };
+export function createCodex({ getState, describeTag }) {
+  const ui = { open: false, tab: "person", rarity: new Set(), tone: "all", q: "", focusId: null, tagId: null };
   let win = null;
   let orb = null;
-
-  const cats = () => {
-    const st = getState();
-    if (!st) return [];
-    st.codex ??= { categories: [] };
-    return st.codex.categories;
-  };
 
   // ───────── 視窗外殼 ─────────
 
@@ -47,7 +39,6 @@ export function createCodex({ getState, describeTag, onSave }) {
     restoreRect();
     enableDrag();
     win.addEventListener("click", onClick);
-    win.addEventListener("change", onChange);
     win.addEventListener("input", (e) => {
       if (e.target.matches("[data-cx-q]")) {
         ui.q = e.target.value.trim();
@@ -110,10 +101,8 @@ export function createCodex({ getState, describeTag, onSave }) {
 
   function open(opts = {}) {
     if (!win) build();
-    if ("samsariteId" in opts) ui.sid = opts.samsariteId ?? null;
     if (opts.tagId) ui.tagId = opts.tagId;
-    if (opts.tab) ui.tab = opts.tab;
-    if (opts.samsariteId != null) ui.tab = "person";
+    ui.tab = "person";
     ui.open = true;
     win.style.display = "flex";
     render();
@@ -123,78 +112,71 @@ export function createCodex({ getState, describeTag, onSave }) {
     if (win) win.style.display = "none";
   }
 
-  /** 每次畫面更新時呼叫：遊戲還沒載入（封面）時藏起懸浮球；視窗開著且小人在變時跟著更新置頂區 */
+  /** 每次畫面更新時呼叫：遊戲還沒載入（封面）時藏起懸浮球 */
   function sync(visible) {
     if (!orb) build();
     orb.style.display = visible ? "" : "none";
     if (!visible && ui.open) close();
   }
 
+  /** 小人檔案頁開著就傳他的 id，關掉傳 null：詞條庫開著時，這個小人的詞條自動置頂／取消置頂 */
+  function setFocus(id) {
+    const next = id ?? null;
+    if (next === ui.focusId) return;
+    ui.focusId = next;
+    if (ui.open && ui.tab === "person") renderList();
+  }
+
   // ───────── 內容 ─────────
 
-  function matches(t, kind) {
+  const isNeutral = (t) => toneOf(t) === "mixed" || toneOf(t) === "neutral"; // 「中性」= 有加有減或沒數值
+
+  function matches(t) {
     if (ui.rarity.size && !ui.rarity.has(t.rarity)) return false;
-    if (ui.tone !== "all" && toneOf(t) !== ui.tone) return false;
-    if (ui.kind !== "all" && t.kind !== ui.kind) return false;
-    if (ui.cat !== "all") {
-      const c = cats().find((x) => x.id === ui.cat);
-      if (!c || !c.tags.includes(t.id)) return false;
-    }
-    if (ui.q && !(`${t.name}${t.fullName ?? ""}${t.desc}${t.effect ?? ""}`.toLowerCase().includes(ui.q.toLowerCase()))) return false;
+    if (ui.tone === "good" && toneOf(t) !== "good") return false;
+    if (ui.tone === "bad" && toneOf(t) !== "bad") return false;
+    if (ui.tone === "neutral" && !isNeutral(t)) return false;
+    if (ui.q && !`${t.name}${t.fullName ?? ""}${t.desc}${t.effect ?? ""}`.toLowerCase().includes(ui.q.toLowerCase())) return false;
     return true;
   }
 
   const chip = (label, attr, on) => `<button type="button" class="cx-chip ${on ? "on" : ""}" ${attr}>${label}</button>`;
+  const toneLabel = (t) => (toneOf(t) === "good" ? "好" : toneOf(t) === "bad" ? "壞" : "中性");
 
   function renderTop() {
-    const st = getState();
     const top = win.querySelector(".cx-top");
     const tabs = `<div class="cx-tabs">${chip("人物詞條", 'data-cx="tab" data-v="person"', ui.tab === "person")}${chip("關卡詞條", 'data-cx="tab" data-v="env"', ui.tab === "env")}</div>`;
     const search = `<input type="search" class="cx-q" data-cx-q placeholder="搜尋詞條名稱或說明" value="${esc(ui.q)}" />`;
     let filters = "";
     if (ui.tab === "person") {
       const rar = RARITIES.map((r) => chip(r, `data-cx="rar" data-v="${r}"`, ui.rarity.has(r))).join("");
-      const tone = [["all", "全部好壞"], ["good", "好"], ["bad", "壞"], ["mixed", "看情況"], ["neutral", "中性"]].map(([v, l]) => chip(l, `data-cx="tone" data-v="${v}"`, ui.tone === v)).join("");
-      const kind = [["all", "全部類別"], ["stat", "基礎"], ["trait", "人格"], ["soul", "靈魂核心"], ["acquired", "事件獲得"]].map(([v, l]) => chip(l, `data-cx="kind" data-v="${v}"`, ui.kind === v)).join("");
-      const mine = cats()
-        .map((c) => `<span class="cx-catchip">${chip(esc(c.name), `data-cx="cat" data-v="${esc(c.id)}"`, ui.cat === c.id)}<button type="button" class="cx-del" data-cx="delcat" data-v="${esc(c.id)}" title="刪除分類「${esc(c.name)}」">×</button></span>`)
-        .join("");
-      const cat = `<div class="cx-row-f">${chip("全部分類", 'data-cx="cat" data-v="all"', ui.cat === "all")}${mine}<button type="button" class="cx-chip add" data-cx="newcat">＋ 新分類</button></div>`;
-      filters = `<div class="cx-row-f">${rar}</div><div class="cx-row-f">${tone}</div><div class="cx-row-f">${kind}</div>${cat}`;
+      const tone = [["all", "全部"], ["good", "好"], ["bad", "壞"], ["neutral", "中性"]].map(([v, l]) => chip(l, `data-cx="tone" data-v="${v}"`, ui.tone === v)).join("");
+      filters = `<div class="cx-row-f">${rar}</div><div class="cx-row-f">${tone}</div>`;
     }
-    const who = ui.sid != null ? st?.samsarites.find((s) => s.id === ui.sid) : null;
-    const pin = who ? `<div class="cx-pin">對照：<b>${esc(who.name)}</b>（他身上的詞條置頂）<button type="button" class="cx-chip" data-cx="clearsid">取消對照</button></div>` : "";
-    top.innerHTML = `${tabs}${pin}${search}${filters}`;
+    top.innerHTML = `${tabs}${search}${filters}`;
   }
 
-  function catMenu(t) {
-    const list = cats();
-    if (!list.length) return "";
-    return `<details class="cx-cats"><summary>分類</summary>${list.map((c) => `<label><input type="checkbox" data-ct="${esc(c.id)}|${t.id}" ${c.tags.includes(t.id) ? "checked" : ""} /> ${esc(c.name)}</label>`).join("")}</details>`;
-  }
-
-  function personRow(t) {
+  function personRow(t, pinned = false) {
     const tone = toneOf(t);
-    const real = t.gameId ? getTag(t.gameId) : null; // 遊戲內已實裝的對應標籤
-    const design = t.effect ? `<div class="cx-fx">${real ? "設計稿效果" : "效果"}：${esc(t.effect)}</div>` : "";
-    const live = real ? `<div class="cx-fx cx-live">遊戲內目前實際效果：${esc(describeTag(real).effects)}</div>` : `<div class="cx-fx cx-todo">尚未實裝（設計稿，抽卡抽不到）</div>`;
+    const real = t.gameId ? getTag(t.gameId) : null; // 遊戲引擎裡真的在算的效果
+    const effect = real ? describeTag(real).effects : t.effect;
     const ev = t.event ? `<details class="cx-cats"><summary>事件舉例</summary><div class="cx-fx">${esc(t.event)}</div></details>` : "";
-    return `<div class="cx-item ${ui.tagId === t.id ? "hl" : ""}" data-tag="${t.id}">
-      <div class="cx-head"><span class="tag-chip tag-${t.rarity}">${t.rarity}｜${esc(t.name)}</span><span class="cx-tone tone-${tone}">${TONE_LABEL[tone]}</span><small>${KIND_LABEL[t.kind] ?? ""}${t.section ? `・${esc(t.section)}` : ""}</small></div>
+    return `<div class="cx-item ${pinned ? "pinned" : ""} ${ui.tagId === t.id ? "hl" : ""}" data-tag="${t.id}">
+      <div class="cx-head"><span class="tag-chip tag-${t.rarity}">${t.rarity}｜${esc(t.name)}</span><span class="cx-tone tone-${tone === "neutral" ? "mixed" : tone}">${toneLabel(t)}</span></div>
       <div class="cx-desc">${esc(t.desc)}</div>
-      ${design}${live}
-      ${ev}${catMenu(t)}
+      ${effect ? `<div class="cx-fx">效果：${esc(effect)}</div>` : ""}
+      ${ev}
     </div>`;
   }
 
   function envRow(e) {
     const real = e.gameId ? getEnvTag(e.gameId) : null;
     const liveFx = real ? [real.passMod ? `全隊通過率 ${pct(real.passMod)}` : "", real.rewardMult && real.rewardMult !== 1 ? `通關積分 ×${real.rewardMult}` : ""].filter(Boolean).join("；") || "沒有直接數值（只影響特定詞條）" : "";
+    const effect = real ? liveFx : e.effect;
     return `<div class="cx-item" data-env="${e.id}">
       <div class="cx-head"><b>${esc(e.name)}</b>${e.sub ? `<small>${esc(e.sub)}</small>` : ""}</div>
       <div class="cx-desc">${esc(e.desc)}</div>
-      <div class="cx-fx">${real ? "設計稿效果" : "效果"}：${esc(e.effect)}</div>
-      ${real ? `<div class="cx-fx cx-live">遊戲內目前實際效果：${esc(liveFx)}</div>` : `<div class="cx-fx cx-todo">尚未實裝（設計稿，副本抽不到）</div>`}
+      <div class="cx-fx">效果：${esc(effect)}</div>
       <div class="cx-fx"><b>它克誰（極度克制）</b>：${esc(e.countered || "（無）")}</div>
       <div class="cx-fx"><b>誰佔優勢（極大優勢）</b>：${esc(e.favored || "（無）")}</div>
       ${e.event ? `<details class="cx-cats"><summary>事件舉例</summary><div class="cx-fx">${esc(e.event)}</div></details>` : ""}
@@ -206,17 +188,14 @@ export function createCodex({ getState, describeTag, onSave }) {
     const box = win.querySelector(".cx-list");
     if (ui.tab === "env") {
       const list = CODEX_ENV_ALL.filter((e) => !ui.q || `${e.name}${e.sub ?? ""}${e.desc}${e.effect}${e.countered}${e.favored}`.toLowerCase().includes(ui.q.toLowerCase()));
-      box.innerHTML = `<div class="cx-count">關卡詞條 ${list.length} 個符合（共 ${CODEX_ENV_ALL.length} 個；目前遊戲已實裝 ${CODEX_ENV_ALL.filter((e) => e.gameId).length} 個，其餘是設計稿）</div>${list.map(envRow).join("") || `<div class="cx-empty">沒有符合的詞條。</div>`}`;
+      box.innerHTML = `<div class="cx-count">關卡詞條 ${list.length} 個</div>${list.map(envRow).join("") || `<div class="cx-empty">沒有符合的詞條。</div>`}`;
       return;
     }
-    const who = ui.sid != null ? st?.samsarites.find((s) => s.id === ui.sid) : null;
-    const mineIds = new Set(who?.tags ?? []);
-    const pinned = who ? CODEX_ALL.filter((t) => mineIds.has(t.id)) : [];
-    const rest = CODEX_ALL.filter((t) => !mineIds.has(t.id) && matches(t));
-    box.innerHTML =
-      (who ? `<div class="cx-sec">這個小人的詞條（${esc(who.name)}）</div>${pinned.map(personRow).join("") || `<div class="cx-empty">他沒有詞條。</div>`}<div class="cx-sec">其他詞條</div>` : "") +
-      `<div class="cx-count">人物詞條 ${rest.length} 個符合${who ? "（不含他身上的）" : ""}（共 ${CODEX_ALL.length} 個；已實裝 ${CODEX_ALL.filter((t) => t.gameId).length} 個，其餘是設計稿）</div>` +
-      (rest.map(personRow).join("") || `<div class="cx-empty">沒有符合的詞條，換個篩選看看。</div>`);
+    const who = ui.focusId != null ? st?.samsarites.find((s) => s.id === ui.focusId) : null;
+    const mine = new Set(who?.tags ?? []);
+    const pinned = who ? CODEX_ALL.filter((t) => mine.has(t.id)) : []; // 開著他的檔案頁：他身上的詞條不受篩選影響，一律置頂
+    const rest = CODEX_ALL.filter((t) => !mine.has(t.id) && matches(t));
+    box.innerHTML = `${pinned.map((t) => personRow(t, true)).join("")}<div class="cx-count">人物詞條 ${rest.length + pinned.length} 個</div>${rest.map((t) => personRow(t)).join("") || `<div class="cx-empty">沒有符合的詞條，換個篩選看看。</div>`}`;
     const hl = box.querySelector(".hl");
     if (hl) {
       hl.scrollIntoView({ block: "nearest" });
@@ -249,46 +228,11 @@ export function createCodex({ getState, describeTag, onSave }) {
       case "tone":
         ui.tone = v;
         break;
-      case "kind":
-        ui.kind = v;
-        break;
-      case "cat":
-        ui.cat = v;
-        break;
-      case "clearsid":
-        ui.sid = null;
-        break;
-      case "newcat": {
-        const name = (window.prompt("新分類的名稱（例如：愛用、要小心、拿來當隊長）", "") ?? "").trim().slice(0, 12);
-        if (!name) return;
-        cats().push({ id: `c${Date.now().toString(36)}`, name, tags: [] });
-        onSave();
-        break;
-      }
-      case "delcat": {
-        const c = cats().find((x) => x.id === v);
-        if (!c || !window.confirm(`刪除分類「${c.name}」？（詞條本身不會被刪掉）`)) return;
-        const st = getState();
-        st.codex.categories = st.codex.categories.filter((x) => x.id !== v);
-        if (ui.cat === v) ui.cat = "all";
-        onSave();
-        break;
-      }
       default:
         return;
     }
     render();
   }
 
-  function onChange(e) {
-    const cb = e.target.closest("[data-ct]");
-    if (!cb) return;
-    const [catId, tagId] = cb.dataset.ct.split("|");
-    const c = cats().find((x) => x.id === catId);
-    if (!c) return;
-    c.tags = cb.checked ? [...new Set([...c.tags, tagId])] : c.tags.filter((x) => x !== tagId);
-    onSave();
-  }
-
-  return { open, close, sync, isOpen: () => ui.open, refresh: () => ui.open && render() };
+  return { open, close, sync, setFocus, isOpen: () => ui.open, refresh: () => ui.open && render() };
 }

@@ -891,3 +891,28 @@ button.pill:disabled { opacity: .45; cursor: not-allowed; }
 .card-strip .strip-name { writing-mode: horizontal-tb; display: flex; flex-direction: column; align-items: center; height: auto; max-height: none; overflow: visible; font-size: 13px; font-weight: 700; line-height: 15px; }
 .cx-live { color: #1a7f4b; }
 .cx-todo { color: #92400e; }
+
+/* ── 版面：主神日誌延伸到最下方（右欄整條），左欄是舞台＋操作列＋小人卡片 ── */
+#workspace { flex: 1; min-height: 0; display: flex; gap: 24px; padding: 24px max(20px, calc((100vw - 1400px) / 2)); }
+#left-col { flex: 2.2; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+#left-col main { flex: 1; min-height: 280px; padding: 0; gap: 0; display: flex; }
+#left-col main #stage { flex: 1; }
+#left-col footer { padding: 0; background: transparent; border-top: 0; box-shadow: none; }
+#workspace #log-panel { flex: 1; min-width: 280px; min-height: 0; }
+@media (max-width: 760px) {
+  #workspace { flex-direction: column; padding: 10px; gap: 12px; }
+  #left-col { flex: none; }
+  #left-col main { flex: none; height: 320px; }
+  #workspace #log-panel { flex: none; height: 320px; }
+}
+
+/* ── 名冊卡：狀態改成圖示放名字下方（名字固定在階級徽章正下方，不會被擠）；浮起更高，露出底下的卡才能從底部往右滑 ── */
+#roster { padding-top: 62px; }
+#roster .card.stack:hover, #roster .card.stack.raised { transform: translateY(-48px); }
+.card-alerts { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 2px; width: 100%; min-height: 0; }
+.st-ico { width: 17px; height: 17px; display: inline-grid; place-items: center; border-radius: 50%; color: #6b7280; }
+.st-ico.red { color: #dc2626; background: #fee2e2; } .st-ico.amber { color: #b45309; background: #fef3c7; }
+.st-ico.blue { color: #2563eb; background: #dbeafe; } .st-ico.purple { color: #7c3aed; background: #ede9fe; }
+.st-ico.pulse { animation: blink 1.2s steps(2) infinite; }
+/* 詞條庫：開著的小人檔案頁裡，他身上的詞條置頂並標底色 */
+.cx-item.pinned { background: #fff6d6; border-color: #e5c84f; }
