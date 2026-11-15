@@ -34,7 +34,7 @@ export function checkBuyStock(state, itemId, qty = 1) {
   const item = getShopItem(itemId);
   if (!isStockable(item)) return { ok: false, reason: "這件商品不能囤進倉庫" };
   if (!Number.isInteger(qty) || qty < 1 || qty > MAX_BATCH) return { ok: false, reason: `一次要買 1～${MAX_BATCH} 份` };
-  if (item.tier > shopTier(state)) return { ok: false, reason: `Tier ${item.tier} 還沒解鎖（累積花費 ${CONFIG.shopTierUnlock[item.tier - 1]} 分）` };
+  if (item.tier > shopTier(state)) return { ok: false, reason: `Tier ${item.tier} 還沒解鎖（要先打通第 ${CONFIG.shopTierBossChapter[item.tier - 1]} 章尾王）` };
   const total = item.price * qty;
   if (!canAfford(state, total)) return { ok: false, reason: "積分不夠（連主神高利貸都借不到）", total };
   return { ok: true, total };

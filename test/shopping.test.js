@@ -9,6 +9,7 @@ import { dailyShopping, isDramaProne } from "../src/engine/shopping.js";
 import { marketOf } from "../src/engine/market.js";
 import { buyItem } from "../src/engine/shop.js";
 import { getRel } from "../src/engine/relations.js";
+import { setSpentTier } from "./helpers/tier.js";
 
 function setup(n = 1, seed = 6) {
   const state = createNewGame(seed);
@@ -74,7 +75,7 @@ test("絕不覆蓋綁定裝備：公庫賞賜的武器不會被自己換掉，�
   const state = setup(1);
   const [s] = state.samsarites;
   buyItem(state, "t1_01", s.id); // 賞賜 + 綁定
-  state.totalSpent = 4000; // Tier 3
+  setSpentTier(state, 4000); // Tier 3
   s.wallet = 100000;
   clearMarket(state);
   dailyShopping(state);
@@ -86,7 +87,7 @@ test("自主強化：私房錢夠且花完仍留 20% → 強化；不夠 80% 就
   const state = setup(1);
   const [s] = state.samsarites;
   s.gear = { weapon: "weapon_myth", armor: "armor_myth", accessory: "t5_05", bloodline: "t5_07" }; // 裝備齊全、階層夠，才輪到強化
-  state.totalSpent = 50000;
+  setSpentTier(state, 50000);
   clearMarket(state);
   s.wallet = 90; // 第 1 次強化 80 分，但 80 > 90 × 0.8 = 72
   dailyShopping(state);
@@ -101,7 +102,7 @@ test("自主開基因鎖：點滿當階強化、空間等級夠、私房錢夠 �
   const state = setup(1);
   const [s] = state.samsarites;
   s.gear = { weapon: "weapon_myth", armor: "armor_myth", accessory: "t5_05", bloodline: "t5_07" };
-  state.totalSpent = 50000;
+  setSpentTier(state, 50000);
   state.spaceLevel = 2;
   clearMarket(state);
   s.enhanceCount = CONFIG.gene.tiers[0].enhanceCap;
@@ -116,7 +117,7 @@ test("性格偏好：有閒錢會搶購黑市未售罄商品（不碰公庫）",
   const [s] = state.samsarites;
   s.gear = { weapon: "weapon_myth", armor: "armor_myth", accessory: "t5_05", bloodline: "t5_07" };
   s.enhanceCount = CONFIG.gene.tiers[0].enhanceCap; // 強化已點滿、突破條件不成立（空間 Lv.1）
-  state.totalSpent = 50;
+  setSpentTier(state, 50);
   s.wallet = 1000;
   const pts = state.points;
   const before = marketOf(state).slots.filter((x) => x.sold).length;
@@ -136,7 +137,7 @@ test("搞事：愛搞事的人有 5% 機率偷買黑貨對隊友使用（用獨�
     a.gear = { weapon: "weapon_myth", armor: "armor_myth", accessory: "t5_05", bloodline: "t5_07" };
     a.enhanceCount = CONFIG.gene.tiers[0].enhanceCap;
     a.wallet = 100000;
-    state.totalSpent = 50;
+    setSpentTier(state, 50);
     // 黑市最後一格換成黑貨耗材：贖罪苦酒（化解隊內仇恨），方便驗證
     const slot = marketOf(state).slots[7];
     slot.itemId = "t1_40";
@@ -188,7 +189,7 @@ test("搞事冷卻：買過黑貨後 10 天內不再偷買，第 10 天後恢復
     a.gear = { weapon: "weapon_myth", armor: "armor_myth", accessory: "t5_05", bloodline: "t5_07" };
     a.enhanceCount = CONFIG.gene.tiers[0].enhanceCap;
     a.wallet = 100000;
-    state.totalSpent = 50;
+    setSpentTier(state, 50);
     const put = () => Object.assign(marketOf(state).slots[7], { itemId: "t1_40", sold: false });
     put();
     dailyShopping(state);

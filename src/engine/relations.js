@@ -182,11 +182,15 @@ export function dailyRelations(state) {
   for (const [k, until] of Object.entries(state.cooldowns ?? {})) if (until <= day) delete state.cooldowns[k];
 
   const roll = R().dailyRoll;
+  let socialToday = 0; // 全隊當天的社交互動次數（上限 R().socialDailyCap，不隨人數膨脹）
   for (const a of [...state.samsarites]) {
     if (!state.samsarites.includes(a) || a.location !== "space") continue; // 中途死了／不在家
     const r = rand(state);
-    if (r < roll.work) a.stats.sanity = Math.min(100, a.stats.sanity + R().workSanity); // 日常：健身、包紮、喝咖啡
-    else if (r < roll.work + roll.social) socialEvent(state, a);
+    const social = r >= roll.work && r < roll.work + roll.social;
+    if (r < roll.work || (social && socialToday >= R().socialDailyCap)) a.stats.sanity = Math.min(100, a.stats.sanity + R().workSanity); // 日常：健身、包紮、喝咖啡（社交額度用完也算日常）
+    else if (social) {
+      if (socialEvent(state, a)) socialToday += 1;
+    }
     else if (!maybeWish(state, a)) specialEvent(state, a); // 特殊事件骰：先看他要不要許願（Phase 3-B）
   }
   promoteSoulmates(state);
@@ -224,17 +228,48 @@ export function socialWeight(state, ev, a, b) {
   return w;
 }
 
+/** 挑互動對象的權重：交情／恩怨越深越容易被抓到；快要突破（接近告白線、陰謀線、死敵線）的那對再加成 */
+export function partnerWeight(state, a, o) {
+  const rel = getRel(state, a, o);
+  let w = 1 + (rel.love + rel.hate) / 20;
+  const near = (v, line) => v < line && v >= line - R().nearRange;
+  const status = pairStatus(state, a, o);
+  if (!status && !partnerOf(state, a) && !partnerOf(state, o) && rel.love >= R().confessLove - R().nearRange) w += R().nearBonus; // 快到（或剛過）告白線，等著告白
+  if (status === "lover" && rel.love < R().soulmateAt) w += R().nearBonus; // 戀人還沒到靈魂伴侶線，優先讓他們互動
+  if (near(rel.hate, R().schemeHate) || near(rel.hate, R().nemesisAt)) w += R().nearBonus; // 快到陰謀線／死敵線
+  return w;
+}
+
+/** 在家的人之間「快要突破」的有向配對（好感接近告白線、仇恨接近陰謀線／死敵線）：[{ a, b }] */
+export function nearBreakthroughPairs(state) {
+  const home = state.samsarites.filter((s) => s.location === "space");
+  const out = [];
+  for (const a of home) {
+    for (const b of home) {
+      if (a.id !== b.id && partnerWeight(state, a, b) - baseWeight(state, a, b) > 0) out.push({ a, b });
+    }
+  }
+  return out;
+}
+const baseWeight = (state, a, o) => 1 + (getRel(state, a, o).love + getRel(state, a, o).hate) / 20;
+
+/** 回傳這次有沒有真的發生互動（沒對象、沒事件可抽回 false，不佔當天額度） */
 function socialEvent(state, a) {
+  // 優先讓事件發生在快要突破的那對身上（第二批回饋 20）：以 nearPickChance 的機率直接改由該配對互動
+  const near = nearBreakthroughPairs(state);
+  if (near.length > 0 && rand(state) < R().nearPickChance) {
+    const hit = pick(state, near);
+    a = hit.a;
+    var forced = hit.b; // 這次互動的對象
+  }
   const others = homeOthers(state, a);
-  if (others.length === 0) return;
+  if (others.length === 0) return false;
   // 找人互動：已經有交情（或恩怨）的人比較容易被抓到，所以愛恨情仇會越滾越大
-  const b = weighted(
-    state,
-    others.map((o) => ({ o, weight: 1 + (getRel(state, a, o).love + getRel(state, a, o).hate) / 20 }))
-  ).o;
+  const b = forced ?? weighted(state, others.map((o) => ({ o, weight: partnerWeight(state, a, o) }))).o;
   const options = SOCIAL_EVENTS.map((ev) => ({ ev, weight: socialWeight(state, ev, a, b) })).filter((o) => o.weight > 0);
-  if (options.length === 0) return;
+  if (options.length === 0) return false;
   runSocial(state, weighted(state, options).ev, a, b);
+  return true;
 }
 
 /** 執行一個互動事件（測試可以直接指定事件） */
@@ -246,7 +281,8 @@ export function runSocial(state, ev, a, b) {
   addLove(state, b, a, ev.dLove[1]);
   if (ev.dHate[0]) addHate(state, a, b, ev.dHate[0]);
   if (ev.dHate[1]) addHate(state, b, a, ev.dHate[1]);
-  emit(state, "social", logText(state, ev.texts, { A: a, B: b }));
+  // 一般日常互動靜默：好感／仇恨照算，不寫日誌（SOCIAL_EVENTS 文字留著，之後每日摘要或檔案頁可用）；關係進展（告白、戀人、死敵）在別處照寫
+  if (R().socialLog) emit(state, "social", logText(state, ev.texts, { A: a, B: b }));
 }
 
 /** 告白：對方也喜歡你（好感夠、沒仇、沒有別的戀人）就成為戀人，否則被拒絕 */

@@ -12,6 +12,7 @@ import { effectivePower, subStat, injuryShieldOf } from "../src/engine/tags.js";
 import { startRun } from "../src/engine/dungeon.js";
 import { getRel } from "../src/engine/relations.js";
 import { step } from "../src/engine/dispatch.js";
+import { setSpentTier } from "./helpers/tier.js";
 
 function setup(n = 2, seed = 4) {
   const state = createNewGame(seed);
@@ -26,10 +27,10 @@ function setup(n = 2, seed = 4) {
 }
 const kindOf = (item) => (item.category === "specialty" ? (item.slot === "bloodline" ? "bloodline" : "gear") : item.category);
 
-test("商品資料表（4-E-8）：200 件、五階各 40 件（8 常駐 + 18 特產 + 6 耗材 + 8 黑貨）、每世界 3 件特產、aiBuyTag 合法", () => {
-  assert.equal(SHOP_ITEMS.length, 200);
-  assert.equal(new Set(SHOP_ITEMS.map((i) => i.id)).size, 200);
-  for (const t of [1, 2, 3, 4, 5]) {
+test("商品資料表（4-E-8）：240 件、六階各 40 件（8 常駐 + 18 特產 + 6 耗材 + 8 黑貨）、每世界 3 件特產、aiBuyTag 合法", () => {
+  assert.equal(SHOP_ITEMS.length, 240);
+  assert.equal(new Set(SHOP_ITEMS.map((i) => i.id)).size, 240);
+  for (const t of [1, 2, 3, 4, 5, 6]) {
     const items = SHOP_ITEMS.filter((i) => i.tier === t);
     assert.equal(items.length, 40);
     const count = (cat) => items.filter((i) => i.category === cat).length;
@@ -44,13 +45,14 @@ test("商品資料表（4-E-8）：200 件、五階各 40 件（8 常駐 + 18 �
     for (const v of Object.values(i.stats)) assert.ok(Number.isFinite(v));
   }
   assert.equal(WORLD_IDS.length, 30);
-  for (const w of WORLD_IDS) assert.equal(SHOP_ITEMS.filter((i) => i.worldId === w).length, 3, `${w} 要有 3 件特產`);
+  // 第 6 階沒有第 6 章世界：Tier 6 特產綁回第 5 章的世界，所以第 5 章每世界 6 件、其餘 3 件
+  for (const w of WORLD_IDS) assert.equal(SHOP_ITEMS.filter((i) => i.worldId === w).length, w.startsWith("ch5_") ? 6 : 3, `${w} 特產件數`);
 });
 
 test("黑市：開局 8 格，嚴格分槽 3 特產武防 + 2 特產血統 + 2 耗材 + 1 黑貨，只抽目前階與前一階", () => {
   const state = setup();
   for (let round = 0; round < 40; round++) {
-    state.totalSpent = [0, 700, 4000, 13000, 50000][round % 5];
+    setSpentTier(state, [0, 700, 4000, 13000, 50000][round % 5]);
     refreshMarket(state, { silent: true });
     const slots = marketOf(state).slots;
     assert.equal(slots.length, 8);
@@ -111,7 +113,7 @@ test("鎖格：最多鎖 1 格，刷新（含手動）不洗掉；售出的格�
   assert.equal(lockSlot(state, 3, false).ok, true);
   const s = state.samsarites[0];
   s.wallet = 1e6;
-  state.totalSpent = 60000;
+  setSpentTier(state, 60000);
   refreshMarket(state, { silent: true });
   const idx = marketOf(state).slots.findIndex((x) => getShopItem(x.itemId).kind === "gear");
   assert.equal(buyMarketSlot(state, idx, s.id, { payer: "wallet" }).ok, true);
@@ -124,7 +126,7 @@ test("鎖格：最多鎖 1 格，刷新（含手動）不洗掉；售出的格�
 
 test("情報 85 折：特產綁定的世界情報滿格才打折，其他商品不打折", () => {
   const state = setup();
-  state.totalSpent = 700;
+  setSpentTier(state, 700);
   refreshMarket(state, { silent: true });
   const slot = marketOf(state).slots[0];
   const item = getShopItem(slot.itemId);
@@ -150,7 +152,7 @@ test("買裝備：公庫買 = 綁定 + 理智 +5；私房錢買 = 不綁定、�
   assert.equal(buyItem(state, "t1_01", a.id).ok, true);
   assert.equal(a.soulbound.weapon, true);
   assert.equal(a.stats.sanity, 55);
-  state.totalSpent = 700;
+  setSpentTier(state, 700);
   a.wallet = 5000;
   const r = checkBuy(state, getShopItem("t2_01"), a, { payer: "wallet" });
   assert.equal(r.ok, false);
@@ -167,7 +169,7 @@ test("買裝備：公庫買 = 綁定 + 理智 +5；私房錢買 = 不綁定、�
 test("血統槽：每人限 1，覆蓋舊血統；血統是白值，不是百分比；飾品是第 3 個裝備欄", () => {
   const state = setup(1);
   const [s] = state.samsarites;
-  state.totalSpent = 700;
+  setSpentTier(state, 700);
   const base = effectivePower(s);
   assert.equal(buyItem(state, "t1_07", s.id).ok, true, "常駐血統");
   assert.equal(effectivePower(s), base + 19);

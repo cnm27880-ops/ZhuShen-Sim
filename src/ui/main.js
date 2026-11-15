@@ -643,36 +643,12 @@ function renderDaySummary() {
     items.map((e) => `<div class="ds-item ds-${e.type}"><span class="ds-day">第 ${e.day} 天</span>${e.text}</div>`).join("");
 }
 
-/** 名冊卡左條的狀態圖示（SVG，不是 emoji；會被遊戲的 emoji 清除機制拿掉）：受傷、理智低、副本中、許願、休假… */
-const STATUS_SVG = {
-  injury: `<path d="M8 3.5v9M3.5 8h9"/><circle cx="8" cy="8" r="6.2"/>`,
-  sanity: `<path d="M8 8.2c0-1 1.4-1 1.4 0S8 10.6 6.6 9.4 5.3 5.2 8 4.6s4.6 1.6 4.2 4.4"/>`,
-  dungeon: `<rect x="4" y="2.8" width="8" height="10.4" rx="1.2"/><circle cx="9.8" cy="8" r=".7" fill="currentColor"/>`,
-  pod: `<ellipse cx="8" cy="8.6" rx="4" ry="5"/>`,
-  wish: `<path d="M8 2.6l1.6 3.3 3.6.5-2.6 2.5.6 3.6L8 10.8 4.8 12.5l.6-3.6L2.8 6.4l3.6-.5z"/>`,
-  vacation: `<circle cx="8" cy="8" r="2.6"/><path d="M8 2v1.6M8 12.4V14M2 8h1.6M12.4 8H14M3.8 3.8l1.1 1.1M11.1 11.1l1.1 1.1M12.2 3.8l-1.1 1.1M4.9 11.1l-1.1 1.1"/>`,
-};
-function cardAlerts(s) {
-  const out = [];
-  const add = (kind, tone, tip) =>
-    out.push(`<span class="st-ico ${tone}" title="${esc(String(tip).replace(/<[^>]*>/g, ""))}"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${STATUS_SVG[kind]}</svg></span>`); // injuryLabel 回傳 HTML，提示文字要先去標籤
-  if (s.injury >= 1) add("injury", s.injury >= 2 ? "red" : "amber", injuryLabel(s));
-  if (s.stats.sanity < 40) add("sanity", s.stats.sanity < 20 ? "red" : "amber", `理智偏低（${s.stats.sanity}）`);
-  if (s.location === "dungeon") add("dungeon", "blue", "副本中");
-  if (s.location === "pod") add("pod", "blue", "催熟艙");
-  const w = wishesOf(state, s.id)[0];
-  if (w) add("wish", w.status === "pending" ? "red pulse" : "purple", `許願：${getWish(w.kind).name}${w.status === "pending" ? "（等你回覆）" : ""}`);
-  if (s.vacationDays > 0) add("vacation", "blue", `休假中（${s.vacationDays} 天）`);
-  return out.join("");
-}
-
 let raisedId = null; // 觸控裝置：目前點開（浮起）的卡片
 
 function cardInner(s) {
   return `<div class="card-strip">
       ${rankBadge(s.rank)}
       <div class="strip-name" title="${esc(s.name)}">${[...s.name].slice(0, 5).map((ch) => `<span>${esc(ch)}</span>`).join("")}</div>
-      <div class="card-alerts">${cardAlerts(s)}</div>
       <div class="strip-power" title="戰力">${effectivePower(s)}</div>
     </div>
     <div class="card-rest">
@@ -686,8 +662,29 @@ function cardInner(s) {
 }
 
 /** 堆疊卡片：卡片元素保留、只更新內容，滑過去的浮起動畫才不會被每個時間步的重繪打斷 */
+// 名冊正在被手指／滾輪拖動時，不重寫卡片內容（innerHTML 被換掉，觸控滑動會被打斷或跳回開頭）；停下 0.25 秒後補畫一次
+let rosterTouching = false;
+let rosterBusyUntil = 0;
+let rosterCatchup = null;
+const rosterBusy = () => rosterTouching || performance.now() < rosterBusyUntil;
+function rosterInteract(ms = 250) {
+  rosterBusyUntil = performance.now() + ms;
+  clearTimeout(rosterCatchup);
+  rosterCatchup = setTimeout(() => (rosterBusy() ? rosterInteract(100) : renderRoster()), ms + 20);
+}
+{
+  const rosterEl = document.getElementById("roster");
+  rosterEl.addEventListener("touchstart", () => { rosterTouching = true; }, { passive: true });
+  const touchEnd = () => { rosterTouching = false; rosterInteract(); };
+  rosterEl.addEventListener("touchend", touchEnd, { passive: true });
+  rosterEl.addEventListener("touchcancel", touchEnd, { passive: true });
+  rosterEl.addEventListener("scroll", () => rosterInteract(), { passive: true });
+}
+
 function renderRoster() {
   const root = $("roster");
+  const keepLeft = root.scrollLeft;
+  const busy = rosterBusy();
   if (state.samsarites.length === 0) {
     root.innerHTML = `<div class="empty">你手下一個輪迴者都沒有了。去抽卡吧。</div>`;
     return;
@@ -705,14 +702,18 @@ function renderRoster() {
     }
     const cls = `card stack rank-border-${s.rank} ${s.location === "dungeon" ? "away" : s.location === "pod" ? "pod" : ""}${raisedId === s.id ? " raised" : ""}`;
     if (el.className !== cls) el.className = cls;
-    const html = cardInner(s);
-    if (el._html !== html) {
-      el.innerHTML = html;
-      el._html = html;
+    if (!busy || el._html === undefined) {
+      const html = cardInner(s);
+      if (el._html !== html) {
+        el.innerHTML = html;
+        el._html = html;
+      }
     }
     el.style.zIndex = raisedId === s.id ? "60" : String(i + 1);
     if (root.children[i] !== el) root.insertBefore(el, root.children[i] ?? null);
   });
+  // 結構有增減時瀏覽器可能把捲動位置沖掉：還原（用 instant，不吃 CSS 的 smooth）
+  if (Math.abs(root.scrollLeft - keepLeft) > 1) root.scrollTo({ left: keepLeft, behavior: "instant" });
 }
 
 // 觸控裝置（沒有 hover）：點一下浮起、再點一下收回；浮起後用「查看檔案」按鈕進檔案頁
@@ -981,8 +982,8 @@ function shop() {
   const target = getSamsarite(state, modal.targetId);
   if (!home.some((s) => s.id === modal.victimId && s.id !== modal.targetId)) modal.victimId = home.find((s) => s.id !== modal.targetId)?.id ?? null;
   const progress = next
-    ? `累積花費 <b>${state.totalSpent}</b> 分，再花 <b>${next.remaining}</b> 分解鎖 Tier ${next.tier}`
-    : `累積花費 <b>${state.totalSpent}</b> 分，商店已全部解鎖`;
+    ? `目前 Tier <b>${tier}</b>，打通第 <b>${next.chapter}</b> 章尾王解鎖 Tier ${next.tier}`
+    : `商店已全部解鎖（Tier ${tier}）`;
 
   const tabs = [["shop", "🛒 常駐制式商店"], ["market", "🕶️ 8 格黑市"], ["relics", `🏺 奇物圖鑑 ${relicInfo(state).owned}/${relicInfo(state).total}`]]
     .map(([id, label]) => `<button data-action="shop-tab" data-id="${id}" class="${tab === id ? "active" : ""}">${label}</button>`)
@@ -1010,7 +1011,7 @@ function shop() {
   else body = shopRelicTab();
 
   return `<h3>商店 <small>Tier ${tier}</small></h3>
-    <p>公庫 <b>${state.points}</b>・${next ? `再花 <b>${next.remaining}</b> 分解鎖 Tier ${next.tier}` : "已全部解鎖"}</p>
+    <p>公庫 <b>${state.points}</b>・${next ? `打通第 <b>${next.chapter}</b> 章尾王解鎖 Tier ${next.tier}` : "已全部解鎖"}</p>
     <div class="tabs">${tabs}</div>
     ${tab === "relics" || (tab === "shop" && !modal.lockTarget && ["medicine", "skill", "special"].includes(modal.cat ?? "medicine")) ? "" : picker}
     ${target && (tab === "market" || (tab === "shop" && ["gear", "bloodline"].includes(modal.cat))) ? `<div class="shop-now"><b>👀 ${target.name} 現在穿的</b>${Object.entries(SHOP_SLOT_LABELS).map(([slot, label]) => { const it = getShopItem(target.gear?.[slot]); return `<div class="shop-now-row"><span class="bio-gear-slot">${label}</span><span class="${it ? "" : "muted"}">${it ? `${it.name}${target.soulbound?.[slot] ? " 🔒" : ""}` : "（空）"}</span>${it ? `<small class="good">${Object.entries(it.stats ?? {}).map(([k, v]) => `${STAT_LABEL[k]}${v >= 0 ? "+" : ""}${v}`).join(" ")}</small>` : ""}</div>`; }).join("")}<small class="muted">買同一欄的裝備會直接換掉現有的那件。</small></div>` : ""}
@@ -1036,7 +1037,7 @@ function replaceNote(item, target) {
   return `<br /><small class="warn">⚠️ 會取代他現有的【${cur.name}】${target.soulbound?.[item.slot] ? "（🔒綁定）" : ""}</small>`;
 }
 
-const SHOP_CATS = [["medicine", "💊 藥品／消耗品"], ["bloodline", "🧬 血統"], ["gear", "⚔️ 裝備"], ["skill", "📖 技能"], ["special", "✨ 特殊道具"]];
+const SHOP_CATS = [["medicine", "💊 藥品／消耗品"], ["bloodline", "🧬 血統"], ["gear", "⚔️ 裝備"], /* ["skill", "📖 技能"], 技能系統尚未決定實裝，分頁先藏起來（資料與程式碼保留，第三批） */ ["special", "✨ 特殊道具"]];
 
 function shopStandardTab(tier, target) {
   const cat = modal.cat ?? "medicine"; // 預設先看常用的藥品
@@ -1058,11 +1059,11 @@ function shopStandardTab(tier, target) {
       <button class="primary" data-action="buy" data-id="${item.id}" ${check.ok ? "" : "disabled"}>${locked ? "🔒" : item.price + " 分"}</button>
     </div>`;
   };
-  const sections = CONFIG.shopTierUnlock
+  const sections = CONFIG.shopTierBossChapter
     .map((_, i) => i + 1)
     .map((t) => {
-      const need = CONFIG.shopTierUnlock[t - 1];
-      const label = t <= tier ? `Tier ${t}` : `Tier ${t}（累積花費 ${need} 分解鎖）`;
+      const need = CONFIG.shopTierBossChapter[t - 1];
+      const label = t <= tier ? `Tier ${t}` : `Tier ${t}（打通第 ${need} 章尾王解鎖）`;
       return `<h3>${label}</h3><div class="option-list">${shopItemsOfTier(t).filter(inCat).map(itemRow).join("")}</div>`;
     })
     .join("");
@@ -1717,7 +1718,7 @@ function godEvent() {
         目標：通關「${getDungeon(m.dungeonId).name}」<br />
         期限：第 ${m.deadlineDay} 天前（還剩 ${m.deadlineDay - currentDay(state)} 天）<br />
         <span class="good">完成 → +${m.reward} 分，${s.name} 高興</span><br />
-        <span class="bad">逾期 → 扣 ${CONFIG.godEvent.kinds.raid.penaltyPoints} 分，${s.name} 不爽</span>
+        <span class="bad">逾期 → 扣 ${m.penalty ?? CONFIG.godEvent.kinds.raid.penaltyPoints} 分，${s.name} 不爽</span>
       </div>
       <div class="modal-actions">${closeButton}</div>`;
   }
@@ -1763,7 +1764,7 @@ GUIDE_PAGES.rules = [
   ["派遣與任務榜", () => `任務榜 ${CONFIG.board.slots} 槽，每 ${CONFIG.board.rotateDays} 天輪換，每槽帶一個**突變詞綴**（吊橋效應、斷電黑夜、分贓誘惑、血月狂躁、濃霧走散、風平浪靜）。尾王常駐，要先把該章常規關累計通關 ${CONFIG.bossGate.requiredClears} 次。**首次開荒**傷勢較重，首通多拿 ${Math.round(CONFIG.dungeon.firstClearBonusPct * 100)}% 獎勵與一件首通奇物；尾王首通讓主神空間升級。通關率是樂觀估計，沒算途中有人受傷戰死；帶傷出征死亡率更高。隊內有仇人，每個房間都可能先打起來。`],
   ["貪婪探索與位面侵蝕", () => `副本**情報滿格**後可勾選貪婪探索：通關最後一房後有 ${Math.round(CONFIG.relic.greedyChance * 100)}% 機率追加一間 R×${CONFIG.relic.hiddenRMult} 的高危隱藏房，通過掉隱藏奇物。空間 Lv.${CONFIG.erosion.unlockSpaceLevel} 後，已首通的世界可選 1★～10★ **位面侵蝕**：推薦戰力 ×1.45^k、積分 ×1.32^k、成功掉 k 顆侵蝕結晶（不計入尾王守門次數）。`],
   ["抽卡", () => `四個卡池依空間等級解鎖，每 ${CONFIG.gacha.resetDays} 天重置「本週抽數」與漲價，保底計數不會重置。積分不夠可向主神借，最多借到 ${debtLimitOf(state)} 分。神級池每抽消耗 1 顆**因果結晶**。`],
-  ["商店與物資", () => `公庫買裝備＝**賞賜**：綁定（自己逛街時不會被換掉）且理智 +${CONFIG.wallet.giftSanity}。輪迴者也會用私房錢自己逛街。累積花費（含抽卡）決定商店解鎖到第幾階。常駐商店賣制式武防、血統與常備藥；藥品買進**物資倉庫**，到物資面板點物資再點人使用，最缺的人排最前面。世界特產、出征耗材、黑貨只在 8 格黑市，每 3 天換貨。`],
+  ["商店與物資", () => `公庫買裝備＝**賞賜**：綁定（自己逛街時不會被換掉）且理智 +${CONFIG.wallet.giftSanity}。輪迴者也會用私房錢自己逛街。商店階級看章節進度：打通第 N 章尾王，開 Tier N+1（最高 Tier 6）。常駐商店賣制式武防、血統與常備藥；藥品買進**物資倉庫**，到物資面板點物資再點人使用，最缺的人排最前面。世界特產、出征耗材、黑貨只在 8 格黑市，每 3 天換貨。`],
   ["基建", () => `基建是全隊永久加成，升一次永遠有效。高階等級要侵蝕結晶（打位面侵蝕才掉）。**自動建設**：每天結算時公庫高於 ${CONFIG.facility.safeWaterPerLevel} × 空間等級才動用超出的部分，優先升最便宜的。**自動挑戰侵蝕**：主線卡關或全通後，改打已通關世界的侵蝕星級。`],
   ["自動派遣策略", () => `穩健＝通關率 85%、每天 1 隊、留 2 人在家、不派傷員；均衡＝75%／2 隊／留 1 人／可接受輕傷；激進＝60%／不限隊數／不留人／受傷也派。`],
   ["英靈碑與小隊", () => `基因鎖 ${CONFIG.stele.minGene} 階以上或出征滿 ${CONFIG.stele.minRuns} 場的人，戰死在副本或被主神抹殺會入碑；碑上加成最高的前 ${CONFIG.stele.topN} 名生效。隊長個人戰力 +${Math.round(CONFIG.squad.captainPowerPct * 100)}%，**流派由隊長的性格詞條決定**，不能直接切換。撤換令要花公庫與因果結晶。隊長陣亡時依原流派順延；戰力前兩名太接近且互相討厭會爆發爭奪戰。`],

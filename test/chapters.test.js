@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 
 import { CONFIG, RANKS } from "../src/data/config.js";
 import { DUNGEONS, getDungeon } from "../src/data/dungeons.js";
-import { createNewGame, createSamsarite, upkeepOf, debtLimitOf, canAfford, endOfDay, serialize, deserialize } from "../src/engine/core.js";
+import { createNewGame, createSamsarite, shopTier, upkeepOf, debtLimitOf, canAfford, endOfDay, serialize, deserialize } from "../src/engine/core.js";
 import { startRun, clearChance, chanceAtLeast, roomPassRate, powerRate, isUnlocked, unlockedDungeons } from "../src/engine/dungeon.js";
 import { planAutoDispatch, step } from "../src/engine/dispatch.js";
 
@@ -98,7 +98,10 @@ test("首通本章尾王：空間升 1 級、記下第幾天、解鎖下一章�
   assert.ok(state.chapterClearDay[1] >= 1);
   assert.ok(state.log.some((e) => e.text.includes("Lv.2")));
   assert.equal(isUnlocked(state, getDungeon("ch2_01")), true);
+  assert.equal(shopTier(state), 2, "尾王首通開商店 Tier 2");
+  assert.equal(state.events.filter((e) => e.type === "shopTier" && e.text.includes("Tier 2")).length, 1, "只宣布一次");
   for (let i = 0; i < 5; i++) runOnce(state, "ch1_boss");
+  assert.equal(state.events.filter((e) => e.type === "shopTier").length, 1, "重打不再宣布");
   assert.equal(state.spaceLevel, 2, "重打不會再升級");
   // 一般關卡首通不會升級
   const other = setup();
@@ -190,4 +193,21 @@ test("Phase 4-B 校正後的副本曲線：尾王是章內最高 R／獎勵；�
     assert.ok(cur.find((d) => d.boss).recommendedPower > prev.find((d) => d.boss).recommendedPower, `第 ${ch} 章尾王 R 要高於上一章尾王`);
     assert.ok(Math.min(...cur.map((d) => d.recommendedPower)) > Math.max(...prev.filter((d) => !d.boss).map((d) => d.recommendedPower)), `第 ${ch} 章一般關 R 要高於上一章一般關`);
   }
+});
+
+test("哈基米房間文字：30 個世界都沒有佔位字、房間數量照章節", () => {
+  const todo = [];
+  for (const d of DUNGEONS) {
+    assert.equal(d.rooms.length, CONFIG.dungeon.chapters[d.chapter - 1].rooms, d.id);
+    const placeholder = d.rooms.some((r) => r.name.includes("待命名") || r.pass.includes("佔位文字"));
+    assert.equal(placeholder, todo.includes(d.id), `${d.id} 佔位狀態`);
+    for (const r of d.rooms) assert.ok(r.fail.includes("{name}") || d.id.startsWith("ch1_") || todo.includes(d.id) || r.fail.length > 10, `${d.id}:${r.name}`);
+  }
+});
+
+test("極寒列車（ch1_05）換成哈基米的 5 間房：尾節車廂→冰軌車頂→鍋爐房→頭等餐車→引擎室，fail 都有 {name}", () => {
+  const d = DUNGEONS.find((x) => x.id === "ember_war");
+  assert.deepEqual(d.rooms.map((r) => r.name), ["尾節車廂", "冰軌車頂", "鍋爐房", "頭等餐車", "引擎室"]);
+  assert.ok(d.rooms.every((r) => r.fail.includes("{name}") && !/待命名|佔位/.test(r.pass + r.fail)));
+  assert.equal(d.name, "極寒列車");
 });

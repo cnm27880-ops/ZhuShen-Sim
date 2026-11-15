@@ -27,9 +27,9 @@ function setup(n = 4, { level = 2, seed = 31, tags = [] } = {}) {
 }
 const ev = (id) => DRAMA_EVENTS.find((e) => e.id === id);
 
-test("事件池：至少 24 則，bond 15 : friction 6 : melee 3，每則至少 3 個文案版本", () => {
-  assert.ok(DRAMA_EVENTS.length >= 24);
-  assert.deepEqual([eventsOfGroup("bond").length, eventsOfGroup("friction").length, eventsOfGroup("melee").length], [15, 6, 3]);
+test("事件池：至少 32 則，bond 15 : friction 6 : melee 11（修羅場補量，第二批回饋 19），每則至少 3 個文案版本", () => {
+  assert.ok(DRAMA_EVENTS.length >= 32);
+  assert.deepEqual([eventsOfGroup("bond").length, eventsOfGroup("friction").length, eventsOfGroup("melee").length], [15, 6, 11]);
   assert.equal(new Set(DRAMA_EVENTS.map((e) => e.id)).size, DRAMA_EVENTS.length, "id 不重複");
   for (const e of DRAMA_EVENTS) assert.ok(e.texts.length >= 3, `${e.id} 版本太少`);
 });
@@ -44,15 +44,15 @@ test("所有事件文案都能填滿：沒有殘留 {欄位}、? 或 undefined",
   }
 });
 
-test("群組權重嚴格 5 : 2 : 1（獨立亂數流抽 16000 次）", () => {
+test("群組權重 3 : 2 : 1（獨立亂數流抽 18000 次）", () => {
   const state = setup(2);
   const rng = squadRng(state);
   const n = { bond: 0, friction: 0, melee: 0 };
-  for (let i = 0; i < 16000; i++) n[pickGroup(rng)] += 1;
-  assert.ok(Math.abs(n.bond / 16000 - 5 / 8) < 0.02, JSON.stringify(n));
-  assert.ok(Math.abs(n.friction / 16000 - 2 / 8) < 0.02, JSON.stringify(n));
-  assert.ok(Math.abs(n.melee / 16000 - 1 / 8) < 0.02, JSON.stringify(n));
-  assert.deepEqual(CONFIG.drama.groupWeights, { bond: 5, friction: 2, melee: 1 });
+  for (let i = 0; i < 18000; i++) n[pickGroup(rng)] += 1;
+  assert.ok(Math.abs(n.bond / 18000 - 3 / 6) < 0.02, JSON.stringify(n));
+  assert.ok(Math.abs(n.friction / 18000 - 2 / 6) < 0.02, JSON.stringify(n));
+  assert.ok(Math.abs(n.melee / 18000 - 1 / 6) < 0.02, JSON.stringify(n));
+  assert.deepEqual(CONFIG.drama.groupWeights, { bond: 3, friction: 2, melee: 1 });
 });
 
 test("生死搭檔：雙向淨好感 >= 65 才有資格；結成後同隊戰力 +4%，拆開隊就沒有", () => {
@@ -199,14 +199,26 @@ test("三角暗戀修羅場：兩人都愛第三人（淨好感 >= 45）才演�
   assert.ok(affinity(state, opt.casts[0].A, opt.casts[0].C) < 0);
 });
 
-test("抽到修羅場但現在演不了 → 退回熱血羈絆（不會空轉）；事件不動主亂數，冷卻中的組合不重演", () => {
+test("抽到修羅場但現在演不了 → 先退回派系摩擦、再不行退回熱血羈絆；事件不動主亂數，冷卻中的組合不重演", () => {
   const state = setup(3);
   const main = state.rngState;
-  const r = runDrama(state, state.samsarites, "day", "melee");
-  assert.ok(r && r.ev.group === "bond");
+  // 暫時拿掉修羅場事件，模擬「現在沒有修羅場能演」
+  const melee = DRAMA_EVENTS.filter((e) => e.group === "melee");
+  for (const e of melee) DRAMA_EVENTS.splice(DRAMA_EVENTS.indexOf(e), 1);
+  let r;
+  try {
+    const frictionOk = playable(state, "friction", state.samsarites, "day").length > 0;
+    r = runDrama(state, state.samsarites, "day", "melee");
+    assert.ok(r && r.ev.group === (frictionOk ? "friction" : "bond"), `退回 ${r?.ev.group}`);
+  } finally {
+    DRAMA_EVENTS.push(...melee);
+  }
   assert.equal(state.rngState, main, "只用獨立亂數流");
   const cd = Object.keys(state.cooldowns).filter((k) => k.startsWith("drama:"));
   assert.equal(cd.length, 1);
+  // 修羅場現在有 11 則：一般 3 人池抽修羅場會直接演修羅場
+  const s3 = setup(3);
+  assert.equal(runDrama(s3, s3.samsarites, "day", "melee").ev.group, "melee");
   // 兩人池、同一對連演：冷卻擋住
   const two = setup(2);
   const first = runDrama(two, two.samsarites, "day", "bond");
@@ -233,4 +245,21 @@ test("每日人際事件：隊長系統沒啟用（空間 Lv.1）不演；啟用
   assert.equal(playable(state, "bond", state.samsarites, "day").some((o) => o.ev.id === "victory_feast"), false);
   assert.equal(playable(state, "bond", state.samsarites, "run").some((o) => o.ev.id === "victory_feast"), true);
   setInjury(state.samsarites[0], 0);
+});
+
+test("哈基米第二批修羅場：8 則新標題、文案要三個不同的人時選角是 trio（A、B、C 互不相同）", () => {
+  const titles = { cheat_caught: "抓姦在床", fake_pregnancy: "假孕逼宮", impostor: "替身文學", heir_claim: "滴血認親", inheritance_fight: "爭奪遺產", bestie_steal: "閨蜜背刺", undercover_exposed: "臥底曝光", backfire: "迴力鏢打臉" };
+  for (const [id, name] of Object.entries(titles)) {
+    const e = DRAMA_EVENTS.find((x) => x.id === id);
+    assert.equal(e.name, name);
+    assert.equal(e.group, "melee");
+    assert.equal(e.texts.length, 3);
+    if (e.texts.some((t) => t.includes("{C}"))) assert.ok(["triangle", "trio"].includes(e.cast), `${id} 文案有 {C}，選角要有第三個人`);
+  }
+  const state = setup(4);
+  for (const id of ["impostor", "inheritance_fight"]) {
+    const o = playable(state, "melee", state.samsarites, "day").find((x) => x.ev.id === id);
+    assert.ok(o && o.casts.length > 0);
+    for (const c of o.casts) assert.ok(c.A.id !== c.B.id && c.B.id !== c.C.id && c.A.id !== c.C.id);
+  }
 });

@@ -111,7 +111,7 @@ function shopState(n = 3) {
 
 test("#7：黑貨轉嫁對象照玩家選的人；沒選或選錯才隨機", () => {
   const { state, people: [a, b, c] } = shopState(3);
-  state.totalSpent = 99999; // 解鎖高階
+  setSpentTier(state, 99999); // 解鎖高階
   const madness = SHOP_ITEMS_SYNC.find((i) => i.effect?.transferMadness);
   assert.ok(madness, "找得到奪舍禁符");
   state.samsarites.forEach((s) => (s.stats.sanity = 100));
@@ -132,7 +132,7 @@ test("#17：被鎖進休眠艙的人，手動商店不能幫他買東西", () =>
 
 test("#18：低階破鎖丹不能蓋掉身上較高階的破鎖加成", () => {
   const { state, people: [a] } = shopState(1);
-  state.totalSpent = 99999;
+  setSpentTier(state, 99999);
   a.geneBuff = { target: 4, costDiscount: 0.3 };
   const low = SHOP_ITEMS_SYNC.find((i) => i.effect?.geneLockTarget === 1);
   assert.ok(low);
@@ -359,6 +359,7 @@ import { checkTransfer, transferGear } from "../src/engine/gearTransfer.js";
 import { giveBirth } from "../src/engine/children.js";
 import { checkAlerts } from "../src/engine/alerts.js";
 import { effectivePower } from "../src/engine/tags.js";
+import { setSpentTier } from "./helpers/tier.js";
 
 test("功能 5：一生大事記——到職、第一次出征／受傷／殺人、戀人、生小孩、死亡", () => {
   const { state, people: [a, b] } = setup(2, 81);

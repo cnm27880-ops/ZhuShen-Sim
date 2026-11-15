@@ -19,6 +19,8 @@
 
 import { CONFIG } from "./config.js";
 import { WORLD_LIST, WORLD_NAME_INTRO } from "./worlds.js";
+import { buildWorldRewards } from "./worldRewards.js";
+import { HAJIMI_ROOMS } from "./worldRooms.js";
 
 // 佔位房間：n 間通用文字，最後一間是首領房
 function placeholderRooms(n) {
@@ -78,7 +80,7 @@ const E8_R_MULT = [1.4, 1.5, 1.5, 1.65, 2.2];
 // 4-F-3 校正：5 座永久基建（重力修煉室 +30% 戰力…）與位面侵蝕結晶讓後期成長更快（未校正時 900 天自然演化的第 4／5 章尾王約 Day 219／318），
 // 所以第 4、5 章 R 再乘這組倍率（常規關與尾王；第 1～3 章維持既有節奏）。實測（npm run sim -- --seeds=50 --days=900）：
 //   ×1.6／1.7 → 尾王首通中位數 Day 333／485；×1.9／3.1 → 354／717（第 5 章只剩 40% 局能在 900 天內通關，太慢）。
-const F_R_MULT = [1, 1, 1, 1.6, 1.7];
+const F_R_MULT = [1, 1, 0.85, 1.6, 1.7]; // 第 3 章 ×0.85（第三批決策 2：商店改綁章節後第 3 章尾王偏慢 Day 148 → 201。×0.95 實測仍 Day 212，×0.855 → 185、×0.76 → 185、×0.67 → 154，取 0.85）
 const REAL_WORLDS = [
   {
     id: "ghost_village",
@@ -113,9 +115,9 @@ const REAL_WORLDS = [
     recommendedPower: 130,
     reward: 125,
     specialRewards: [
-      { id: "ark_accelerator", name: "夜巡者的警覺", desc: "所有副本通過率 +4%。", effect: { passBonus: 0.04 } },
-      { id: "ark_prosthetic", name: "辟邪護身符", desc: "全員受傷時多 15% 機率少受一級。", effect: { injuryShield: 0.15 } },
-      { id: "ark_cutter", name: "桃木驅鬼釘", desc: "科幻副本通過率 +10%。", effect: { genreBonus: { 科幻: 0.1 } } },
+      { id: "ark_accelerator", name: "符紙灰", desc: "所有副本通過率 +4%。", effect: { passBonus: 0.04 } },
+      { id: "ark_prosthetic", name: "桃木釘", desc: "全員受傷時多 15% 機率少受一級。", effect: { injuryShield: 0.15 } },
+      { id: "ark_cutter", name: "破銅鈴", desc: "科幻副本通過率 +10%。", effect: { genreBonus: { 科幻: 0.1 } } },
     ],
     intro: "失去動力的殖民船，走廊只剩緊急照明，通風管裡有東西在爬。",
     rooms: [
@@ -136,17 +138,17 @@ const REAL_WORLDS = [
     recommendedPower: 185,
     reward: 165,
     specialRewards: [
-      { id: "ember_firebolt", name: "魔法・火焰箭", desc: "奇幻副本通過率 +10%。", effect: { genreBonus: { 奇幻: 0.1 } } },
-      { id: "ember_staff", name: "魔杖・燼木法杖", desc: "所有副本通關積分 +10%。", effect: { rewardPct: 0.1 } },
-      { id: "ember_blood", name: "魔法血統・燼裔", desc: "所有副本通過率 +5%。", effect: { passBonus: 0.05 } },
+      { id: "ember_firebolt", name: "凍黑麵包", desc: "奇幻副本通過率 +10%。", effect: { genreBonus: { 奇幻: 0.1 } } },
+      { id: "ember_staff", name: "劣質烈酒", desc: "所有副本通關積分 +10%。", effect: { rewardPct: 0.1 } },
+      { id: "ember_blood", name: "列車長帽", desc: "所有副本通過率 +5%。", effect: { passBonus: 0.05 } },
     ],
     intro: "兩座法師塔對轟了三百年，天空下的是火，地上跑的是失控的魔法生物。",
     rooms: [
-      { name: "魔法風暴荒原", pass: "抓準風暴的間隙衝過了荒原。", fail: "一道失控的雷鏈掃過，{name}被電得渾身冒煙。" },
-      { name: "傀儡哨站", pass: "趁魔像換班，拆掉了哨站的核心。", fail: "魔像一拳砸下，{name}連人帶盾飛了出去。" },
-      { name: "燃燒的城堡", pass: "在樑柱倒塌前穿過了大廳。", fail: "燃燒的吊燈砸下來，{name}被壓在下面。" },
-      { name: "敵對法師團", pass: "打斷了對方的集體詠唱，法術反噬了他們自己。", fail: "對方詠唱完成，{name}被冰槍釘在牆上。" },
-      { name: "塔頂核心", pass: "核心水晶碎裂，三百年的戰爭少了一座塔。", fail: "核心暴走，{name}被魔力洪流正面吞沒。" },
+      { name: "尾節車廂", pass: "擠滿凍瘡難民的臭氣車廂裡，小隊直接亮出武器鎮壓了暴動的搶食者，順手徵收了他們藏在床底的劣質伏特加取暖。", fail: "難民群起哄搶小隊的乾糧，混亂中 {name} 被人用凍硬的黑麵包狠狠砸中後腦勺，腫了一個大包還丟了半袋補給。" },
+      { name: "冰軌車頂", pass: "頂著零下七十度的刮骨暴風雪，小隊踩著結冰的車頂鐵皮一路狂奔，趕在隧道撞擊前全員滑進了前段天窗。", fail: "車頂結冰太滑，狂風呼嘯而過時 {name} 腳底打滑差點被吹飛，雖然死死抱住排氣管保住一命，但雙手已被凍傷脫皮。" },
+      { name: "鍋爐房", pass: "面對揮舞燒紅鐵鏟的瘋狂鍋爐工，小隊乾脆利落地把領頭者踹進煤渣堆，成功搶下通往貴族區的門禁磁卡。", fail: "交戰中不小心打爆了老舊的洩壓閥，滾燙的蒸氣瞬間噴了 {name} 一臉，全隊只能頂著滿身水泡狼狽逃竄。" },
+      { name: "頭等餐車", pass: "衣冠楚楚的貴族們還在舉杯暢飲紅酒，小隊直接掀翻長桌、一槍打爆了保安隊長的機械義眼，在尖叫聲中大搖大擺地穿堂而過。", fail: "藏在水晶吊燈上的自動防禦砲塔突然開火，{name} 閃避不及被電擊彈打得渾身焦黑抽搐，差點成了餐桌上的熟肉。" },
+      { name: "引擎室", pass: "在列車長啟動自爆程序的前一刻，小隊合力將他釘死在主控台前，一刀斬斷失控的永動核心線路，奪下了整列火車的控制權。", fail: "列車長狂笑著拉下超載拉桿，劇烈的剎車慣性讓 {name} 被甩飛出去重重撞在發紅的引擎外殼上，當場斷了兩根肋骨。" },
     ],
   },
 ];
@@ -157,8 +159,9 @@ export const DUNGEONS = WORLD_LIST.map((w) => {
   const base = buildWorld(w);
   const t = WORLD_NAME_INTRO[w.id]; // 4-E-8：30 世界正式名稱與題材描述（房間文字與首通特殊獎勵沿用原內容）
   const named = t ? { ...base, name: t.name, intro: t.intro } : base;
-  const extra = WORLD_ROOMS[w.id] ?? {}; // 前 3 個世界的房間文字對齊新世界觀（4-E-8 收尾）
-  return { ...named, ...extra, recommendedPower: Math.round(base.recommendedPower * E8_R_MULT[w.chapter - 1] * F_R_MULT[w.chapter - 1]) }; // 200 件商店總表（4-E-8）與基建（4-F-3）上線後的 R 校正
+  const extra = WORLD_ROOMS[w.id] ?? (HAJIMI_ROOMS[w.id] ? { rooms: HAJIMI_ROOMS[w.id] } : {}); // 哈基米的房間文字（worldRooms.js）；沒有稿的世界維持佔位 // 前 3 個世界的房間文字對齊新世界觀（4-E-8 收尾）
+  const specialRewards = named.specialRewards?.length ? named.specialRewards : buildWorldRewards(named); // 原本沒有首通獎勵的世界補上（Phase 3-1，見 worldRewards.js）
+  return { ...named, ...extra, specialRewards, recommendedPower: Math.round(base.recommendedPower * E8_R_MULT[w.chapter - 1] * F_R_MULT[w.chapter - 1]) }; // 200 件商店總表（4-E-8）與基建（4-F-3）上線後的 R 校正
 });
 function buildWorld(w) {
   if (REAL.has(w.id)) return REAL.get(w.id);

@@ -32,8 +32,11 @@ export const CONFIG = {
   // 絕境空投（4-C-3）：存活人數（不含催熟艙）< minAlive 且積分 < pointsBelow，連續滿 everyDays 天，主神免費空投 1 名新人
   // rescue：true 時空投當作安全網，「沒人又借不到錢」不再直接判遊戲結束（否則全滅當下就死檔，空投來不及；4-C-6）
   airdrop: { minAlive: 2, pointsBelow: 120, everyDays: 3, rank: "C", rescue: true },
-  // 商店 5 階的解鎖門檻：「累積花費」（抽卡也算）達到才開放。索引 0 = Tier 1（Phase 4-A）
-  shopTierUnlock: [0, 600, 3000, 12000, 45000],
+  // 商店 6 階的解鎖條件（第二批試玩回饋 16）：改看章節尾王首通，不再看累積花費。索引 0 = Tier 1。
+  // 值 = 要先首通哪一章的尾王（0 = 開局就有）。Tier 2 = 通關第 1 章尾王 … Tier 6 = 通關第 5 章尾王。
+  shopTierBossChapter: [0, 1, 2, 3, 4, 5],
+  // 副本首通特殊獎勵（收藏）全部疊加的上限（第二批回饋 3-1：30 個世界各有獎勵，避免堆到爆）。原本 3 個世界的總和遠低於這些上限
+  collection: { passCap: 0.15, genreCap: 0.15, rewardCap: 0.3, injuryShieldCap: 0.5 }, // 全域通過率／單一類型通過率／通關積分／「全員受傷時少受一級」的機率（第三批決策 5）
   shopDodgeMax: 0.9, // 閃避機率上限（標籤 + 商店加成加起來）
 
   // ── 雙錢包活體經濟（Phase 4-D-1）──
@@ -275,7 +278,7 @@ export const CONFIG = {
   drama: {
     dailyChance: 0.25, // 每天結算時觸發一則空間日常人際事件的機率
     runChance: 0.3, // 副本成功結算（存活 2 人以上）時穿插一則人際事件的機率
-    groupWeights: { bond: 5, friction: 2, melee: 1 }, // 熱血羈絆：派系摩擦：八點檔修羅場 = 5:2:1
+    groupWeights: { bond: 3, friction: 2, melee: 1 }, // 熱血羈絆：派系摩擦：八點檔修羅場 = 3:2:1（第二批回饋 19，露葵決定；修羅場演不了先退派系摩擦）
     cooldownDays: 6, // 同一則事件同一組人的冷卻
     partnerAt: 65, // 淨好感雙向 >= 這個數字才會結成生死搭檔
     pairPowerPct: 0.04, // 生死搭檔同隊出征：雙方有效戰力各 +4%
@@ -355,6 +358,13 @@ export const CONFIG = {
     },
   },
 
+  // 天數對應章節（第四批 7、8 節，engine/dayChapter.js）：許願「想去副本」、突襲任務挑副本、主神搞事積分倍率共用
+  dayChapter: {
+    days: [30, 70, 175, 320], // 到第幾天進入第 2／3／4／5 章（sim 尾王首通中位數 32／73／175／322／382 取整，之後可再校正）
+    godMult: [1, 3, 10, 30, 100], // 各章的主神搞事積分倍率（化解費、損失、補償、通關獎勵、抗命罰金；config 的原始數字是第 1 章基準）
+    powerShare: 0.8, // 挑副本時：推薦戰力要 <= 名冊前 4 強有效戰力總和 × 這個數字，才算「打得動」
+  },
+
   // ── 關係系統（Phase 2-B；計畫第 6 節，標「計畫未定」的是暫定值）──
   relations: {
     // 關係等級門檻（好感／仇恨 0~100）
@@ -368,7 +378,14 @@ export const CONFIG = {
     passBonus: { like: 0.1, adore: 0.2, soulmate: 0.3, dislike: -0.1, hate: -0.2, nemesis: -0.25 },
     bonusCap: 0.1, // 全隊關係對「單房通過率」的加減上限（Phase 4-B：露葵拍板由 ±30% 改 ±10%）
     // 每天的行動骰（計畫 13.1：50% 日常 / 30% 找人互動 / 20% 特殊事件）
-    dailyRoll: { work: 0.5, social: 0.3 }, // 其餘 20% 是特殊事件（陰謀、標籤事件）
+    // 第二批回饋 20：日常靜默、只寫關係進展。原本 work 0.5／social 0.3，12 人每天約 3.6 則社交日誌，隨人數線性膨脹
+    dailyRoll: { work: 0.65, social: 0.15 }, // 其餘 20% 是特殊事件（陰謀、標籤事件）
+    socialDailyCap: 3, // 全隊每天最多幾次社交互動；超過的社交骰改成日常（理智 +workSanity）
+    socialLog: false, // 一般社交互動要不要寫進日誌（false = 只算好感／仇恨數字；告白、戀人、死敵、陰謀等關係進展照寫）
+    // 互動優先找快要突破的那對：好感差不到 nearRange 就到告白線、仇恨差不到 nearRange 就到陰謀線或死敵線，挑人權重額外 +nearBonus
+    nearRange: 30,
+    nearBonus: 6,
+    nearPickChance: 0.7, // 有「快要突破」的配對時，這次社交互動直接改由他們發生的機率（其餘照權重抽人）
     eventCooldownDays: 7, // 同一對人、同一種互動 7 天內不重複
     hateDecayPerDay: 0.5, // 仇恨每天自然消退一點（死敵不消退）
     workSanity: 1, // 日常行動：理智 +1

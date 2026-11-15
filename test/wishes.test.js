@@ -200,6 +200,42 @@ test("想要裝備：只許已解鎖階層、沒穿著的裝備；幫他買下�
   }
 });
 
+test("想要裝備不會許更低階的：全身三階裝的小人許 100 次，目標全部高於三階；沒有更高階可挑就不出裝備願", () => {
+  const FULL3 = { weapon: "t3_01", armor: "t3_03", accessory: "t3_05", bloodline: "t3_07" };
+  for (let i = 0; i < 100; i++) {
+    const t = setup();
+    t.state.chapterClearDay = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 }; // 商店 Tier 6
+    t.state.seed = 100 + i;
+    t.state.rngState = 1000 + i * 7919;
+    t.s.gear = { ...FULL3 };
+    const made = forceWish(t.state, t.s, "gear");
+    assert.ok(getShopItem(made.params.itemId).tier > 3, `第 ${i} 次許到 ${made.params.itemId}`);
+  }
+  // 武器欄是三階、其他欄空著：許到武器時也必須高於三階
+  for (let i = 0; i < 100; i++) {
+    const t = setup();
+    t.state.chapterClearDay = { 1: 1, 2: 2, 3: 3 };
+    t.state.rngState = 77 + i * 104729;
+    t.s.gear = { weapon: "t3_01" };
+    const made = forceWish(t.state, t.s, "gear");
+    const item = getShopItem(made.params.itemId);
+    if (item.slot === "weapon") assert.ok(item.tier > 3, made.params.itemId);
+  }
+  // 全身都已經是當前商店最高階：不出裝備願（不降級將就）
+  const { state, s } = setup();
+  s.gear = { weapon: "t1_01", armor: "t1_03", accessory: "t1_05", bloodline: "t1_07" };
+  const saved = JSON.stringify(CONFIG.wish);
+  CONFIG.wish.chance = 1;
+  for (const k of Object.keys(CONFIG.wish.kinds)) CONFIG.wish.kinds[k].weight = k === "gear" ? 1 : 0;
+  try {
+    maybeWish(state, s); // 其他種類權重雖為 0 但仍在候選裡，會改出別種願，絕不會是裝備願
+    assert.ok(state.wishes.every((w) => w.mode !== "gear"));
+  } finally {
+    Object.assign(CONFIG.wish, JSON.parse(saved));
+    for (const k of Object.keys(CONFIG.wish.kinds)) Object.assign(CONFIG.wish.kinds[k], JSON.parse(saved).kinds[k]);
+  }
+});
+
 test("心情效果：高興加通過率（有上限）、不爽減戰力；到期自動消失", () => {
   const { state } = setup(4);
   const party = state.samsarites;
@@ -247,4 +283,15 @@ test("整合：每日行動骰會產生許願（機率拉高時）；存檔讀�
   assert.equal(migrated.samsarites[0].mood, null);
   assert.equal(migrated.samsarites[0].vacationDays, 0);
   assert.equal(migrated.settings.pauseOn.wish, true);
+});
+
+test("許願「想吃好的」的積分也跟著天數章節乘倍率（第四批）：第 3 章 ×10", async () => {
+  const { godMultOf } = await import("../src/engine/dayChapter.js");
+  const { state, s } = setup();
+  state.tick = (150 - 1) * CONFIG.ticksPerDay;
+  state.points = 1e9;
+  const w = forceWish(state, s, "eat");
+  const [lo, hi] = CONFIG.wish.kinds.eat.cost;
+  assert.equal(godMultOf(150), 10);
+  assert.ok(w.params.cost >= lo * 10 && w.params.cost <= hi * 10, `cost ${w.params.cost}`);
 });

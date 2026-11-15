@@ -33,7 +33,9 @@ test("關卡詞條：有克制資料的環境，克制與被克制各自列出",
 
 test("日誌分類：七類篩選齊全，未知種類歸日常", () => {
   assert.deepEqual(LOG_CATEGORIES.map(([id]) => id), ["all", "drama", "battle", "death", "daily", "wish", "god"]);
-  assert.equal(categoryOf("social"), "drama");
+  assert.equal(categoryOf("social"), "daily", "社交日常歸日常（第二批回饋 19）");
+  assert.equal(categoryOf("relation"), "daily");
+  assert.equal(categoryOf("drama"), "drama");
   assert.equal(categoryOf("death"), "death");
   assert.equal(categoryOf("wishDone"), "wish");
   assert.equal(categoryOf("godEvent"), "god");
@@ -92,4 +94,11 @@ test("詞條庫：好壞只有三類（好／壞／中性），名稱沒有現�
     assert.ok(!/拼多多|Wi-?Fi/i.test(`${p.name}${p.fullName ?? ""}`), `${p.name} 有現實商標字樣`);
     assert.equal(p.summary, undefined, `${p.name} 不該再有 summary（跟 effect 重複又容易不一致）`);
   }
+});
+
+test("走火入魔（demon_path）分類為「看情況」（中性）：戰力 +8% 是好、好感減半與失控是壞", async () => {
+  const { PERSON_TAGS, toneOf } = await import("../src/data/tagCodex.js");
+  const t = PERSON_TAGS.find((x) => x.id === "demon_path");
+  assert.equal(t.tone, "mixed");
+  assert.equal(toneOf(t), "mixed");
 });

@@ -139,8 +139,8 @@ export const LOGS = {
 
   // ───────── 商店（shop.js、core.js 的階層解鎖）─────────
   shopTier: [
-    "🛒 累積花費達 {spent} 分，商店解鎖 Tier {tier}。主神：「很好，你終於開始認真消費了。」",
-    "🛒 商店升級了：Tier {tier} 開放（累積花費 {spent} 分）。主神笑得合不攏嘴：「這都是我賺的。」",
+    "🛒 第 {chapter} 章尾王倒下了，商店解鎖 Tier {tier}。主神：「很好，你終於有東西可以賣給他們了。」",
+    "🛒 商店升級了：Tier {tier} 開放（第 {chapter} 章尾王首通）。主神笑得合不攏嘴：「這都是我賺的。」",
   ],
   shopGear: [
     "🎒 {A} 領到了【{item}】（{slot}，-{cost} 分）。",

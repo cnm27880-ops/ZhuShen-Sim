@@ -4,7 +4,7 @@
 // 付費者（opts.payer）：
 //   "treasury"（預設）  主神公庫 state.points：「主動賞賜」。買裝備 → 綁定（soulbound）並讓該角色理智 +5。
 //   "wallet"            輪迴者自己的私房錢 s.wallet：「自主逛街」（engine/shopping.js）；不綁定，不能覆蓋已綁定的裝備。
-// 不論誰付錢，花費一律累加進 state.totalSpent（商店階層解鎖用）。
+// 不論誰付錢，花費一律累加進 state.totalSpent（只當統計；商店階級改看章節尾王首通）。
 // 來源（opts.source）："shop" 常駐制式商店只賣 standard 與 permanent 耗材；"market" 黑市由 engine/market.js 傳入（可買任何商品、可帶折扣價 opts.price）。
 
 import { noteContraband, squadRng, bump } from "./squad.js"; // 黑貨使用紀錄（4-E-3；循環引用只在執行時呼叫）
@@ -21,11 +21,11 @@ import { wishesAfterBuy } from "./wishes.js";
 
 export { shopTier };
 
-/** 下一階還差多少累積花費。已經是最高階就回傳 null */
+/** 下一階要打通哪一章的尾王。已經是最高階就回傳 null */
 export function nextTierInfo(state) {
   const tier = shopTier(state);
-  const need = CONFIG.shopTierUnlock[tier]; // 索引 tier = 下一階
-  return need === undefined ? null : { tier: tier + 1, need, remaining: Math.max(0, need - state.totalSpent) };
+  const chapter = CONFIG.shopTierBossChapter[tier]; // 索引 tier = 下一階
+  return chapter === undefined ? null : { tier: tier + 1, chapter };
 }
 
 /** 常駐商店賣的商品：常駐裝備（8 件／階）+ 常備耗材（permanent：治傷藥、鎮靜劑）。tier 省略 = 全部階層 */
@@ -77,7 +77,7 @@ export function checkBuy(state, item, s, opts = {}) {
   const payer = opts.payer ?? "treasury";
   const price = opts.price ?? item.price;
   if (item.tier > shopTier(state)) {
-    return { ok: false, reason: `Tier ${item.tier} 還沒解鎖（累積花費 ${CONFIG.shopTierUnlock[item.tier - 1]} 分）` };
+    return { ok: false, reason: `Tier ${item.tier} 還沒解鎖（要先打通第 ${CONFIG.shopTierBossChapter[item.tier - 1]} 章尾王）` };
   }
   if ((opts.source ?? "shop") === "shop" && !isPermanent(item)) return { ok: false, reason: "這件商品只在黑市出現" };
   if (!s) return { ok: false, reason: "請先選一個人" };
@@ -267,6 +267,11 @@ export function collectionEffects(state) {
     total.injuryShield += e.injuryShield ?? 0;
     for (const [genre, v] of Object.entries(e.genreBonus ?? {})) total.genreBonus[genre] = (total.genreBonus[genre] ?? 0) + v;
   }
+  const cap = CONFIG.collection;
+  total.passBonus = Math.min(cap.passCap, total.passBonus);
+  total.rewardPct = Math.min(cap.rewardCap, total.rewardPct);
+  total.injuryShield = Math.min(cap.injuryShieldCap, total.injuryShield);
+  for (const g of Object.keys(total.genreBonus)) total.genreBonus[g] = Math.min(cap.genreCap, total.genreBonus[g]);
   return total;
 }
 

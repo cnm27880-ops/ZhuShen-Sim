@@ -54,6 +54,11 @@ for (const d of DUNGEONS) {
   if (rm) d.recommendedPower = Math.round(d.recommendedPower * (rm[d.chapter - 1] ?? 1));
   if (rewardMult) d.reward = Math.round(d.reward * (rewardMult[d.chapter - 1] ?? 1));
 }
+if (args.upkeep) {
+  // --upkeep=1.5：每日維持費倍率（個人基因鎖基準費與空間環境底費同乘；第三批決策 1 的對照模擬用）
+  CONFIG.space.upkeepGene = CONFIG.space.upkeepGene.map((v) => v * args.upkeep);
+  CONFIG.space.upkeepSpace = CONFIG.space.upkeepSpace.map((v) => v * args.upkeep);
+}
 if (args.minClear) CONFIG.auto.minClearChance = args.minClear;
 if (args.mpower) CONFIG.forcedMission.powerMult = args.mpower;
 const TAX = args.tax ?? CONFIG.tax.default; // --tax=0.4：公庫稅率

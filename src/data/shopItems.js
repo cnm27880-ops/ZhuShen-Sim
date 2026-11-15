@@ -1,6 +1,7 @@
-// 商品資料表（Phase 4-E-8：200 件總表）：五階 × 40 件（8 常駐 + 18 世界特產 + 6 耗材 + 8 黑貨）。
+// 商品資料表（Phase 4-E-8：200 件總表；第二批試玩回饋 16 起加第 6 階，共 240 件）：六階 × 40 件（8 常駐 + 18 世界特產 + 6 耗材 + 8 黑貨）。
 // 原始列（名稱、價格、白值、描述）在 src/data/shopRaw.js；這裡負責解析，並用結構化欄位宣告特殊效果（EFFECTS／PASSIVES），引擎統一解析，禁止硬編碼單一 id。
 //
+// 第 6 階沒有對應的第 6 章世界：特產（編號 09～26）綁回第 5 章的 6 個世界（同一批世界，更高階的版本）。
 // 欄位：id／name／tier／slot（weapon armor accessory bloodline consumable）／category／source／price／stats／aiBuyTag／desc，選配 effect／passive
 //   category：standard 常駐（制式商店隨時可買）／specialty 世界特產（綁 worldId，只在黑市輪換）／consumable 耗材／contraband 黑貨（只在黑市）
 //   source：「常駐」／世界 id（特產）／「耗材」／「黑貨」
@@ -63,6 +64,14 @@ export const EFFECTS = {
   t5_32: { teamLove: 20, clearHate: true },
   t5_38: { partyNextRunPowerMult: 0.3, partyPostRunSanity: -15 },
   t5_39: { inducePregnancy: "max" },
+  t6_27: { healInjury: 99, permHp: 20, maxUsesPerChar: 3 },
+  t6_28: { sanity: 100, healInjury: 99 },
+  t6_29: { geneLockTarget: 4, costDiscount: 0.4 },
+  t6_30: { deathWard: 1, fullRecover: true, sanity: 50 },
+  t6_31: { intelGain: 100, targetCount: 6 },
+  t6_32: { teamLove: 30, clearHate: true, sanity: 20 },
+  t6_38: { partyNextRunPowerMult: 0.4, partyPostRunSanity: -20 },
+  t6_39: { inducePregnancy: "max", sanity: 30 },
 };
 
 /** 黑貨裝備的被動（穿著期間生效；demonTendency "sure" = 一穿上就必定入魔） */
@@ -89,6 +98,12 @@ export const PASSIVES = {
   t5_36: { demonTendency: "sure" },
   t5_37: { captainLoveMult: 0.7 },
   t5_40: { coupPowerBonus: 0.2 },
+  t6_33: { dailySanity: -3 },
+  t6_34: { partyRunSanity: -5 },
+  t6_35: { runSanity: -8 },
+  t6_36: { demonTendency: "sure", dailySanity: -2 },
+  t6_37: { captainLoveMult: 0.5 },
+  t6_40: { coupPowerBonus: 0.35 },
 };
 
 /** 放進出征耗材緩衝區（下次出征才生效）的效果欄位；其餘耗材買了立刻用 */
@@ -112,7 +127,7 @@ export const SHOP_ITEMS = SHOP_RAW.trim()
     const tier = Number(t);
     const num = Number(n);
     const category = CATEGORY[src];
-    const worldId = src === "W" ? WORLD_LIST.filter((w) => w.chapter === tier)[Math.floor((num - 9) / 3)].id : undefined;
+    const worldId = src === "W" ? WORLD_LIST.filter((w) => w.chapter === Math.min(tier, 5))[Math.floor((num - 9) / 3)].id : undefined;
     const effect = EFFECTS[id] ?? {};
     const passive = PASSIVES[id];
     const kind = slot !== "consumable" ? "gear" : Object.keys(effect).some((k) => BUFFER_KEYS.includes(k)) ? "buff" : "use";
