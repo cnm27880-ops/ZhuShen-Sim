@@ -82,3 +82,13 @@ test("哈基米標籤庫：171 個人物詞條＋22 個關卡詞條齊全，每�
   // 遊戲內已實裝的 30 個抽卡標籤都要對得上，詞條庫才能顯示「實際效果」與小人對照置頂
   for (const t of TAGS) assert.ok(CODEX_PEOPLE.some((p) => p.gameId === t.id), `${t.name} 沒對應到詞條庫`);
 });
+
+test("詞條庫：好壞只有三類（好／壞／中性），名稱沒有現實商標，效果文字沒有殘留的設計稿註記", async () => {
+  const { CODEX_PEOPLE } = await import("../src/data/codexTags.js");
+  const { TONE_LABEL: TL } = await import("../src/data/tagCodex.js");
+  assert.deepEqual([...new Set(Object.values(TL))].sort(), ["中性", "壞", "好"].sort());
+  for (const p of CODEX_PEOPLE) {
+    assert.ok(!/拼多多|Wi-?Fi/i.test(`${p.name}${p.fullName ?? ""}`), `${p.name} 有現實商標字樣`);
+    assert.equal(p.summary, undefined, `${p.name} 不該再有 summary（跟 effect 重複又容易不一致）`);
+  }
+});
