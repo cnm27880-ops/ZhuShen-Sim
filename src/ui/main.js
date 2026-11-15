@@ -22,6 +22,8 @@ import {
   pullGacha,
   gachaInfo,
   recycle,
+  recycleBlock,
+  recycleMany,
   serialize,
   deserialize,
 } from "../engine/core.js";
@@ -39,7 +41,7 @@ import { buildGossip } from "../engine/gossip.js";
 import { applyAutoMode, currentAutoMode } from "../engine/autoMode.js";
 import { bioOf, graveBio } from "../engine/life.js";
 import { transferGear } from "../engine/gearTransfer.js";
-import { stockableItems, stockList, stockCount, stockTargets, buyStock, useStock, checkBuyStock } from "../engine/inventory.js";
+import { stockableItems, stockList, stockCount, stockTargets, buyStock, useStock, useStockMany, checkBuyStock } from "../engine/inventory.js";
 import { drawGossipCard, downloadGossipPng, copyText } from "./gossipCard.js";
 import { RIVAL_SQUADS } from "../data/rivals.js";
 import {
@@ -758,7 +760,7 @@ function renderModal() {
   document.body.classList.toggle("modal-open", Boolean(modal)); // 開著放大視窗時，角落的副本迷你小窗（#run-list）自動隱藏，關窗恢復（雙視窗互斥，4-E-7）
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { leaderboard: leaderboardPanel, syncChoice, guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel, inventory };
+  const builders = { leaderboard: leaderboardPanel, syncChoice, guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, batchRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel, inventory };
   $("modal").innerHTML = builders[modal.name]();
   if (modal.name === "gossip") drawGossipCard($("gossip-canvas"), buildGossip(state)); // 畫報紙圖卡（Canvas，要等 innerHTML 寫完才拿得到元素）
 }
@@ -1110,7 +1112,7 @@ function inventory() {
     : "";
   return `<h3>物資</h3>
     <div class="option-list">${stock}</div>
-    ${item ? `<h3>給誰用【${item.name}】？</h3><div class="option-list">${people || `<div class="empty">主神空間裡沒有人。</div>`}</div>` : ""}
+    ${item ? `<h3>給誰用【${item.name}】？</h3><div style="margin:0 0 8px"><button class="pill primary" data-action="use-stock-all">⚡ 一鍵餵給所有需要的人</button></div><div class="option-list">${people || `<div class="empty">主神空間裡沒有人。</div>`}</div>` : ""}
     ${modal.note ? `<div class="summary" style="margin-top:8px">${modal.note}</div>` : ""}
     <div class="modal-actions"><button data-action="open-shop">🛒 去商店補貨</button>${closeButton}</div>`;
 }
@@ -1362,6 +1364,36 @@ function relations() {
   return `<h3>關係總覽</h3>
     <div class="rel-list">${body}</div>
     <div class="modal-actions">${closeButton}</div>`;
+}
+
+/** 批量回收面板：勾選多人一次推進回收爐；隊長、綁定神裝者、副本／催熟艙中的人自動排除 */
+function batchRecycle() {
+  const picked = new Set(modal.picked ?? []);
+  const rows = state.samsarites
+    .filter((s) => s.location === "space")
+    .map((s) => ({ s, block: recycleBlock(state, s) }))
+    .sort((a, b) => (a.block ? 1 : 0) - (b.block ? 1 : 0) || effectivePower(a.s) - effectivePower(b.s));
+  const chosen = rows.filter((r) => !r.block && picked.has(r.s.id)).map((r) => r.s);
+  const refund = chosen.reduce((sum, s) => sum + RANKS[s.rank].recycleRefund, 0);
+  const loss = chosen.length * CONFIG.recycle.sanityLoss;
+  const left = state.samsarites.length - chosen.length;
+  if (modal.confirm) {
+    return `<h3>♻️ 確認批量回收</h3>
+      <p>即將把以下 <b>${chosen.length}</b> 人推進回收爐，<span class="bad">他們會永久消失：</span></p>
+      <div class="summary">${chosen.map((s) => `${s.rank} ${esc(s.name)}（戰力 ${effectivePower(s)}，+${RANKS[s.rank].recycleRefund} 分）`).join("<br />")}</div>
+      <p>總共返還 <b>${refund}</b> 分；剩下的 ${left} 位輪迴者每人理智 <b>-${loss}</b>（每推 1 人 -${CONFIG.recycle.sanityLoss}，累加）。私房錢全歸公庫。</p>
+      <div class="modal-actions"><button data-action="br-back">返回修改</button><button class="danger" data-action="br-confirm">確定推進去</button></div>`;
+  }
+  const list = rows
+    .map(({ s, block }) => `<div class="option ${block ? "locked" : picked.has(s.id) ? "selected" : ""}" ${block ? `style="opacity:.5" title="${block}"` : `data-action="br-toggle" data-id="${s.id}"`}>
+      ${rankBadge(s.rank)}<span class="grow">${esc(s.name)}<br /><small>戰力 ${effectivePower(s)}・理智 ${s.stats.sanity}・出征 ${s.runs ?? 0} 場${block ? `・<span class="bad">${block}</span>` : ""}</small></span>
+      <b>${block ? "" : picked.has(s.id) ? "已選" : `+${RANKS[s.rank].recycleRefund}`}</b></div>`)
+    .join("");
+  return `<h3>♻️ 批量回收</h3>
+    <div class="pill-row" style="margin:0 0 8px"><button class="pill" data-action="br-weakest" data-n="5">最弱 5 人</button><button class="pill" data-action="br-weakest" data-n="10">最弱 10 人</button><button class="pill" data-action="br-rank" data-rank="C">全部 C 級</button><button class="pill" data-action="br-clear">清除</button></div>
+    <div class="option-list" style="max-height:46vh;overflow-y:auto">${list || `<div class="empty">主神空間裡沒有人。</div>`}</div>
+    <div class="summary" style="margin-top:8px">已選 <b>${chosen.length}</b> 人・返還 <b>${refund}</b> 分・剩下 ${left} 人每人理智 <b>-${loss}</b>${left <= 1 && chosen.length ? `<br /><span class="bad">⚠️ 幾乎推光了，小心空投與破產連鎖。</span>` : ""}</div>
+    <div class="modal-actions">${closeButton}<button class="danger" data-action="br-ask" ${chosen.length ? "" : "disabled"}>下一步：確認</button></div>`;
 }
 
 function confirmRecycle() {
@@ -2317,6 +2349,46 @@ const actions = {
   "peek-run"(el) {
     const id = Number(el.dataset.runId);
     peekRunId = peekRunId === id ? null : id;
+  },
+  "open-batch-recycle"() {
+    modal = { name: "batchRecycle", picked: [], confirm: false };
+  },
+  "br-toggle"(el) {
+    const id = Number(el.dataset.id);
+    const set = new Set(modal.picked);
+    set.has(id) ? set.delete(id) : set.add(id);
+    modal.picked = [...set];
+  },
+  "br-weakest"(el) {
+    const n = Number(el.dataset.n);
+    modal.picked = state.samsarites
+      .filter((s) => !recycleBlock(state, s))
+      .sort((a, b) => effectivePower(a) - effectivePower(b))
+      .slice(0, n)
+      .map((s) => s.id);
+  },
+  "br-rank"(el) {
+    modal.picked = state.samsarites.filter((s) => s.rank === el.dataset.rank && !recycleBlock(state, s)).map((s) => s.id);
+  },
+  "br-clear"() {
+    modal.picked = [];
+  },
+  "br-ask"() {
+    modal.confirm = true;
+  },
+  "br-back"() {
+    modal.confirm = false;
+  },
+  "br-confirm"() {
+    const r = recycleMany(state, modal.picked);
+    modal = null;
+    saveGame();
+    showToast(`♻️ 已回收 ${r.done.length} 人，返還 ${r.refund} 分${r.skipped.length ? `（跳過 ${r.skipped.length} 人）` : ""}`);
+  },
+  "use-stock-all"() {
+    const r = useStockMany(state, modal.itemId);
+    modal.note = r.fed.length ? `✅ 已餵給 ${r.fed.length} 人：${r.fed.join("、")}（剩 ${r.left} 份）` : `<span class="bad">沒有需要這件物資的人，或庫存不足</span>`;
+    saveGame();
   },
   "ask-recycle"(el) {
     modal = { name: "confirmRecycle", id: Number(el.dataset.id) };

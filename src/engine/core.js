@@ -425,6 +425,36 @@ export function recycle(state, id) {
   return true;
 }
 
+/** 批量回收保護：隊長、有綁定裝備（神眷）者、不在主神空間（副本／催熟艙）的人不能被批量推進去。可回收回 null */
+export function recycleBlock(state, s) {
+  if (!s) return "找不到這個人";
+  if (s.location !== "space") return "不在主神空間";
+  if (state.squad?.captainId === s.id) return "小隊隊長";
+  if (Object.values(s.soulbound ?? {}).some(Boolean)) return "有綁定神裝";
+  return null;
+}
+
+/** 批量回收：依序推進回收爐（每推 1 人，剩下的人各理智 -recycle.sanityLoss，照舊累加）。不合格的跳過並回報 */
+export function recycleMany(state, ids) {
+  const done = [];
+  const skipped = [];
+  let refund = 0;
+  for (const id of ids) {
+    const s = getSamsarite(state, id);
+    const why = recycleBlock(state, s);
+    if (why) {
+      skipped.push({ id, name: s?.name ?? "?", reason: why });
+      continue;
+    }
+    const gain = RANKS[s.rank].recycleRefund;
+    if (recycle(state, id)) {
+      done.push(s.name);
+      refund += gain;
+    }
+  }
+  return { done, skipped, refund };
+}
+
 // ───────── 抽卡（Phase 4-B：四階卡池）─────────
 // 每個卡池有「本週已抽次數」（每 resetDays 天重置，用來漲價）與「保底計數」（跨週保留，抽中保底階級才歸零）。
 // 週數是從目前天數算出來的（第 1~7 天 = 第 0 週，第 8~14 天 = 第 1 週…），所以讀檔後也不會錯。
