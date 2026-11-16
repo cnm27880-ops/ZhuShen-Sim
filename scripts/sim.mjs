@@ -147,7 +147,14 @@ function recruitDay(state) {
   }
 }
 
-/** 人際張力的處理策略（A-3 階段 2）：每天依期限由近到遠最多處理 k 件；先調停，失敗再補償（花得起才補，補怨氣高的那位），再不行就拆開（讓戰力較弱的人放假） */
+/**
+ * 人際張力的處理策略（A-3 階段 2）：每天依期限由近到遠最多處理 k 件。像個懂分流的玩家：
+ *   1. 先調停（免費）；
+ *   2. 失敗或已試過：公庫寬裕（補償費 <= 公庫 5%，且花完仍留 20 天維持費）才補償怨氣較高的那位；
+ *   3. 否則只有「名冊 >= 6 人」且「事情已升級（等級 >= 2）」才讓戰力較弱的人放假（小隊少一個人會更弱、更窮）；
+ *   4. 還是不行就放著（等級 1 的小事無視是合理的分流）。
+ * 一件事不論用幾招都只算 1 次關注。
+ */
 function handleTension(state, k) {
   let n = 0;
   for (const ev of pendingTension(state)) {
@@ -160,12 +167,14 @@ function handleTension(state, k) {
     const b = getSamsarite(state, ev.bId);
     if (!a || !b) continue;
     const o = tensionOptions(state, ev);
-    if (o.compensate.ok && canSpare(state, o.compensate.cost)) {
+    if (o.compensate.ok && o.compensate.cost <= state.points * 0.05 && canSpare(state, o.compensate.cost, 20)) {
       resolveTension(state, ev.id, "compensate", { payeeId: (a.grudge ?? 0) >= (b.grudge ?? 0) ? a.id : b.id });
       continue;
     }
-    const [weak, strong] = effectivePower(a) <= effectivePower(b) ? [a, b] : [b, a];
-    if (!resolveTension(state, ev.id, "separate", { restId: weak.id }).ok) resolveTension(state, ev.id, "separate", { restId: strong.id });
+    if (alive(state).length >= 6 && ev.level >= 2) {
+      const [weak, strong] = effectivePower(a) <= effectivePower(b) ? [a, b] : [b, a];
+      if (!resolveTension(state, ev.id, "separate", { restId: weak.id }).ok) resolveTension(state, ev.id, "separate", { restId: strong.id });
+    }
   }
 }
 
