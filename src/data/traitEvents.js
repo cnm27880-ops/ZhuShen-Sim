@@ -8,14 +8,14 @@
 
 export const TRAIT_EVENTS = [
   { id: "shareMed", axis: "altruism", sign: 1, weight: 1, target: "needy", fx: { give: 10, targetSanity: 2, targetLove: 3 } },
-  { id: "fee", axis: "altruism", sign: -1, weight: 1, target: "rich", fx: { take: 8, sanity: 1 } },
-  { id: "scheme", axis: "ambition", sign: 1, weight: 1, target: "random", fx: {} },
+  { id: "fee", axis: "altruism", sign: -1, weight: 1, target: "rich", fx: { take: 8, targetHate: 2, sanity: 1 } },
+  { id: "scheme", axis: "ambition", sign: 1, weight: 1, target: "random", fx: { sanity: -1, targetHate: 2 } },
   { id: "slack", axis: "ambition", sign: -1, weight: 1, target: null, fx: { sanity: 2 } },
-  { id: "dare", axis: "courage", sign: 1, weight: 1, target: "random", fx: { targetLove: 2 } },
-  { id: "timid", axis: "courage", sign: -1, weight: 1, target: null, fx: {} },
+  { id: "dare", axis: "courage", sign: 1, weight: 1, target: "random", fx: { sanity: -1, targetLove: 2 } },
+  { id: "timid", axis: "courage", sign: -1, weight: 1, target: null, fx: { sanity: -2 } },
   { id: "invite", axis: "social", sign: 1, weight: 1, target: "random", fx: { give: 8, sanity: 1, targetSanity: 2, targetLove: 3 } },
   { id: "hermit", axis: "social", sign: -1, weight: 1, target: null, fx: { sanity: 2 } },
-  { id: "overtime", axis: "obedience", sign: 1, weight: 1, target: null, fx: {} },
+  { id: "overtime", axis: "obedience", sign: 1, weight: 1, target: null, fx: { sanity: -2 } },
   { id: "talkback", axis: "obedience", sign: -1, weight: 1, target: null, fx: { sanity: 1 } },
 ];
 

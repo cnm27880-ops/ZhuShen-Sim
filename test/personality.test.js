@@ -146,8 +146,7 @@ test("條件不符不發生：沒錢給、沒有對象、隊長當主角不會�
   state.spaceLevel = 2;
   appointCaptain(state, a.id, true);
   b.wallet = 100;
-  const hateEv = { ...ev("fee"), fx: { take: 8, targetHate: 2 } }; // 目前資料表沒有結仇事件，用自訂事件驗證守則
-  assert.equal(playTraitEvent(state, a, hateEv).ok, false);
+  assert.equal(playTraitEvent(state, a, ev("fee")).ok, false);
   assert.equal(playTraitEvent(state, b, ev("scheme")).ok, false); // 唯一的其他人是隊長，被排除
 });
 
@@ -172,7 +171,7 @@ test("對隊長的好感永遠不受個性事件影響", () => {
 test("扣理智不會低於安全線（不會誘發暴走），也不會超過 100", () => {
   const { state, people: [a] } = setup(1, 37);
   a.stats.sanity = 2;
-  playTraitEvent(state, a, { ...ev("slack"), fx: { sanity: -5 } }); // 目前沒有扣理智的事件，用自訂事件驗證下限
+  playTraitEvent(state, a, ev("overtime"));
   assert.equal(a.stats.sanity, CONFIG.personality.sanityFloor);
   a.stats.sanity = 99;
   playTraitEvent(state, a, ev("slack"));
