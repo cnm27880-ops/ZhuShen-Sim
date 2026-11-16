@@ -12,7 +12,10 @@ import { appointCaptain } from "../src/engine/squad.js";
 import { getRel } from "../src/engine/relations.js";
 
 const SAVE = JSON.stringify(CONFIG.tension);
-beforeEach(() => Object.assign(CONFIG.tension, JSON.parse(SAVE)));
+beforeEach(() => {
+  Object.assign(CONFIG.tension, JSON.parse(SAVE));
+  CONFIG.tension.baseChance = 0.001; // 倍率測試用低基礎機率，避免頂到 maxChance（正式值見 config.js）
+});
 afterEach(() => Object.assign(CONFIG.tension, JSON.parse(SAVE)));
 
 const NEUTRAL = () => ({ altruism: 0, ambition: 0, courage: 0, social: 0, obedience: 0 });
@@ -99,7 +102,8 @@ test("產生率：上限 maxChance", () => {
   rel(state, b, a, { hate: 100, status: "nemesis" });
   a.grudge = b.grudge = 100;
   a.stats.sanity = 0;
-  assert.equal(pairProfile(state, a, b).p, CONFIG.tension.maxChance);
+  CONFIG.tension.maxChance = 0.05;
+  assert.equal(pairProfile(state, a, b).p, 0.05);
 });
 
 test("個性：野心對野心＝爭功奪位；利他對利己＝吃虧不平（A 是吃虧的人）；不服隊長＝對隊長不滿", () => {

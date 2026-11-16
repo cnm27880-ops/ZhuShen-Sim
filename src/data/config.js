@@ -392,7 +392,7 @@ export const CONFIG = {
   // 以下全部是暫定值，需 sim 校正（--bot=idle／casual／full × --roster 掃描）。
   tension: {
     enabled: true,
-    baseChance: 0.0015, // 一對中性關係的人，每天產生張力事件的基礎機率
+    baseChance: 0.03, // 一對中性關係的人，每天產生張力事件的基礎機率（sim 校準：n=6 約每 20 天一件、n=24 約每天 0.7 件，讓 attention k=1 在大名冊忙不過來、k=3 勉強夠用）
     maxChance: 0.12, // 單一對每天機率上限
     hateMult: { dislike: 4, hate: 8, nemesis: 12 }, // 任一方向仇恨 >= 討厭線／仇恨線／死敵
     negAffinityMult: 2, // 雙向淨好感都 < 0

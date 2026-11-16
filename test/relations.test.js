@@ -3,6 +3,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { CONFIG } from "../src/data/config.js";
+
+CONFIG.tension.enabled = false; // 這個檔案測既有的關係系統；無人看管的長時間模擬會被人際張力拆散（A-3 階段 2，見 test/tension.test.js），所以整個檔案關閉
 import { getDungeon } from "../src/data/dungeons.js";
 import { SOCIAL_EVENTS, SCHEMES } from "../src/data/relations.js";
 import { createNewGame, createSamsarite, setInjury, advanceTick, recycle, serialize, deserialize } from "../src/engine/core.js";

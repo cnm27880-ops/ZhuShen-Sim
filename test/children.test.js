@@ -9,6 +9,8 @@ import { dailyNursery, giveBirth, podBabies, podCost } from "../src/engine/child
 import { tryAutoDispatch } from "../src/engine/dispatch.js";
 import { startRun } from "../src/engine/dungeon.js";
 
+CONFIG.tension.enabled = false; // 這個檔案測生小孩；無人看管的長時間模擬會被人際張力拆散（A-3 階段 2，見 test/tension.test.js），所以整個檔案關閉
+
 const C = () => CONFIG.child;
 
 /** 一對戀人／靈魂伴侶，都在主神空間 */
