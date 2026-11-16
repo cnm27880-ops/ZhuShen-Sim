@@ -240,7 +240,7 @@ test("侵蝕出征：有效 R 被放大；成功通關固定掉 k 顆侵蝕結�
 
 test("自動挑戰侵蝕：只在主線卡關／全通後才接手，挑可安全吃下的最高星級；開關關掉就不碰", () => {
   const state = setup(4, { level: 4 });
-  state.samsarites.forEach((s) => (s.stats.power = 3000));
+  state.samsarites.forEach((s) => (s.stats.power = 9000)); // A1 把第 2、3 章一般關 R 抬高（×2.5／×3.4），隊伍戰力跟著調高
   for (const d of DUNGEONS.filter((x) => x.chapter <= 3)) state.dungeonStats[d.id] = { attempts: 5, clears: 5, intel: 0.09 }; // 第 1～3 章全首通過
   state.board.slots = []; // 任務榜清空：最前線第 4 章沒有可打的槽 = 主線卡關
   state.autoStrategy = "off";
