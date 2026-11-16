@@ -146,7 +146,8 @@ test("條件不符不發生：沒錢給、沒有對象、隊長當主角不會�
   state.spaceLevel = 2;
   appointCaptain(state, a.id, true);
   b.wallet = 100;
-  assert.equal(playTraitEvent(state, a, ev("fee")).ok, false);
+  const hateEv = { ...ev("fee"), fx: { take: 8, targetHate: 2 } }; // 目前資料表沒有結仇事件，用自訂事件驗證守則
+  assert.equal(playTraitEvent(state, a, hateEv).ok, false);
   assert.equal(playTraitEvent(state, b, ev("scheme")).ok, false); // 唯一的其他人是隊長，被排除
 });
 
