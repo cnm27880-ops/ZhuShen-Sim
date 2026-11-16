@@ -2,7 +2,7 @@
 // 不掛在每個扣血／扣理智的地方（呼叫點太多），而是每一步掃一次名冊；
 // 每人每種警報只在「剛跨過門檻」時提醒一次，恢復到門檻之外才會重新武裝（旗標存在輪迴者身上，舊存檔沒有就當 false）。
 
-import { ALERT_LEVELS, INJURIES } from "../data/config.js";
+import { ALERT_LEVELS, INJURIES, CONFIG } from "../data/config.js";
 import { emit } from "./core.js";
 import { addLifeOnce } from "./life.js";
 import { logText } from "./templates.js";
@@ -18,5 +18,10 @@ export function checkAlerts(state) {
     const low = s.stats.sanity < ALERT_LEVELS.lowSanity;
     if (low && !s.alertSanity) emit(state, "lowSanity", logText(state, "lowSanity", { A: s, san: Math.round(s.stats.sanity) }));
     s.alertSanity = low;
+    // 怨氣警報（A-3 階段 2）：跨過警戒線提醒一次，降到重新武裝線以下才會再提醒
+    const g = s.grudge ?? 0;
+    if (g >= CONFIG.tension.warnAt && !s.alertGrudge) emit(state, "grudge", logText(state, "grudgeWarn", { A: s, grudge: Math.round(g) }));
+    if (g >= CONFIG.tension.warnAt) s.alertGrudge = true;
+    else if (g < CONFIG.tension.rearmAt) s.alertGrudge = false;
   }
 }
