@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 import { CONFIG, RANKS } from "../src/data/config.js";
 import { createNewGame, createSamsarite, upkeepOf, upkeepPartsOf, setInjury, recycle, endOfDay, dailyAirdrop, serialize, deserialize } from "../src/engine/core.js";
 
+CONFIG.airdrop.enabled = true; // A-3：空投預設已停用；這個檔案測的是保留的舊機制，所以打開（各測試檔是獨立行程，不影響別的檔案）
+
 function setup(n, rank = "C", points = 1000, seed = 5) {
   const state = createNewGame(seed);
   state.samsarites = [];

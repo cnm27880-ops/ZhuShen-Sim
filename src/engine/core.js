@@ -31,6 +31,7 @@ import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, commun
 import { addLife, addLifeOnce, bioOf, compactBio } from "./life.js"; // 人物傳記（功能 5；循環引用只在執行時呼叫）
 import { newFacilities, dailyFacilities, refreshFacilityBonus, gravityPct, podsHeal, restSanityBonus } from "./facilities.js"; // 同上（Phase 4-F-3 永久基建）
 import { newRivalState, dailyRivals } from "./rivals.js"; // 同上（Phase 4-F-1／2 洲際宿敵團戰）
+import { newEndingState, endingOf, dailyEnding, checkRosterEnding } from "./ending.js"; // 團滅結局與評分（A-3）；同樣是循環引用，只在執行時呼叫
 import { dailyRelations } from "./relations.js"; // 注意：relations.js 也會 import 這個檔案，只要不在載入時就呼叫，循環引用沒問題
 
 // ───────── 事件與日誌 ─────────
@@ -84,7 +85,8 @@ export function createNewGame(seed = freshSeed()) {
     nextWishId: 1,
     nursery: newNurseryState(seed), // 生小孩：獨立亂數流（見 engine/children.js）
     mandatory: newMandatoryState(seed), // 主神強制血腥任務：計時與待派任務（見 engine/mandatory.js）
-    airdrop: newAirdropState(seed), // 絕境空投：連續天數與獨立亂數流（見下方 dailyAirdrop）
+    airdrop: newAirdropState(seed), // 絕境空投：連續天數與獨立亂數流（見下方 dailyAirdrop；A-3 起預設停用）
+    ending: newEndingState(seed), // 團滅結局：破產天數、新手救濟、評分紀錄（見 engine/ending.js）
     sanity: newSanityState(seed), // 理智暴走：獨立亂數流（見 engine/sanity.js）
     levy: newLevyState(seed), // 強徵私房錢：冷卻與拒繳亂數流（見 engine/levy.js）
     trait: newTraitState(seed), // 個性事件：獨立亂數流（見 engine/traitEvents.js）
@@ -388,6 +390,7 @@ export function endOfDay(state) {
       emit(state, "shock", logText(state, "shockOne", { A: victim, san: CONFIG.debtShockSanity }));
     }
   }
+  dailyEnding(state); // 破產結局計數與評分用的峰值紀錄（A-3）
 }
 
 // ───────── 絕境空投（Phase 4-C-3）─────────
@@ -400,6 +403,7 @@ export function newAirdropState(seed = 0) {
 export function dailyAirdrop(state) {
   const ad = (state.airdrop ??= newAirdropState(state.rngState));
   const cfg = CONFIG.airdrop;
+  if (!cfg.enabled) return null; // A-3：空投預設停用（程式保留，之後想復活只要把 enabled 打開）
   const alive = state.samsarites.filter((s) => s.location !== "pod").length;
   if (state.gameOver || alive >= cfg.minAlive || state.points >= cfg.pointsBelow) {
     ad.days = 0;
@@ -571,20 +575,12 @@ export function advanceTick(state, beforeMandatory = null) {
   }
 }
 
-/** 沒人可用、又抽不起最便宜的卡池 = 遊戲結束（4-C-6 起空投開著時由空投救援，不會結束，見 CONFIG.airdrop.rescue） */
+/** 遊戲結束判定（A-3 起見 engine/ending.js）：名冊（不含催熟艙）死光又抽不起最便宜的卡池 = 結束；保護期內第一次死光改發新手救濟。
+ *  破產結局另由每日結算的 dailyEnding 處理。CONFIG.airdrop.rescue 打開時維持舊行為（不因死光結束） */
 export function checkGameOver(state) {
   if (state.gameOver) return true;
-  // 用「基礎價」判斷（不含本週漲價）：沒人時沒有維持費，等到下週重置價格就回來了，不算卡死
-  const cheapest = Math.min(
-    ...CONFIG.gacha.pools
-      .filter((p) => p.spaceLevel <= (state.spaceLevel ?? 1) && p.crystal <= (state.karmaCrystals ?? 0))
-      .map((p) => p.base)
-  );
-  if (state.samsarites.length === 0 && !canAfford(state, cheapest) && !CONFIG.airdrop.rescue) {
-    state.gameOver = true;
-    emit(state, "gameOver", logText(state, "gameOver"));
-  }
-  return state.gameOver;
+  if (CONFIG.airdrop.rescue) return false;
+  return checkRosterEnding(state);
 }
 
 // ───────── 存檔 ─────────
@@ -645,6 +641,7 @@ export function deserialize(json) {
   refreshSteleBonus(state);
   state.mandatory ??= newMandatoryState(state.rngState); // 舊存檔沒有強制任務欄位（Phase 4-C-4）
   state.airdrop ??= newAirdropState(state.rngState); // 舊存檔沒有絕境空投欄位（Phase 4-C-3）
+  endingOf(state); // 舊存檔沒有團滅結局欄位（A-3）：補預設
   state.sanity ??= newSanityState(state.rngState); // 舊存檔沒有理智暴走欄位（Phase 4-C-2）
   state.levy ??= newLevyState(state.rngState); // 舊存檔沒有強徵欄位
   state.trait ??= newTraitState(state.rngState); // 舊存檔沒有個性事件欄位

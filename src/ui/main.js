@@ -102,7 +102,7 @@ let timer = null;
 let modal = null; // 目前開著的彈出視窗：{ name, ...參數 }
 let bannerText = "";
 const minis = new Map(); // 輪迴者 id → { el, room }
-let dismissed = { wish: false, god: false }; // #3：玩家手動關掉許願／主神搞事彈窗後，不再自動以強制版重開（直到那批事件處理完）
+let dismissed = { wish: false, god: false, gameOver: false }; // #3：玩家手動關掉許願／主神搞事彈窗後，不再自動以強制版重開（直到那批事件處理完）
 let resumeAfterReports = null; // #4：副本結算彈窗之前的暫停狀態，關掉最後一場結算時還原
 let dispatchHint = ""; // 派遣畫面的無效點擊提示（放假／休眠艙／鎖定／滿員／未解鎖），下一次有效操作或重新開窗時清掉
 const dispatchPick = { dungeonId: null, slotId: null, party: new Set(), greedy: false, erosion: 0 }; // slotId：任務榜的槽（尾王／指定任務／強制任務為 null）
@@ -167,7 +167,10 @@ function afterChange() {
   for (const ev of state.events.splice(0)) {
     popEvents.push(ev);
     if (ev.type === "dayEnd") saveGame();
-    if (ev.type === "gameOver") modal = { name: "gameOver" };
+    if (ev.type === "gameOver") {
+      modal = { name: "gameOver" };
+      dismissed.gameOver = true;
+    }
     const masterOff = state.settings.autoPause === false && (ev.type === "rival" || ev.type === "mandatory"); // 洲際碰撞預警與強制任務提醒受「自動暫停」總開關控制（4-F-1）
     if (state.settings.pauseOn[ev.type] && !masterOff) {
       if (ev.type === "runEnd" && resumeAfterReports === null) resumeAfterReports = state.settings.paused;
@@ -181,6 +184,11 @@ function afterChange() {
     state.settings.guideSeen = true;
     modal = { name: "guide" };
     saveGame();
+  }
+  // 讀到已經結局的存檔（重新整理後）：補彈一次結局視窗看評分；關掉後不再自動重開
+  if (state.gameOver && !modal && !dismissed.gameOver) {
+    dismissed.gameOver = true;
+    modal = { name: "gameOver" };
   }
   // 副本結算視窗排隊：一次只彈一個，關掉後若還有就接著彈（含重新整理讀檔後還沒看的）。關掉「副本結算」暫停就不彈、清掉佇列
   if (!state.settings.pauseOn.runEnd) state.runReports.length = 0;
@@ -1869,8 +1877,13 @@ function guide() {
 }
 
 function gameOver() {
+  const r = state.ending?.result;
+  const reason = r?.type === "debt" ? "公庫觸底、債務壓到破產線，主神的耐心用完了。" : "手下沒有任何輪迴者，連最便宜的抽卡都付不起。";
+  const rows = (r?.items ?? []).map((it) => `<tr><td>${esc(it.label)}（${esc(it.value)}）</td><td><b>+${esc(it.points)}</b></td></tr>`).join("");
   return `<h3>🕳️ 你被主神換掉了</h3>
-    <p>手下沒有任何輪迴者，也借不到積分。撐了 ${currentDay(state)} 天，送走了 ${state.graveyard.length} 個人。</p>
+    <p>${reason}撐了 ${currentDay(state)} 天，送走了 ${state.graveyard.length} 個人。</p>
+    ${r ? `<p>結局評分：<b>${esc(r.total)}</b>・稱號「${esc(r.title)}」</p>
+    <table class="stats"><tbody>${rows}</tbody></table>` : ""}
     <div class="modal-actions"><button class="primary" data-action="reset-game">重新開始</button></div>`;
 }
 
@@ -2491,7 +2504,7 @@ const actions = {
     dispatchPick.erosion = 0;
     peekRunId = null;
     dispatchHint = "";
-    dismissed = { wish: false, god: false };
+    dismissed = { wish: false, god: false, gameOver: false };
     resumeAfterReports = null;
   },
 };
