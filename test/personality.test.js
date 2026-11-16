@@ -171,7 +171,7 @@ test("對隊長的好感永遠不受個性事件影響", () => {
 test("扣理智不會低於安全線（不會誘發暴走），也不會超過 100", () => {
   const { state, people: [a] } = setup(1, 37);
   a.stats.sanity = 2;
-  playTraitEvent(state, a, ev("overtime"));
+  playTraitEvent(state, a, { ...ev("slack"), fx: { sanity: -5 } }); // 目前沒有扣理智的事件，用自訂事件驗證下限
   assert.equal(a.stats.sanity, CONFIG.personality.sanityFloor);
   a.stats.sanity = 99;
   playTraitEvent(state, a, ev("slack"));
