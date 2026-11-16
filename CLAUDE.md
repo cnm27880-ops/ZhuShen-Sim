@@ -65,6 +65,7 @@
 | `src/engine/core.js` | 狀態（含 `state.god`、`state.spaceLevel`、`state.chapterClearDay`）、輪迴者、維持費 `upkeepOf(s, state)`（跟空間等級走）、破產線 `debtLimitOf(state)`、傷勢、高利貸、回收爐、抽卡、時間 tick、存檔、遊戲結束判定；`spend()` 累積花費並宣布商店解鎖、`shopTier()` 算階層；Phase 4-B：輪迴者新欄位 `geneLock`／`enhanceCount`／`insightCount`／`inheritPower`、`state.karmaCrystals`／`gacha`／`growth`／`chapterClears`；四池抽卡 `pullGacha`／`checkGacha`／`gachaInfo`（空間等級解鎖、每 7 天重置本週漲價、獨立保底、神級池耗結晶；週數由天數算出，所以讀檔不會錯）；`deserialize` 補新欄位並清掉舊 `upgrades`／`bought`（不退費） |；**4-D**：`state.taxRate`／`squad`（預留）／`market`／`aiShopRngState`／`board`／`relicCodex`，輪迴者新欄位 `wallet`／`soulbound`／`consumables`／`runBuff`／`lockedInPodBy`／`podLockDays`／`shopLog`／`customProfile`／`relicBonus`；`spend`（公庫）／`spendWallet`（私房錢）／`addSpent` 都累加 `totalSpent`；`endOfDay` 掛稅率理智、休眠艙倒數、`dailyShopping`；`deserialize` 遷移舊副本 id 並補新欄位
 | `src/engine/shop.js` | 商店引擎：`buyItem`／`checkBuy`（`opts.payer` = treasury 公庫賞賜〔綁定＋理智 +5〕或 wallet 私房錢〔不綁定、不覆蓋綁定裝備〕；`opts.source` = shop／market；黑貨帶 `victimId`）、`consumeRunBuffs`（出征耗材轉單場 `runBuff`）、`nextTierInfo`；`collectionEffects`／`collectionPassBonus` |
 | `src/engine/shop.js`（抗藥性補充） | **常駐藥抗藥性**：`doseMult(state, s, "heal"|"sanity")`、`recentDoses`、`recordDose`（私有）；`applyUse` 對常駐即用藥（`kind use` 且 `isPermanent`）套用，同一人、同一類藥（治傷／回理智分開算，換高階藥也算同類）在滾動 7 天內用越多次越差，倍率 100%／50%／25%／10%，全癒藥視為最多 3 級；紀錄在 `s.dosage = { heal: [使用日], sanity: [使用日] }`（用到才建立，舊存檔免補）；黑市貨與永久加生命不受影響；逛街 AI（`shopping.js emergency`）與倉庫一鍵批量使用（`inventory.js useStockMany`）在倍率 < `minBuyMult`（0.5）時不買／不用；物資面板顯示「抗藥性：效果 N%」。數字在 `CONFIG.shop.tolerance`。 |
+| `src/engine/levy.js` | **強徵私房錢**（主管壓榨輪迴者，露葵 2026-11 拍板：手動、有拒繳、**不做自動強徵**）：`levyWallets(state, tierId)`／`checkLevy`／`levyPreview`（不吃亂數）／`refuseChance`／`dueOf`／`reserveOf`；三檔 溫和 20%／強硬 40%／搜刮 70%（只收「保命底線」以上，底線 = max(50, 3 天維持費)），錢 100% 進公庫、**不計入考核營收**；付款者理智下降、對隊長淨好感下降（搜刮檔另讓全員「不爽」5 天）；冷卻 7／14／21 天（全檔位共用）；**拒繳**：基礎 5／15／30%，低理智 +10%（<30 則 +20%）、有戀人 +10%、穿綁定裝備 +10%、對隊長淨好感 < 0 +10%，上限 90%，隊長不拒繳；拒繳者不付錢但對隊長好感多扣 5（餵給叛逃／私奔規則）；`state.levy = { rngState, cooldownUntilDay, count, collected, refusals }`（獨立亂數流）；面板 `強徵`（更多選單），數字在 `CONFIG.levy`，日誌句 `levyDone`／`levyRefuse`。**暫定值需露葵驗證**；sim 機器人不會強徵。 |
 | `src/engine/wallet.js` | 雙錢包（4-D-1）：`distributeLoot`（稅入公庫、其餘存活隊員平分私房錢，可傳 `opts.rate` 給 4-E 覆寫）、`setTaxRate`、`taxSanityDaily`、`forfeitWallet`（戰死 50%／回收 100% 歸公庫） |
 | `src/engine/market.js` | 8 格分槽黑市（4-D-2）：`refreshMarket`／`dailyMarket`（每 3 天）／`manualRefresh`（公庫付、同日遞增）／`lockSlot`（上限 1）／`slotPrice`（情報滿格 85 折）／`buyMarketSlot`／`marketInfo`；獨立亂數流 `state.market.rngState`（任務榜與突變抽樣共用） |
 | `src/engine/shopping.js` | 輪迴者自主逛街 AI（4-D-3）：`dailyShopping`（保命→換裝→自費強化／開基因鎖〔留 20% 備用金〕→性格偏好與 15% 偷買黑貨）；獨立亂數流 `state.aiShopRngState`（`aiRng` 包裝） |
@@ -193,12 +194,12 @@
 npm test
 ```
 
-489 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
+499 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
 
 ## 不可違反的規則
 
 1. 這是獨立專案，與舊 AI-TRPG 專案無關；舊專案的規則（六維十技能、Prompt 快取契約等）不適用。
-2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，489 項都要通過。
+2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，499 項都要通過。
 3. 所有可調數字都要放在 `src/data/config.js`，不要寫死在引擎裡。
 4. 引擎不要碰 DOM，畫面邏輯不要寫進引擎。
 5. 機密（Token、金鑰）永遠不能進 git。
@@ -208,7 +209,7 @@ npm test
 - 推上 `main` ＝ Cloudflare Workers 自動建置並執行 `npx wrangler deploy`（建置指令留空、根目錄 `/`，後台設定不要改）。合併前先確認 `npm test` 都過。
 - `wrangler.jsonc`：assets 目錄是專案根目錄，所以 `.assetsignore` 負責把 `worker/`、`test/`、`docs/`、`CLAUDE.md` 等非網站內容擋掉；**新增遊戲需要的檔案時不要被它誤擋**（`index.html`、`styles.css`、`src/` 必須能被讀到）。`keep_vars: true` 讓後台填的 `GOOGLE_CLIENT_ID`／`PUBLIC_ORIGIN` 不會被部署洗掉；`GOOGLE_CLIENT_SECRET` 只能在後台用 Secret 類型填，**不進 git**。
 - 本機完整預覽（真的 Worker＋本機 D1，不用 Cloudflare 帳號）：`npx wrangler d1 execute zhushen-sim --local --file worker/schema.sql`，然後 `npx wrangler dev --port 8799`。
-- 部署前確認 `npm test` 489 項全過。
+- 部署前確認 `npm test` 499 項全過。
 
 ## 開發階段（現在不要做，除非我明確要求）
 
