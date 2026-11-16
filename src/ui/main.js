@@ -42,6 +42,7 @@ import { facilityInfo, upgradeFacility, facilityTotal } from "../engine/faciliti
 import { buildGossip } from "../engine/gossip.js";
 import { applyAutoMode, currentAutoMode } from "../engine/autoMode.js";
 import { bioOf, graveBio } from "../engine/life.js";
+import { traitProfile } from "../engine/personality.js";
 import { transferGear } from "../engine/gearTransfer.js";
 import { stockableItems, stockList, stockCount, stockTargets, buyStock, useStock, useStockMany, checkBuyStock, needKinds } from "../engine/inventory.js";
 import { doseMult } from "../engine/shop.js";
@@ -1212,6 +1213,16 @@ const SLOT_RULE = {
 };
 
 /** 人物檔案頁（功能 5，2026-11 改版）。s 有值 = 還活著；null = 墓園裡的人（只看，附復活入口） */
+/** 性格側寫區塊：只顯示事件揭露過的句子與原型名稱，永遠不顯示數字（個性系統 v1a） */
+function traitSection(s) {
+  const p = traitProfile(s);
+  const head = p.archetype ? `<b>${esc(p.archetype)}</b>` : `<span class="muted">尚未看透（再多觀察 ${Math.max(0, p.need - p.seen.length)} 次就能下定論）</span>`;
+  const rows = p.seen.length
+    ? p.seen.map((e) => `<div class="bio-event"><span class="bio-day">第 ${e.day} 天</span><span>${esc(e.text)}</span></div>`).join("")
+    : `<div class="muted">（還沒有觀察到明顯的性格特徵）</div>`;
+  return `<section class="bio-sec"><h4>🧠 性格側寫</h4><div>原型：${head}</div><div class="bio-timeline">${rows}</div></section>`;
+}
+
 function bioCard(b, s) {
   const rel = b.relations;
   const relRows = [
@@ -1292,6 +1303,7 @@ function bioCard(b, s) {
     ${modal.note ? `<div class="summary">${modal.note}</div>` : ""}
     ${ops}
     <section class="bio-sec"><h4>💞 關係</h4><div class="bio-rel">${relRows.join("")}</div></section>
+    ${s ? traitSection(s) : ""}
     <section class="bio-sec"><h4>📜 一生大事記</h4><div class="bio-timeline">${timeline}</div></section>
     <section class="bio-sec"><h4>👶 子女與血脈</h4><div>${b.parentNames.length ? `父母：${b.parentNames.join("、")}<br />` : ""}子女：${kids}</div></section>
     <section class="bio-sec"><h4>🏆 成就</h4><div class="bio-achs">${ach}</div></section>

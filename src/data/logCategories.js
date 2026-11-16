@@ -19,7 +19,7 @@ export const TYPE_CATEGORY = {
   // 狗血劇情：陰謀、狗血引擎（熱血羈絆／派系摩擦／修羅場）、衝突、小隊權力鬥爭
   // （social 日常互動與 relation 關係日常歸日常，2-1：不然狗血篩選會被泡麵與火鍋洗掉修羅場）
   scheme: "drama", drama: "drama", clash: "drama", squad: "drama",
-  social: "daily", relation: "daily",
+  social: "daily", relation: "daily", trait: "daily",
   // 戰鬥：副本過程與結算、受傷
   runStart: "battle", runParallel: "battle", runEnd: "battle", roomPass: "battle", roomFail: "battle", injury: "battle", injurySevere: "battle",
   dodge: "battle", mutation: "battle", env: "battle", greedy: "battle", erosion: "battle", rival: "battle", karma: "battle", relic: "battle",
