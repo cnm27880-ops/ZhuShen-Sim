@@ -65,6 +65,7 @@ if (args.growcost) {
   for (const t of CONFIG.enhance.costTiers) t.cost = Math.round(t.cost * args.growcost);
   for (const p of CONFIG.gacha.pools) { p.base = Math.round(p.base * args.growcost); p.step = Math.round(p.step * args.growcost); }
 }
+if (args.traitChance !== undefined) CONFIG.personality.eventChance = args.traitChance; // --traitChance=0：關閉個性事件（個性系統對照）
 if (args.minClear) CONFIG.auto.minClearChance = args.minClear;
 if (args.mpower) CONFIG.forcedMission.powerMult = args.mpower;
 const TAX = args.tax ?? CONFIG.tax.default; // --tax=0.4：公庫稅率
