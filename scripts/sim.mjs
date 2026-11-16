@@ -65,6 +65,7 @@ if (args.growcost) {
   for (const t of CONFIG.enhance.costTiers) t.cost = Math.round(t.cost * args.growcost);
   for (const p of CONFIG.gacha.pools) { p.base = Math.round(p.base * args.growcost); p.step = Math.round(p.step * args.growcost); }
 }
+if (args.traitChance !== undefined) CONFIG.personality.eventChance = args.traitChance; // --traitChance=0：關閉個性事件（個性系統對照）
 if (args.minClear) CONFIG.auto.minClearChance = args.minClear;
 if (args.mpower) CONFIG.forcedMission.powerMult = args.mpower;
 const TAX = args.tax ?? CONFIG.tax.default; // --tax=0.4：公庫稅率
@@ -183,6 +184,7 @@ function playOne(seed) {
   let seenReport = null;
   const byChapter = {}; // { 章: { runs, wins, deaths } }
   const rivalRuns = { runs: 0, wins: 0, deaths: 0 }; // 洲際碰撞（4-F）
+  let traitEvents = 0; // 個性事件次數（個性系統 v1a，只記錄）
   const eroRuns = { runs: 0, wins: 0 }; // 位面侵蝕出征
   const mand = { runs: 0, wins: 0, deaths: 0 }; // 強制任務
   const styleDays = {}; // 每個流派在位的天數（4-E-6）
@@ -235,6 +237,7 @@ function playOne(seed) {
       income += r.reward;
     }
     seenReport = state.lastRun;
+    for (const ev of state.events) if (ev.type === "trait") traitEvents += 1;
     state.events.length = 0; // 模擬不看畫面事件，順手清掉避免越積越多
     if (seed === TRACE && state.tick % (CONFIG.ticksPerDay * 10) === 0) {
       const who = alive(state).map((s) => `${s.rank}${s.geneLock}g${s.enhanceCount}e${s.insightCount}i/${effectivePower(s)}${s.location === "dungeon" ? "⚔" : s.injury ? "🩹" : ""}`).join(" ");
@@ -251,6 +254,7 @@ function playOne(seed) {
     purged: state.graveyard.filter((g) => g.cause.includes("抹殺")).length, // 被主神抹殺（強制任務逾期等）
     mand,
     rivalRuns,
+    traitEvents,
     eroRuns,
     facilities: { ...state.facilities },
     erosionLeft: state.erosionCrystals ?? 0,
@@ -366,6 +370,7 @@ for (let ch = 1; ch <= 5; ch++) {
   const fl = (id) => avg(results.map((r) => r.facilities[id]));
   console.log(`\n基建（4-F-3，${SIM_FACILITIES ? "自動建設開" : "關"}）期末平均等級：重力 ${fl("gravity")}／10・溫養艙 ${fl("pods")}／10・共鳴碑 ${fl("stele")}／10・育嬰堂 ${fl("nursery")}／5・觀測樞 ${fl("radar")}／5`);
   console.log(`位面侵蝕（${SIM_EROSION ? "自動挑戰開" : "關"}，每局平均）：出征 ${avg(results.map((r) => r.eroRuns.runs))} 場 / 通關 ${avg(results.map((r) => r.eroRuns.wins))} 場・最高星級均值 ${avg(results.map((r) => r.maxErosion))}★・期末剩餘侵蝕結晶 ${avg(results.map((r) => r.erosionLeft))}`);
+  console.log(`個性事件（每局平均）：${avg(results.map((r) => r.traitEvents))} 次`);
   const rr = results.reduce((n, r) => n + r.rivalRuns.runs, 0);
   console.log(`洲際碰撞（每局平均）：出征 ${(rr / SEEDS).toFixed(1)} 場 / 勝率 ${rr ? Math.round((results.reduce((n, r) => n + r.rivalRuns.wins, 0) / rr) * 100) : 0}% / 戰死 ${avg(results.map((r) => r.rivalRuns.deaths))} 人・私奔 ${sumR("elopes").toFixed(2)}・反拐 ${sumR("counters").toFixed(2)}・混血子嗣 ${sumR("hybrids").toFixed(2)}・肉豬策反 ${sumR("revolts").toFixed(2)}`);
 }

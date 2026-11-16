@@ -65,6 +65,8 @@
 | `src/engine/core.js` | 狀態（含 `state.god`、`state.spaceLevel`、`state.chapterClearDay`）、輪迴者、維持費 `upkeepOf(s, state)`（跟空間等級走）、破產線 `debtLimitOf(state)`、傷勢、高利貸、回收爐、抽卡、時間 tick、存檔、遊戲結束判定；`spend()` 累積花費並宣布商店解鎖、`shopTier()` 算階層；Phase 4-B：輪迴者新欄位 `geneLock`／`enhanceCount`／`insightCount`／`inheritPower`、`state.karmaCrystals`／`gacha`／`growth`／`chapterClears`；四池抽卡 `pullGacha`／`checkGacha`／`gachaInfo`（空間等級解鎖、每 7 天重置本週漲價、獨立保底、神級池耗結晶；週數由天數算出，所以讀檔不會錯）；`deserialize` 補新欄位並清掉舊 `upgrades`／`bought`（不退費） |；**4-D**：`state.taxRate`／`squad`（預留）／`market`／`aiShopRngState`／`board`／`relicCodex`，輪迴者新欄位 `wallet`／`soulbound`／`consumables`／`runBuff`／`lockedInPodBy`／`podLockDays`／`shopLog`／`customProfile`／`relicBonus`；`spend`（公庫）／`spendWallet`（私房錢）／`addSpent` 都累加 `totalSpent`；`endOfDay` 掛稅率理智、休眠艙倒數、`dailyShopping`；`deserialize` 遷移舊副本 id 並補新欄位
 | `src/engine/shop.js` | 商店引擎：`buyItem`／`checkBuy`（`opts.payer` = treasury 公庫賞賜〔綁定＋理智 +5〕或 wallet 私房錢〔不綁定、不覆蓋綁定裝備〕；`opts.source` = shop／market；黑貨帶 `victimId`）、`consumeRunBuffs`（出征耗材轉單場 `runBuff`）、`nextTierInfo`；`collectionEffects`／`collectionPassBonus` |
 | `src/engine/shop.js`（抗藥性補充） | **常駐藥抗藥性**：`doseMult(state, s, "heal"|"sanity")`、`recentDoses`、`recordDose`（私有）；`applyUse` 對常駐即用藥（`kind use` 且 `isPermanent`）套用，同一人、同一類藥（治傷／回理智分開算，換高階藥也算同類）在滾動 7 天內用越多次越差，倍率 100%／50%／25%／10%，全癒藥視為最多 3 級；紀錄在 `s.dosage = { heal: [使用日], sanity: [使用日] }`（用到才建立，舊存檔免補）；黑市貨與永久加生命不受影響；逛街 AI（`shopping.js emergency`）與倉庫一鍵批量使用（`inventory.js useStockMany`）在倍率 < `minBuyMult`（0.5）時不買／不用；物資面板顯示「抗藥性：效果 N%」。數字在 `CONFIG.shop.tolerance`。 |
+| `src/data/personality.js`、`src/data/traitEvents.js` | **輪迴者個性系統 v1a（資料）**：`personality.js` 五條隱藏維度（利他度 altruism／野心 ambition／膽識 courage／合群度 social／順從度 obedience，-100～+100）的名稱、10 個單軸原型名 `ARCHETYPES`、每軸每端 3 句側寫 `PROFILE_LINES`、詞條偏移表 `TAG_TRAIT_BIAS`（恐怖片作死專家膽識 +25、背刺成癮者利他 -25 等 6 個，`CONFIG.personality.tagBias` 設 0 關閉）；`traitEvents.js` 10 個單人事件（每軸兩端各 1，欄位 axis／sign／target／fx，效果都很小），日誌句在 logs.js 的 `trait_*` |
+| `src/engine/personality.js`、`src/engine/traitEvents.js` | **個性引擎 v1a**：`rollTraits`（種子＋id＋軸名雜湊，四個均勻值相加近似常態、標準差 28，不吃任何亂數流；`state.seed` 為 null 的舊存檔用固定字串）、`ensureTraits`（deserialize 補欄位）、`archetypeOf`（揭露 ≥3 次側寫才給原型，最大軸絕對值 <40 是「普通人」）、`traitProfile`（給畫面，只有側寫句與原型、**永遠沒有數字**）；`dailyTraits`（日結最後掛鉤；每個留守者每天固定擲 1 次，機率 3%，個人冷卻 10 天、同事件 20 天；該軸 |分數| ≥40 才發生；獨立亂數流 `state.trait.rngState`）、`playTraitEvent`（效果：理智 ±1～2〔不扣到 1 以下〕、小額私房錢轉移、對象「對他」的好感／仇恨；**不動戰力、不動對隊長的好感**，隊長當主角時不發生會結仇的事件，對象一律排除隊長）；揭露＝`s.traitSeen` 加一筆並寫進一生大事記；新欄位 `s.traits`／`traitSeen`／`traitEventLast`、`state.trait`；數字全在 `CONFIG.personality`；測試 `test/personality.test.js` |
 | `src/engine/levy.js` | **強徵私房錢**（主管壓榨輪迴者，露葵 2026-11 拍板：手動、有拒繳、**不做自動強徵**）：`levyWallets(state, tierId)`／`checkLevy`／`levyPreview`（不吃亂數）／`refuseChance`／`dueOf`／`reserveOf`；三檔 溫和 20%／強硬 40%／搜刮 70%（只收「保命底線」以上，底線 = max(50, 3 天維持費)），錢 100% 進公庫、**不計入考核營收**；付款者理智下降、對隊長淨好感下降（搜刮檔另讓全員「不爽」5 天）；冷卻 7／14／21 天（全檔位共用）；**拒繳**：基礎 5／15／30%，低理智 +10%（<30 則 +20%）、有戀人 +10%、穿綁定裝備 +10%、對隊長淨好感 < 0 +10%，上限 90%，隊長不拒繳；拒繳者不付錢但對隊長好感多扣 5（餵給叛逃／私奔規則）；`state.levy = { rngState, cooldownUntilDay, count, collected, refusals }`（獨立亂數流）；面板 `強徵`（更多選單），數字在 `CONFIG.levy`，日誌句 `levyDone`／`levyRefuse`。**暫定值需露葵驗證**；sim 機器人不會強徵。 |
 | `src/engine/wallet.js` | 雙錢包（4-D-1）：`distributeLoot`（稅入公庫、其餘存活隊員平分私房錢，可傳 `opts.rate` 給 4-E 覆寫）、`setTaxRate`、`taxSanityDaily`、`forfeitWallet`（戰死 50%／回收 100% 歸公庫） |
 | `src/engine/market.js` | 8 格分槽黑市（4-D-2）：`refreshMarket`／`dailyMarket`（每 3 天）／`manualRefresh`（公庫付、同日遞增）／`lockSlot`（上限 1）／`slotPrice`（情報滿格 85 折）／`buyMarketSlot`／`marketInfo`；獨立亂數流 `state.market.rngState`（任務榜與突變抽樣共用） |
@@ -182,6 +184,8 @@
 
 - **抗藥性（2026-11，露葵選方案 B）**：避免後期靠低價常駐藥無限回血回理智（藥價不跟公庫成長，沒有緊迫感）。sim（20 組種子 × 900 天）：每局死亡人數約 34.5 → 35.0、遊戲結束 0%、第 1 章尾王首通 Day 30～35。**注意**：sim 機器人本身不用藥，這個機制只影響輪迴者逛街 AI；玩家手動／倉庫用藥才是主要受眾，需露葵試玩驗證倍率表（100／50／25／10%）。
 
+- **輪迴者個性系統 v1a（2026-11，露葵拍板；規格見檔案地圖 personality／traitEvents 兩列）**：五條隱藏維度、永不顯示數字，玩家只在詳情頁「🧠 性格側寫」看到事件揭露的句子與原型名稱。個性事件走獨立亂數流 `state.trait`，不動主亂數；**但事件的理智／私房錢／好感小變動會讓同種子的局勢和更新前略有不同，只保證新版本內可重現**。詞條與個性原則上獨立，僅少數語意衝突詞條有偏移表。**v1b（還沒做）**：6 個雙人碰撞事件（利他×利己被占便宜、野心×野心競爭〔v1b 只寫日誌與小幅互降好感，奪權接到隊長繼承留 v2〕、膽識高×謹慎路線爭執、利他×利他互相謙讓…）、強徵拒繳率掛鉤（叛逆、利己加拒繳，利他降低；有上限）、逛街 AI 掛鉤（利他者買藥給受傷同伴、利己者囤錢偏愛黑貨）。**v2**：副本擋刀／背刺、叛逃與私奔門檻。**v3**：許願與派遣抗命。sim 機器人不會強徵，強徵掛鉤只能靠單元測試。**sim 實測（`--seedFrom=1/21` 各 20 組、900 天，共 40 組，對照改動前）**：遊戲結束 0%、第 1 章尾王首通中位數 Day 33.4 不變、第 2 章 133→137（+2.6%）；**叛逃每局 0.45→0.78（10→16/40 局發生）、私奔 0.35→0.55，比改動前偏高，露葵 2026-11 拍板「不壓、接受偏高」**（個性事件的扣理智與結仇是刻意保留的戲劇後果）。對照實驗：`--traitChance=0`（只建立個性、不發事件）與改動前**逐項完全相同**，所以建立個性本身無副作用；曾試過去掉扣理智（叛逃 0.73）仍偏高，原因不在單一效果。sim 新增 `--traitChance=` 參數可關閉個性事件做對照。
+
 ## 2026-11 Bug 修復與功能更新（已完成，細節看 git 紀錄與 `test/bugfix.test.js`）
 
 - **自動派遣策略**：`config.js` 的 `auto.rules`（穩健／均衡／激進各有通關率門檻、每日隊數、傷勢上限、死亡風險上限、留守人數；`off` 給 sim 用，維持舊行為）；`dungeon.js` 的 `deathRisk` 為粗估（需驗證）。強制任務自動徵召尊重鎖定與傷員保護，只有最後期限且沒人可派才放寬。
@@ -194,12 +198,12 @@
 npm test
 ```
 
-499 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
+512 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
 
 ## 不可違反的規則
 
 1. 這是獨立專案，與舊 AI-TRPG 專案無關；舊專案的規則（六維十技能、Prompt 快取契約等）不適用。
-2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，499 項都要通過。
+2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，512 項都要通過。
 3. 所有可調數字都要放在 `src/data/config.js`，不要寫死在引擎裡。
 4. 引擎不要碰 DOM，畫面邏輯不要寫進引擎。
 5. 機密（Token、金鑰）永遠不能進 git。
@@ -209,7 +213,7 @@ npm test
 - 推上 `main` ＝ Cloudflare Workers 自動建置並執行 `npx wrangler deploy`（建置指令留空、根目錄 `/`，後台設定不要改）。合併前先確認 `npm test` 都過。
 - `wrangler.jsonc`：assets 目錄是專案根目錄，所以 `.assetsignore` 負責把 `worker/`、`test/`、`docs/`、`CLAUDE.md` 等非網站內容擋掉；**新增遊戲需要的檔案時不要被它誤擋**（`index.html`、`styles.css`、`src/` 必須能被讀到）。`keep_vars: true` 讓後台填的 `GOOGLE_CLIENT_ID`／`PUBLIC_ORIGIN` 不會被部署洗掉；`GOOGLE_CLIENT_SECRET` 只能在後台用 Secret 類型填，**不進 git**。
 - 本機完整預覽（真的 Worker＋本機 D1，不用 Cloudflare 帳號）：`npx wrangler d1 execute zhushen-sim --local --file worker/schema.sql`，然後 `npx wrangler dev --port 8799`。
-- 部署前確認 `npm test` 499 項全過。
+- 部署前確認 `npm test` 512 項全過。
 
 ## 開發階段（現在不要做，除非我明確要求）
 

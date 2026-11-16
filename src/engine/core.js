@@ -24,6 +24,8 @@ import { gearDaily } from "./gearFx.js"; // 裝備被動日結（4-E-8） // 同
 import { newBoardState, fillBoard, dailyBoard } from "./board.js"; // 同上（Phase 4-D-4 動態任務榜）
 import { relicBonusOf, refreshRelicBonus } from "./relics.js"; // 同上（Phase 4-D-4 奇物圖鑑）
 import { leaveHeirloom, dailyLineage } from "./lineage.js"; // 同上（Phase 4-E-4 遺物、子嗣、叛逃）
+import { newTraitState, rollTraits, ensureTraits } from "./personality.js"; // 輪迴者個性（隱藏維度，v1a）
+import { dailyTraits } from "./traitEvents.js"; // 同上（個性事件，獨立亂數流）
 import { dailyDrama } from "./drama.js"; // 同上（Phase 4-E-3 5:2:1 狗血事件）
 import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, communalInherit, styleOf, squadSteleMult } from "./squad.js"; // 同上（Phase 4-E 小隊隊長與流派）
 import { addLife, addLifeOnce, bioOf, compactBio } from "./life.js"; // 人物傳記（功能 5；循環引用只在執行時呼叫）
@@ -85,6 +87,7 @@ export function createNewGame(seed = freshSeed()) {
     airdrop: newAirdropState(seed), // 絕境空投：連續天數與獨立亂數流（見下方 dailyAirdrop）
     sanity: newSanityState(seed), // 理智暴走：獨立亂數流（見 engine/sanity.js）
     levy: newLevyState(seed), // 強徵私房錢：冷卻與拒繳亂數流（見 engine/levy.js）
+    trait: newTraitState(seed), // 個性事件：獨立亂數流（見 engine/traitEvents.js）
     pressure: newPressureState(seed), // 壓力系統：抽成與考核（見 engine/pressure.js）
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
     market: newMarketState(seed), // 8 格分槽黑市（含獨立亂數流 market.rngState；見 engine/market.js）
@@ -143,7 +146,7 @@ export function createNewGame(seed = freshSeed()) {
 export function createSamsarite(state, rank, rng = state) {
   const r = RANKS[rank];
   const roll = ([min, max]) => randInt(rng, min, max);
-  return {
+  const person = {
     id: state.nextId++,
     name: pick(rng, SURNAMES) + pick(rng, GIVEN_NAMES),
     rank,
@@ -201,7 +204,12 @@ export function createSamsarite(state, rank, rng = state) {
     deathWard: 0, // 替死護符層數（上限 1；致死判定時消耗，4-E-8）
     geneBuff: null, // 基因鎖助推 Buff { target, costDiscount }（突破該階後消耗，4-E-8）
     talentPct: 0, // 子嗣天賦白值占基礎戰力的比例（4-E-4，總封頂 +25%；inheritPower = round(stats.power × talentPct)）
+    traits: null, // 隱藏個性五軸（-100～100，永不顯示；下面由種子＋id 雜湊產生，不吃亂數）
+    traitSeen: [], // 已揭露的性格側寫 [{ day, axis, sign, text }]
+    traitEventLast: {}, // 個性事件冷卻 { _any: 天, 事件id: 天 }
   };
+  person.traits = rollTraits(state, person);
+  return person;
 }
 
 export function getSamsarite(state, id) {
@@ -559,6 +567,7 @@ export function advanceTick(state, beforeMandatory = null) {
     dailyDrama(state); // 5:2:1 人際事件：熱血羈絆／派系摩擦／八點檔修羅場（Phase 4-E-3，獨立亂數流）
     dailySquad(state); // 自動冊封／隊長缺位繼任／養殖流怨氣（Phase 4-E-1，獨立亂數流）
     dailyLineage(state); // 叛逃判定、子嗣孕育（Phase 4-E-4，獨立亂數流）
+    dailyTraits(state); // 個性事件：依隱藏維度揭露性格側寫（獨立亂數流 state.trait）
   }
 }
 
@@ -638,6 +647,8 @@ export function deserialize(json) {
   state.airdrop ??= newAirdropState(state.rngState); // 舊存檔沒有絕境空投欄位（Phase 4-C-3）
   state.sanity ??= newSanityState(state.rngState); // 舊存檔沒有理智暴走欄位（Phase 4-C-2）
   state.levy ??= newLevyState(state.rngState); // 舊存檔沒有強徵欄位
+  state.trait ??= newTraitState(state.rngState); // 舊存檔沒有個性事件欄位
+  for (const s of state.samsarites) ensureTraits(state, s); // 舊存檔用同一套雜湊補個性五軸（不吃亂數）
   state.pressure ??= newPressureState(state.rngState); // 舊存檔沒有壓力系統欄位（A-2）；下一個啟動條件滿足時才開始第一期
   state.god ??= newGodState(state.rngState); // 舊存檔沒有主神搞事欄位（Phase 3-E）
   state.god.pending ??= null;

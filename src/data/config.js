@@ -350,6 +350,24 @@ export const CONFIG = {
     refuseExtraAffinity: 5, // 拒繳者對隊長淨好感額外再扣這個數字（在該檔位的 affinity 之外）
   },
 
+  // ── 輪迴者個性系統 v1a（隱藏的五條個性維度；引擎 engine/personality.js、engine/traitEvents.js）──
+  // 每人五條軸各 -100～+100（永不顯示數字），由「遊戲種子＋輪迴者 id」雜湊產生，不吃主亂數。
+  // 個性事件用 state.trait.rngState 獨立亂數流；效果刻意很小（理智、小額私房錢、對同伴好感），完全不動戰力與通過率，
+  // 也不動對隊長的好感（避免推高私奔）。v1b 才接強徵拒繳與逛街 AI。
+  personality: {
+    enabled: true,
+    sd: 28, // 分數標準差（四個均勻值相加近似常態）：單軸 |x|≥60 約 3%，至少一軸 ≥60 約 15%
+    tagBias: 1, // 詞條偏移倍率（1 = 照 data/personality.js 的偏移表；0 = 關閉，個性與詞條完全獨立）
+    eventChance: 0.03, // 每個留守者每天觸發個性事件的機率（每人每天固定消耗 1 次亂數）
+    personCooldown: 10, // 同一個人兩次個性事件至少間隔幾天
+    eventCooldown: 20, // 同一個人同一種事件至少間隔幾天
+    eventMin: 40, // 該軸絕對值至少多少才會發生這條軸的事件／才算「有特色」
+    archetypeAfter: 3, // 揭露過幾次側寫就給原型名稱（同軸可多次，每次句子不同）
+    seenCap: 12, // 每人最多保留幾筆已揭露側寫（超過丟最舊的）
+    sanityFloor: 1, // 個性事件扣理智不會扣到比這個低（避免觸發暴走）
+    minWallet: 30, // 要掏錢／被收費的人，私房錢至少要有這麼多
+  },
+
   // ── 壓力系統（Phase A-2：主神抽成＋主神考核；引擎 engine/pressure.js）──
   // 設計：壓力錨定在公庫存量，不看天數或戰力（衝太快的玩家公庫還小，自然不被抽）。空間 Lv.1 完全零觸發；陣列索引 = 空間等級 - 1。
   pressure: {
