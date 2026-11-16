@@ -147,7 +147,10 @@ test("藥水：傷藥降一級、急救針降兩級、鎮定劑加理智；不�
   assert.equal(s.injury, 2);
   assert.equal(s.restDaysLeft, 3);
   assert.equal(buyItem(state, "t1_29", s.id).ok, true);
-  assert.equal(s.injury, 0);
+  assert.equal(s.injury, 1, "同一人 7 天內第 2 次治傷藥：抗藥性 50%，急救針只降 1 級");
+  s.dosage = undefined; // 模擬 7 天過去
+  assert.equal(buyItem(state, "t1_29", s.id).ok, true);
+  assert.equal(s.injury, 0, "抗藥性消退後恢復全效");
 });
 
 test("副本裡的人不能用商店", () => {

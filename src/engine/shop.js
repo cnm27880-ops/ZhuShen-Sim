@@ -153,14 +153,45 @@ export function buyItem(state, itemId, targetId, opts = {}) {
   return { ok: true, price };
 }
 
+// ───────── 抗藥性（常駐藥的濫用防護；數字在 CONFIG.shop.tolerance）─────────
+// s.dosage = { heal: [使用日…], sanity: [使用日…] }，只留滾動視窗內的紀錄。換高階藥也算同一類，繞不過去。
+
+/** 已套用抗藥性的藥：只有常駐商店賣的即用耗材（黑市貨不受影響） */
+const toleranceItem = (item) => !!item && item.kind === "use" && isPermanent(item);
+
+/** 這個人最近 days 天內，這一類藥（heal／sanity）已經用了幾次 */
+export function recentDoses(state, s, kind) {
+  const T = CONFIG.shop.tolerance;
+  const since = currentDay(state) - T.days;
+  return (s.dosage?.[kind] ?? []).filter((d) => d > since).length;
+}
+
+/** 這個人現在再用一次這類藥，效果是幾成（1 = 全效） */
+export function doseMult(state, s, kind) {
+  const m = CONFIG.shop.tolerance.mult;
+  return m[Math.min(recentDoses(state, s, kind), m.length - 1)];
+}
+
+function recordDose(state, s, kind) {
+  const T = CONFIG.shop.tolerance;
+  const since = currentDay(state) - T.days;
+  s.dosage ??= { heal: [], sanity: [] };
+  s.dosage[kind] = (s.dosage[kind] ?? []).filter((d) => d > since);
+  s.dosage[kind].push(currentDay(state));
+}
+
 /** 即用耗材的效果（結構化欄位統一解析，不看單一 id）。回傳效果摘要文字給日誌用 */
 export function applyUse(state, item, s, opts = {}) {
   const e = item.effect ?? {};
   const notes = [];
   const mates = homeMates(state, s);
+  const tol = toleranceItem(item);
   if (e.healInjury && s.injury > 0) {
-    setInjury(s, e.healInjury >= 99 ? 0 : Math.max(0, s.injury - e.healInjury));
-    notes.push(`傷勢降為${INJURIES[s.injury].name}`);
+    const hm = tol ? doseMult(state, s, "heal") : 1;
+    if (hm >= 1) setInjury(s, e.healInjury >= 99 ? 0 : Math.max(0, s.injury - e.healInjury)); // 全效：照原本
+    else setInjury(s, Math.max(0, s.injury - Math.round(Math.min(e.healInjury, CONFIG.shop.tolerance.healCap) * hm)));
+    if (tol) recordDose(state, s, "heal");
+    notes.push(`傷勢降為${INJURIES[s.injury].name}${hm < 1 ? `（抗藥性：效果 ${Math.round(hm * 100)}%）` : ""}`);
   }
   if (e.permHp && (s.elixirUses ?? 0) < (e.maxUsesPerChar ?? 3)) {
     s.stats.hp += e.permHp;
@@ -168,8 +199,12 @@ export function applyUse(state, item, s, opts = {}) {
     notes.push(`永久生命 +${e.permHp}（${s.elixirUses}/${e.maxUsesPerChar ?? 3}）`);
   }
   if (e.sanity) {
-    s.stats.sanity = Math.min(100, s.stats.sanity + e.sanity);
-    notes.push(`理智 +${e.sanity}`);
+    const was = s.stats.sanity;
+    const sm = tol && was < 100 ? doseMult(state, s, "sanity") : 1;
+    const gain = Math.round(e.sanity * sm);
+    s.stats.sanity = Math.min(100, was + gain);
+    if (tol && was < 100) recordDose(state, s, "sanity");
+    notes.push(`理智 +${gain}${sm < 1 ? `（抗藥性：效果 ${Math.round(sm * 100)}%）` : ""}`);
   }
   if (e.geneLockTarget) {
     s.geneBuff = { target: e.geneLockTarget, costDiscount: e.costDiscount ?? 0 };

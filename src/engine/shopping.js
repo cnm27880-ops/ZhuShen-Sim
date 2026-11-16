@@ -12,7 +12,7 @@ import { SHOP_ITEMS, GEAR_SLOTS, AI_GROUP, getShopItem, itemStat } from "../data
 import { sanityHarm } from "./gearFx.js";
 import { rand, pick, weighted } from "./rng.js";
 import { currentDay, shopTier } from "./core.js";
-import { checkBuy, buyItem } from "./shop.js";
+import { checkBuy, buyItem, doseMult } from "./shop.js";
 import { marketOf, checkMarketBuy, buyMarketSlot, slotPrice } from "./market.js";
 import { enhance, checkEnhance, breakGene, checkBreakGene } from "./growth.js";
 import { getRel, pairStatus } from "./relations.js";
@@ -102,13 +102,13 @@ function execute(state, s, offer, extra = {}) {
 
 function emergency(state, s) {
   if (s.injury >= 2) {
-    const heals = offers(state, s, (i) => i.category === "consumable" && i.effect.healInjury);
+    const heals = doseMult(state, s, "heal") < CONFIG.shop.tolerance.minBuyMult ? [] : offers(state, s, (i) => i.category === "consumable" && i.effect.healInjury); // 抗藥性太強就不浪費錢
     // 能一次治到輕傷以下的優先，其次便宜的
     heals.sort((a, b) => (b.item.effect.healInjury >= s.injury) - (a.item.effect.healInjury >= s.injury) || a.price - b.price);
     if (heals[0]) return execute(state, s, heals[0]);
   }
   if ((s.stats.sanity ?? 100) < CONFIG.shopping.calmBelow) {
-    const calms = offers(state, s, (i) => i.category === "consumable" && i.effect.sanity && !i.effect.healInjury && !i.effect.hateDelta);
+    const calms = doseMult(state, s, "sanity") < CONFIG.shop.tolerance.minBuyMult ? [] : offers(state, s, (i) => i.category === "consumable" && i.effect.sanity && !i.effect.healInjury && !i.effect.hateDelta);
     calms.sort((a, b) => a.price - b.price);
     if (calms[0]) return execute(state, s, calms[0]);
   }

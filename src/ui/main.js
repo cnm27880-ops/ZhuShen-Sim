@@ -33,6 +33,7 @@ import { marketInfo, manualRefresh, lockSlot, buyMarketSlot, checkMarketBuy, int
 import { relicInfo } from "../engine/relics.js";
 import { setTaxRate, taxRateOf } from "../engine/wallet.js";
 import { steleBonusOf } from "../engine/memorial.js";
+import { levyWallets, levyPreview, checkLevy } from "../engine/levy.js";
 import { kpiStatus, exemptOf, titheMultOf, pressureActive } from "../engine/pressure.js";
 import { MANDATORY_ID, pendingMandatory, buildMandatoryDungeon } from "../engine/mandatory.js";
 import { RIVAL_ID, pendingRival, buildRivalDungeon, rivalInfo } from "../engine/rivals.js";
@@ -42,7 +43,8 @@ import { buildGossip } from "../engine/gossip.js";
 import { applyAutoMode, currentAutoMode } from "../engine/autoMode.js";
 import { bioOf, graveBio } from "../engine/life.js";
 import { transferGear } from "../engine/gearTransfer.js";
-import { stockableItems, stockList, stockCount, stockTargets, buyStock, useStock, useStockMany, checkBuyStock } from "../engine/inventory.js";
+import { stockableItems, stockList, stockCount, stockTargets, buyStock, useStock, useStockMany, checkBuyStock, needKinds } from "../engine/inventory.js";
+import { doseMult } from "../engine/shop.js";
 import { drawGossipCard, downloadGossipPng, copyText } from "./gossipCard.js";
 import { RIVAL_SQUADS } from "../data/rivals.js";
 import {
@@ -761,7 +763,7 @@ function renderModal() {
   document.body.classList.toggle("modal-open", Boolean(modal)); // 開著放大視窗時，角落的副本迷你小窗（#run-list）自動隱藏，關窗恢復（雙視窗互斥，4-E-7）
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { leaderboard: leaderboardPanel, syncChoice, guide, dispatch, gacha, shop, detail, stele, kpi, squad, settings, runResult, gameOver, confirmRecycle, batchRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel, inventory };
+  const builders = { leaderboard: leaderboardPanel, syncChoice, guide, dispatch, gacha, shop, detail, stele, kpi, levy: levyPanel, squad, settings, runResult, gameOver, confirmRecycle, batchRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel, inventory };
   $("modal").innerHTML = builders[modal.name]();
   if (modal.name === "gossip") drawGossipCard($("gossip-canvas"), buildGossip(state)); // 畫報紙圖卡（Canvas，要等 innerHTML 寫完才拿得到元素）
 }
@@ -1106,9 +1108,13 @@ function inventory() {
   const item = getShopItem(modal.itemId);
   const people = item
     ? stockTargets(state, item.id)
-        .map(({ s, need, block }) => `<div class="option ${block ? "locked" : ""}" ${block ? `style="opacity:.55" title="${block}"` : `data-action="use-stock" data-id="${s.id}"`}>
-          ${rankBadge(s.rank)}<span class="grow">${s.name}<br /><small>理智 ${s.stats.sanity}・${injuryLabel(s)}${block ? `・<span class="bad">${block}</span>` : need > 0 ? "・<span class=\"good\">需要</span>" : ""}</small></span>
-          <small>${block ? "" : "點我使用"}</small></div>`)
+        .map(({ s, need, block }) => {
+          const tol = Math.min(...needKinds(item).map((k) => doseMult(state, s, k)), 1);
+          const tolTag = !block && tol < 1 ? `・<span class="bad">抗藥性：效果 ${Math.round(tol * 100)}%</span>` : "";
+          return `<div class="option ${block ? "locked" : ""}" ${block ? `style="opacity:.55" title="${block}"` : `data-action="use-stock" data-id="${s.id}"`}>
+          ${rankBadge(s.rank)}<span class="grow">${s.name}<br /><small>理智 ${s.stats.sanity}・${injuryLabel(s)}${block ? `・<span class="bad">${block}</span>` : need > 0 ? "・<span class=\"good\">需要</span>" : ""}${tolTag}</small></span>
+          <small>${block ? "" : "點我使用"}</small></div>`;
+        })
         .join("")
     : "";
   return `<h3>物資</h3>
@@ -1540,6 +1546,28 @@ function stele() {
     : `<div class="empty">還沒有人入碑。</div>`;
   return `<h3>英靈碑 <small>全隊戰力 +${Math.round(steleBonusOf(state) * 100)}%</small></h3>
     <div class="option-list">${rows}</div>
+    <div class="modal-actions">${closeButton}</div>`;
+}
+
+/** 強徵私房錢面板：三檔預覽、冷卻、發動結果（手動，沒有自動版） */
+function levyPanel() {
+  const g = state.levy;
+  const day = currentDay(state);
+  const cd = Math.max(0, (g?.cooldownUntilDay ?? 0) - day);
+  const rows = CONFIG.levy.tiers
+    .map((t) => {
+      const pv = levyPreview(state, t.id);
+      const chk = checkLevy(state, t.id);
+      return `<div class="option ${chk.ok ? "" : "locked"}" ${chk.ok ? `data-action="levy" data-id="${t.id}"` : `style="opacity:.55" title="${chk.reason}"`}>
+        <span class="option-icon">${t.icon}</span>
+        <span class="grow"><b>${t.name}</b>（徵 ${Math.round(t.pct * 100)}%）<br /><small>預估入帳約 ${pv.expected.toLocaleString()}（最多 ${pv.total.toLocaleString()}）・平均拒繳率 ${Math.round(pv.avgRefuse * 100)}%・付款者理智 -${t.sanity}${t.affinity ? `、對隊長好感 -${t.affinity}` : ""}${t.mood ? "・全員不爽 5 天" : ""}・冷卻 ${t.cooldown} 天${chk.ok ? "" : `<br /><span class="bad">${chk.reason}</span>`}</small></span>
+        <small>${chk.ok ? "點我發動" : ""}</small></div>`;
+    })
+    .join("");
+  return `<h3>🧧 強徵私房錢 <small>${cd > 0 ? `冷卻中，還要 ${cd} 天` : "可發動"}</small></h3>
+    <p class="hint">主神壓榨你，你壓榨輪迴者。每人先保留保命底線，其餘按比例收進公庫（不計入考核營收）。被徵的人可能拒繳：低理智、有戀人護著、穿綁定裝備或對隊長有怨氣的人更容易拒繳，拒繳者對隊長的好感會扣更多，叛逃風險跟著升高。強徵會吃掉輪迴者逛街買裝備、強化的錢。累計 ${g?.count ?? 0} 次、收 ${(g?.collected ?? 0).toLocaleString()} 分、被拒繳 ${g?.refusals ?? 0} 人次。</p>
+    <div class="option-list">${rows}</div>
+    ${modal.note ? `<div class="summary" style="margin-top:8px">${modal.note}</div>` : ""}
     <div class="modal-actions">${closeButton}</div>`;
 }
 
@@ -2190,6 +2218,16 @@ const actions = {
   "refuse-wish"(el) {
     refuseWish(state, Number(el.dataset.id));
     if (pendingWishes(state).length === 0) modal = null;
+    saveGame();
+  },
+  "open-levy"() {
+    modal = { name: "levy" };
+  },
+  levy(el) {
+    const r = levyWallets(state, el.dataset.id);
+    modal.note = r.ok
+      ? `✅ 【${r.tier.name}】收了 ${r.collected.toLocaleString()} 分（${r.payers.length} 人繳納）${r.refusers.length ? `；<span class="bad">${r.refusers.map((x) => x.name).join("、")} 拒繳</span>` : ""}。`
+      : `<span class="bad">${r.reason}</span>`;
     saveGame();
   },
   "open-kpi"() {

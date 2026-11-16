@@ -64,6 +64,10 @@ export const CONFIG = {
   shop: {
     consumableCap: 3, // 出征耗材緩衝區最多囤幾份（下次出征全部套用，單場）
     worldPassCap: 0.06, // 全隊「特產裝備綁定世界通過率加成」合計上限
+    // 抗藥性（常駐藥的濫用防護）：同一個人、同一類藥（治傷／回理智各算）在滾動 days 天內用得越多次，效果越差。
+    // mult[n] = 已用 n 次後的下一次效果倍率（超過就用最後一個）；治傷的「全癒」藥最多視為 healCap 級。
+    // minBuyMult：逛街 AI 與一鍵批量使用，預期倍率低於這個數字就不買／不用，免得浪費。只管常駐商店的藥，黑市貨不受影響。
+    tolerance: { days: 7, mult: [1, 0.5, 0.25, 0.1], healCap: 3, minBuyMult: 0.5 },
     demonTendencyChance: 0.05, // 穿著帶「入魔傾向」被動的裝備，每天獲得走火入魔詞條的機率（4-E-8；t5_36 必定入魔）
   },
   market: {
@@ -323,6 +327,27 @@ export const CONFIG = {
     rogueRMult: 1.0, // 叛逃 Boss 戰力 = 該章常規關平均 R × 這個倍率
     rogueBountyPct: 0.5, // 擊敗賞金 = 該章一般關平均獎勵 × 這個比例（另加叛逃者帶走的私房錢）
     rogueCrystalChance: 0.35, // 擊敗後掉因果結晶機率
+  },
+
+  // ── 強徵私房錢（主管壓榨輪迴者的手段；引擎 engine/levy.js）──
+  // 玩家手動發動，沒有自動版。對所有非催熟艙的輪迴者按比例徵收私房錢（100% 進公庫，不計入考核營收）。
+  // 每人先保留「保命底線」（minReserve 與 reserveDays 天維持費取大者）。被徵者有機率拒繳：拒繳者不付錢，但對隊長好感扣更多。
+  levy: {
+    minReserve: 50, // 每人至少保留多少私房錢
+    reserveDays: 3, // 或保留幾天的維持費（取大者）
+    // 三檔：pct 徵收比例（對底線以上的部分）、sanity 付款者理智扣多少、affinity 付款者對隊長淨好感扣多少、
+    // refuse 基礎拒繳率、cooldown 發動後全檔位共用的冷卻天數、mood 是否讓全員套用「不爽」心情（5 天，另扣 10 理智）
+    tiers: [
+      { id: "mild", name: "溫和募捐", icon: "🧧", pct: 0.2, sanity: 3, affinity: 0, refuse: 0.05, cooldown: 7, mood: false },
+      { id: "firm", name: "強硬攤派", icon: "📜", pct: 0.4, sanity: 8, affinity: 5, refuse: 0.15, cooldown: 14, mood: false },
+      { id: "raid", name: "全面搜刮", icon: "🏴\u200d☠️", pct: 0.7, sanity: 5, affinity: 15, refuse: 0.3, cooldown: 21, mood: true },
+    ],
+    // 拒繳率加成（疊加，最高 maxRefuse）：低理智、有戀人／靈魂伴侶在身邊護著、穿主管賞賜的綁定裝備（自恃是紅人）、對隊長淨好感為負
+    refuseBonus: { lowSanity: 0.1, veryLowSanity: 0.2, partner: 0.1, soulbound: 0.1, negativeAffinity: 0.1 },
+    lowSanityBelow: 60,
+    veryLowSanityBelow: 30,
+    maxRefuse: 0.9,
+    refuseExtraAffinity: 5, // 拒繳者對隊長淨好感額外再扣這個數字（在該檔位的 affinity 之外）
   },
 
   // ── 壓力系統（Phase A-2：主神抽成＋主神考核；引擎 engine/pressure.js）──

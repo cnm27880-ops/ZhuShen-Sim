@@ -9,6 +9,7 @@ import { findSpecialRewardByName, getSpecialReward } from "../data/dungeons.js";
 import { migrateWorldId, WORLD_LIST } from "../data/worlds.js";
 import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
+import { newLevyState } from "./levy.js"; // 強徵私房錢（主管壓榨輪迴者）
 import { dailyPressure, newPressureState, pressureRecord } from "./pressure.js"; // 壓力系統：主神抽成與考核（A-2）
 import { dailyGod, cancelGodOf, newGodState } from "./godEvents.js"; // 同上（Phase 3-E 主神搞事）
 import { dailyNursery, newNurseryState, podCost } from "./children.js"; // 同上（Phase 3-F 生小孩）
@@ -83,6 +84,7 @@ export function createNewGame(seed = freshSeed()) {
     mandatory: newMandatoryState(seed), // 主神強制血腥任務：計時與待派任務（見 engine/mandatory.js）
     airdrop: newAirdropState(seed), // 絕境空投：連續天數與獨立亂數流（見下方 dailyAirdrop）
     sanity: newSanityState(seed), // 理智暴走：獨立亂數流（見 engine/sanity.js）
+    levy: newLevyState(seed), // 強徵私房錢：冷卻與拒繳亂數流（見 engine/levy.js）
     pressure: newPressureState(seed), // 壓力系統：抽成與考核（見 engine/pressure.js）
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
     market: newMarketState(seed), // 8 格分槽黑市（含獨立亂數流 market.rngState；見 engine/market.js）
@@ -635,6 +637,7 @@ export function deserialize(json) {
   state.mandatory ??= newMandatoryState(state.rngState); // 舊存檔沒有強制任務欄位（Phase 4-C-4）
   state.airdrop ??= newAirdropState(state.rngState); // 舊存檔沒有絕境空投欄位（Phase 4-C-3）
   state.sanity ??= newSanityState(state.rngState); // 舊存檔沒有理智暴走欄位（Phase 4-C-2）
+  state.levy ??= newLevyState(state.rngState); // 舊存檔沒有強徵欄位
   state.pressure ??= newPressureState(state.rngState); // 舊存檔沒有壓力系統欄位（A-2）；下一個啟動條件滿足時才開始第一期
   state.god ??= newGodState(state.rngState); // 舊存檔沒有主神搞事欄位（Phase 3-E）
   state.god.pending ??= null;
