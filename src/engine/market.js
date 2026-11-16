@@ -65,12 +65,14 @@ export function dailyMarket(state) {
 export function manualRefreshCost(state) {
   const m = marketOf(state);
   const n = m.manualDay === currentDay(state) ? m.manualToday : 0;
+  if ((state.pressure?.freeRefresh ?? 0) > 0) return 0; // 主神考核全過的獎勵（A-2）
   return CONFIG.market.manualBase[(state.spaceLevel ?? 1) - 1] * (n + 1);
 }
 
 export function manualRefresh(state) {
   const cost = manualRefreshCost(state);
   if (!spend(state, cost, false)) return { ok: false, reason: "積分不夠（已達高利貸上限）", cost };
+  if (cost === 0 && state.pressure?.freeRefresh > 0) state.pressure.freeRefresh -= 1;
   const m = marketOf(state);
   m.manualToday = (m.manualDay === currentDay(state) ? m.manualToday : 0) + 1;
   m.manualDay = currentDay(state);

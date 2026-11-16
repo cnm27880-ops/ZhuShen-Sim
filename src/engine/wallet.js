@@ -9,6 +9,7 @@ import { emit } from "./core.js";
 import { styleOf, captainOf, worthOf } from "./squad.js";
 import { effectivePower } from "./tags.js";
 import { logText } from "./templates.js";
+import { pressureRecord } from "./pressure.js";
 
 export const taxRateOf = (state) => state.taxRate ?? CONFIG.tax.default;
 
@@ -86,6 +87,7 @@ export function distributeLoot(state, team, totalPoints, opts = {}) {
     share = Math.floor(vals.reduce((n, v) => n + v, 0) / members.length);
   }
   state.points += tax;
+  pressureRecord(state, "earned", tax); // 考核營收（A-2）
   if (deficit) emit(state, "wallet", logText(state, "deficitTax", { rate: Math.round(rate * 100), tax }));
   return { tax, share, shares, members: members.length, style, deficit };
 }

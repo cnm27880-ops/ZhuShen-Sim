@@ -9,6 +9,7 @@ import { findSpecialRewardByName, getSpecialReward } from "../data/dungeons.js";
 import { migrateWorldId, WORLD_LIST } from "../data/worlds.js";
 import { logText } from "./templates.js";
 import { dailyWishes, cancelWishesOf } from "./wishes.js"; // 同上，循環引用只要載入時不呼叫就沒問題
+import { dailyPressure, newPressureState, pressureRecord } from "./pressure.js"; // 壓力系統：主神抽成與考核（A-2）
 import { dailyGod, cancelGodOf, newGodState } from "./godEvents.js"; // 同上（Phase 3-E 主神搞事）
 import { dailyNursery, newNurseryState, podCost } from "./children.js"; // 同上（Phase 3-F 生小孩）
 import { enshrine, refreshSteleBonus, steleBonusOf } from "./memorial.js"; // 同上（Phase 4-C-5 英靈碑）
@@ -82,6 +83,7 @@ export function createNewGame(seed = freshSeed()) {
     mandatory: newMandatoryState(seed), // 主神強制血腥任務：計時與待派任務（見 engine/mandatory.js）
     airdrop: newAirdropState(seed), // 絕境空投：連續天數與獨立亂數流（見下方 dailyAirdrop）
     sanity: newSanityState(seed), // 理智暴走：獨立亂數流（見 engine/sanity.js）
+    pressure: newPressureState(seed), // 壓力系統：抽成與考核（見 engine/pressure.js）
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
     market: newMarketState(seed), // 8 格分槽黑市（含獨立亂數流 market.rngState；見 engine/market.js）
     aiShopRngState: (seed ^ 0x5b0b) | 0, // 輪迴者自主逛街的獨立亂數流（見 engine/shopping.js）
@@ -241,6 +243,7 @@ export function killSamsarite(state, s, cause, killer = null, stele = null) {
   cancelWishesOf(state, s.id);
   cancelGodOf(state, s.id);
   state.graveyard.push({ name: s.name, rank: s.rank, day: currentDay(state), cause, killer: killer?.name ?? null, bio });
+  if (stele) pressureRecord(state, "deaths", 1); // 考核：副本戰死／被抹殺才算（A-2）
   if (!communalInherit(state, s, style)) forfeitWallet(state, s, CONFIG.wallet.deathForfeitPct); // 私房錢 50% 充公、50% 消散（4-D-1）；共產流全進互助金（4-E-2）
   if (stele) enshrine(state, s, stele, steleMult); // 副本戰死／主神抹殺才入碑（4-C-5）
   emit(state, "death", logText(state, "death", { A: s, rank: s.rank, cause }), { samsariteId: s.id, killerId: killer?.id ?? null });
@@ -547,6 +550,7 @@ export function advanceTick(state, beforeMandatory = null) {
     dailyRivals(state); // 洲際碰撞：倒數、刷出、逾時徵召（4-F-1，獨立亂數流）
     beforeMandatory?.();
     dailyMandatory(state); // 主神強制血腥任務：發布／逾時抹殺（Phase 4-C-4，獨立亂數流）
+    dailyPressure(state); // 主神抽成與考核（A-2，獨立亂數流；Lv.1 零觸發）
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
     dailyNursery(state); // 催熟倒數、戀人懷孕（Phase 3-F；放在關係事件之後，剛升級的靈魂伴侶今天就有機會）
@@ -631,6 +635,7 @@ export function deserialize(json) {
   state.mandatory ??= newMandatoryState(state.rngState); // 舊存檔沒有強制任務欄位（Phase 4-C-4）
   state.airdrop ??= newAirdropState(state.rngState); // 舊存檔沒有絕境空投欄位（Phase 4-C-3）
   state.sanity ??= newSanityState(state.rngState); // 舊存檔沒有理智暴走欄位（Phase 4-C-2）
+  state.pressure ??= newPressureState(state.rngState); // 舊存檔沒有壓力系統欄位（A-2）；下一個啟動條件滿足時才開始第一期
   state.god ??= newGodState(state.rngState); // 舊存檔沒有主神搞事欄位（Phase 3-E）
   state.god.pending ??= null;
   state.god.mission ??= null;

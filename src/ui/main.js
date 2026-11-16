@@ -33,6 +33,7 @@ import { marketInfo, manualRefresh, lockSlot, buyMarketSlot, checkMarketBuy, int
 import { relicInfo } from "../engine/relics.js";
 import { setTaxRate, taxRateOf } from "../engine/wallet.js";
 import { steleBonusOf } from "../engine/memorial.js";
+import { kpiStatus, exemptOf, titheMultOf, pressureActive } from "../engine/pressure.js";
 import { MANDATORY_ID, pendingMandatory, buildMandatoryDungeon } from "../engine/mandatory.js";
 import { RIVAL_ID, pendingRival, buildRivalDungeon, rivalInfo } from "../engine/rivals.js";
 import { erosionUnlocked, applyErosion, erosionBlock, erosionRMult, erosionRewardMult } from "../engine/erosion.js";
@@ -760,7 +761,7 @@ function renderModal() {
   document.body.classList.toggle("modal-open", Boolean(modal)); // 開著放大視窗時，角落的副本迷你小窗（#run-list）自動隱藏，關窗恢復（雙視窗互斥，4-E-7）
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { leaderboard: leaderboardPanel, syncChoice, guide, dispatch, gacha, shop, detail, stele, squad, settings, runResult, gameOver, confirmRecycle, batchRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel, inventory };
+  const builders = { leaderboard: leaderboardPanel, syncChoice, guide, dispatch, gacha, shop, detail, stele, kpi, squad, settings, runResult, gameOver, confirmRecycle, batchRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel, inventory };
   $("modal").innerHTML = builders[modal.name]();
   if (modal.name === "gossip") drawGossipCard($("gossip-canvas"), buildGossip(state)); // 畫報紙圖卡（Canvas，要等 innerHTML 寫完才拿得到元素）
 }
@@ -1542,6 +1543,27 @@ function stele() {
     <div class="modal-actions">${closeButton}</div>`;
 }
 
+/** 主神考核面板（A-2）：本期進度、抽成現況、近期紀錄。全自動，只看不用按 */
+function kpi() {
+  if (!pressureActive(state)) {
+    return `<h3>📋 主神考核</h3><div class="empty">空間升到 Lv.${CONFIG.pressure.startLevel} 後，主神才會開始抽成與考核。</div>
+      <div class="modal-actions">${closeButton}</div>`;
+  }
+  const p = state.pressure;
+  const st = kpiStatus(state);
+  const rows = st
+    ? st.items.map((i) => `<div class="option ${i.ok ? "selected" : ""}"><span class="grow">${i.label}<small>目標 ${i.key === "deaths" ? "≤ " : "≥ "}${i.target.toLocaleString()}</small></span><b>${i.ok ? "✅" : "⏳"} ${i.now.toLocaleString()}</b></div>`).join("")
+    : `<div class="empty">第一期考核將在 Day ${CONFIG.pressure.startDay} 之後開始。</div>`;
+  const mult = titheMultOf(state);
+  const hist = (p.history ?? []).slice().reverse().map((h) => `<div class="option"><span class="grow">第 ${h.n} 期（Day ${h.day}）<small>${h.pass ? "達標" : `未達標・罰金 ${h.fine.toLocaleString()}`}</small></span><b>${h.ok}/3</b></div>`).join("");
+  return `<h3>📋 主神考核 <small>${st ? `第 ${p.count} 期・剩 ${Math.max(0, st.daysLeft)} 天` : "尚未開始"}</small></h3>
+    <div class="option-list">${rows}</div>
+    <p class="hint">三項過兩項算達標：理智 +${CONFIG.pressure.passSanity}、下期抽成減半；全過另送 ${CONFIG.pressure.perfectFreeRefresh} 次免費黑市刷新（目前剩 ${p.freeRefresh ?? 0} 次）。未達標：罰金、理智 -${CONFIG.pressure.failSanity}、抽成加課。獎勵不含戰力。全自動結算，不會暫停。</p>
+    <p class="hint">主神抽成：公庫超過 ${exemptOf(state).toLocaleString()} 的部分每日按級距抽（目前倍率 ×${mult}）。累計抽成 ${p.titheTotal.toLocaleString()}、罰金 ${p.fineTotal.toLocaleString()}。</p>
+    ${hist ? `<div class="option-list">${hist}</div>` : ""}
+    <div class="modal-actions">${closeButton}</div>`;
+}
+
 function settings() {
   const toggles = Object.entries(PAUSE_EVENTS)
     .map(
@@ -2169,6 +2191,9 @@ const actions = {
     refuseWish(state, Number(el.dataset.id));
     if (pendingWishes(state).length === 0) modal = null;
     saveGame();
+  },
+  "open-kpi"() {
+    modal = { name: "kpi" };
   },
   "open-stele"() {
     modal = { name: "stele" };

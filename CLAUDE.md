@@ -60,6 +60,7 @@
 | `src/engine/sanity.js` | 理智引擎（4-C-2）：`dailySanity`（理智 0 的人日結暴走：入魔砍傷隊友＋走火入魔標籤／自殘，之後理智回到 40）；`state.sanity.rngState` 獨立亂數流。理智檔位的戰力／內鬥倍率在 `engine/tags.js`（`sanityPowerPct`／`sanityClashMult`） |
 | `src/engine/mandatory.js` | 主神強制血腥任務引擎（4-C-4）：`dailyMandatory`（每日掛鉤：發布／逾時抹殺）、`buildMandatoryDungeon`（動態副本快照，存進 `run.dungeonDef`）、`mandatoryR`、`popLimit`；`state.mandatory = { rngState, lastDay, pending, nextId }`；出發走 `startRun(state, MANDATORY_ID, 隊員)`，結算在 `finishRun` 的 mandatory 分支 |
 | `src/engine/memorial.js` | 英靈碑引擎（4-C-5）：`enshrine`（入碑）、`steleBonusOf`（前 4 名加成）、`refreshSteleBonus`（寫進每人 `s.steleBonus`，因為 `effectivePower` 沒有 state 參數）；`state.memorialStele` |
+| `src/engine/pressure.js` | **壓力系統（A-2）**：`dailyPressure`（`advanceTick` 在 `endOfDay` 之後、`dailyGod` 之前掛鉤）＝**主神抽成**（每日對公庫超過免稅額 L 的部分按邊際級距計稅，`titheOf`）＋**主神考核**（每期 30 天，通關數／公庫入帳／戰死人數三項過兩項；達標＝全員理智 +10、下期抽成減半、全過送 2 次免費黑市刷新；未達標＝罰金〔超額 8%、最多公庫 15%、不低於 L〕、全員理智 -8、下期抽成 +50%、連敗加重 ×1.5～2、連敗 2 次後下期目標減免）；**空間 Lv.1 零觸發**，Day 30 後啟動；`state.pressure`（獨立亂數流，只用於目標 ±10% 浮動）；`pressureRecord` 由 `wallet.distributeLoot`（入帳）／`dungeon.js`（通關）／`core.killSamsarite`（副本戰死或被抹殺）回報；`kpiStatus` 給面板；數字全在 `CONFIG.pressure`，日誌句 `tithe`／`kpi*`，面板 `📋 考核`（更多選單，全自動不暫停，暫停事件 `kpi` 預設關）。 |
 | `src/engine/relations.js` | 關係矩陣、每日互動、告白／戀人／靈魂伴侶／死敵、借刀殺人、直接殺人與主神懲罰、死亡連鎖、副本內內鬥／背刺／擋刀 |
 | `src/engine/core.js` | 狀態（含 `state.god`、`state.spaceLevel`、`state.chapterClearDay`）、輪迴者、維持費 `upkeepOf(s, state)`（跟空間等級走）、破產線 `debtLimitOf(state)`、傷勢、高利貸、回收爐、抽卡、時間 tick、存檔、遊戲結束判定；`spend()` 累積花費並宣布商店解鎖、`shopTier()` 算階層；Phase 4-B：輪迴者新欄位 `geneLock`／`enhanceCount`／`insightCount`／`inheritPower`、`state.karmaCrystals`／`gacha`／`growth`／`chapterClears`；四池抽卡 `pullGacha`／`checkGacha`／`gachaInfo`（空間等級解鎖、每 7 天重置本週漲價、獨立保底、神級池耗結晶；週數由天數算出，所以讀檔不會錯）；`deserialize` 補新欄位並清掉舊 `upgrades`／`bought`（不退費） |；**4-D**：`state.taxRate`／`squad`（預留）／`market`／`aiShopRngState`／`board`／`relicCodex`，輪迴者新欄位 `wallet`／`soulbound`／`consumables`／`runBuff`／`lockedInPodBy`／`podLockDays`／`shopLog`／`customProfile`／`relicBonus`；`spend`（公庫）／`spendWallet`（私房錢）／`addSpent` 都累加 `totalSpent`；`endOfDay` 掛稅率理智、休眠艙倒數、`dailyShopping`；`deserialize` 遷移舊副本 id 並補新欄位
 | `src/engine/shop.js` | 商店引擎：`buyItem`／`checkBuy`（`opts.payer` = treasury 公庫賞賜〔綁定＋理智 +5〕或 wallet 私房錢〔不綁定、不覆蓋綁定裝備〕；`opts.source` = shop／market；黑貨帶 `victimId`）、`consumeRunBuffs`（出征耗材轉單場 `runBuff`）、`nextTierInfo`；`collectionEffects`／`collectionPassBonus` |
@@ -175,6 +176,8 @@
   - **新增存檔欄位**：`state.seed`／`facilities`／`erosionCrystals`／`autoUpgradeFacilities`／`autoErosion`／`maxErosion`／`facilityRngState`／`rivals`，輪迴者 `facilityBonus`／`hybridOrigin`，run 的 `erosion`／`rival`，結算摘要 `erosion`／`erosionCrystals`／`rival`；`deserialize` 缺欄位補預設。暫停事件新增 `rival`（預設開）。
   - **R 曲線校正（`dungeons.js` 的 `F_R_MULT` = ×1／1／1／1.6／1.7）**：基建與結晶讓後期成長更快，未校正時 900 天自然演化尾王首通中位數約 Day 32／79／165／219／318；第 4、5 章 R 再乘 ×1.6／1.7。實測（`npm run sim -- --seeds=100 --days=900`，自動建設與自動挑戰侵蝕開）：**Day 32／79／165／333／474**（+7%／-1%／0%／+11%／+5%），首通比例 97%／96%／95%／94%／84%，**遊戲結束 0%**，公庫期末均值約 31 萬（4-E-8 約 185 萬）、輪迴者總消費約 501 萬；基建期末平均等級：重力 5.8／溫養艙 6.6／共鳴碑 5.6／育嬰堂 2.3／觀測樞 2.5；侵蝕每局約 191 場（通關 107）、最高星級均值 6.2★、期末剩餘結晶約 253（結晶供過於求，不是瓶頸，積分才是）；洲際碰撞每局約 19.6 場、勝率 58%、戰死 2.8 人、私奔 0.00、反拐 0.73、混血子嗣 2.2、策反 0.76（**私奔放寬前**；放寬後見下方）。**已知**：①第 5 章 900 天內通關比例 84%（4-E-8 約 90%），報表中位數只算有通關的局，全局真實中位數略高；②私奔放寬後（候選 <= -5 或低理智且 < 15、落敗 35%、golden／joyous 挖角 12%）重跑 sim：尾王首通 Day 32／79／159／333／489（第 5 章比例 82%）、遊戲結束 0%、洲際勝率 58%（`powerMult` 維持 0.45）、每局私奔約 0.51 次（約每百局 51 次，**高於要求的 5～20 次區間**，數字照規格沒再動，要壓可調 `CONFIG.rival.elope` 的 `chance`／`lureChance`／候選門檻）；③ ×1.9／3.1 的建議起點實測第 5 章只剩 40% 局通關、中位數 Day 717，所以改用 ×1.6／1.7；④洲際落敗扣公庫是 20%，公庫大時損失絕對值不小，但 sim 無死檔。**暫定值需露葵驗證**：洲際 `powerMult` 0.45、私奔頻率（見上）與各隊獎勵倍率／特色細節、基建造價成長 1.45、侵蝕自動挑戰的「卡關才接手」規則、洲際任務 `baseR`／`reward` 表。
 
+- **A-2 壓力系統校正（2026-11，`npm run sim -- --seeds=5 --seedFrom=N --days=900`，4 核各 5 種子共 20 組）**：關閉壓力（`--pressure=0`）公庫期末均值約 960 萬；開啟後約 460 萬（-52%），遊戲結束 0%，第 1 章尾王首通中位數 Day 35 不變，第 2～5 章差異在種子噪音內。免稅額 L = 0／4 萬／15 萬／50 萬／150 萬（Lv.1～5），級距 0.6%／1.5%／3%（L～3L／3L～10L／10L 以上）每日，單日上限 4%。考核目標（Lv.2～5）通關 18／22／27／32 場、入帳 8000／28000／115000／110 萬，戰死上限 = 空間等級 - 1；sim 機器人達標率約 65～80%。**已知**：①**期末私房錢合計仍約 1,000～1,900 萬（比公庫還多）**，抽成只抽公庫；調低稅率（0.2）會讓更多積分進私房錢而繞過抽成，若要補洞下一步可對超額私房錢加徵（v1.5，需露葵決定）；②第一次考核約在 Day 60；③sim 新增 `--pressure=0`、`--seedFrom=N` 與壓力系統報表（各空間等級的考核中位數）。**暫定值需露葵驗證**：免稅額、級距、考核目標、罰獎數字。
+
 ## 2026-11 Bug 修復與功能更新（已完成，細節看 git 紀錄與 `test/bugfix.test.js`）
 
 - **自動派遣策略**：`config.js` 的 `auto.rules`（穩健／均衡／激進各有通關率門檻、每日隊數、傷勢上限、死亡風險上限、留守人數；`off` 給 sim 用，維持舊行為）；`dungeon.js` 的 `deathRisk` 為粗估（需驗證）。強制任務自動徵召尊重鎖定與傷員保護，只有最後期限且沒人可派才放寬。
@@ -187,12 +190,12 @@
 npm test
 ```
 
-472 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
+482 項測試都要通過。改到數值時再跑 `npm run sim` 看各章首通天數。改完程式碼後，用 Chromium 實際操作一輪（手動派遣 → 副本 → 結算 → 抽卡 → 鎖定 → 回收 → 自動派遣 → 許願彈窗 → 主神搞事彈窗 → 重新整理讀檔），確認沒有主控台錯誤。
 
 ## 不可違反的規則
 
 1. 這是獨立專案，與舊 AI-TRPG 專案無關；舊專案的規則（六維十技能、Prompt 快取契約等）不適用。
-2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，472 項都要通過。
+2. 不要破壞現有測試。改完程式碼後一定要跑 `npm test`，482 項都要通過。
 3. 所有可調數字都要放在 `src/data/config.js`，不要寫死在引擎裡。
 4. 引擎不要碰 DOM，畫面邏輯不要寫進引擎。
 5. 機密（Token、金鑰）永遠不能進 git。
@@ -202,7 +205,7 @@ npm test
 - 推上 `main` ＝ Cloudflare Workers 自動建置並執行 `npx wrangler deploy`（建置指令留空、根目錄 `/`，後台設定不要改）。合併前先確認 `npm test` 都過。
 - `wrangler.jsonc`：assets 目錄是專案根目錄，所以 `.assetsignore` 負責把 `worker/`、`test/`、`docs/`、`CLAUDE.md` 等非網站內容擋掉；**新增遊戲需要的檔案時不要被它誤擋**（`index.html`、`styles.css`、`src/` 必須能被讀到）。`keep_vars: true` 讓後台填的 `GOOGLE_CLIENT_ID`／`PUBLIC_ORIGIN` 不會被部署洗掉；`GOOGLE_CLIENT_SECRET` 只能在後台用 Secret 類型填，**不進 git**。
 - 本機完整預覽（真的 Worker＋本機 D1，不用 Cloudflare 帳號）：`npx wrangler d1 execute zhushen-sim --local --file worker/schema.sql`，然後 `npx wrangler dev --port 8799`。
-- 部署前確認 `npm test` 472 項全過。
+- 部署前確認 `npm test` 482 項全過。
 
 ## 開發階段（現在不要做，除非我明確要求）
 
