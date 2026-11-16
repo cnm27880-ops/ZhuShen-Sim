@@ -99,12 +99,14 @@ test("九轉金丹：傷勢清零並永久生命 +10，單人上限 3 次；滿�
   const hp0 = s.stats.hp;
   for (let i = 1; i <= 3; i++) {
     s.injury = 3;
+    s.dosage = undefined; // 這個測試看的是永久生命，不是抗藥性：每輪都當作隔了 7 天
     assert.equal(buyItem(state, "t5_27", s.id).ok, true);
     assert.equal(s.injury, 0);
     assert.equal(s.stats.hp, hp0 + 10 * i);
     assert.equal(s.elixirUses, i);
   }
   s.injury = 2;
+  s.dosage = undefined;
   assert.equal(aiAllowed(state, s, getShopItem("t5_27")), false, "滿 3 次 AI 不買");
   assert.equal(buyItem(state, "t5_27", s.id).ok, true, "手動賞賜仍可回傷");
   assert.equal(s.stats.hp, hp0 + 30, "不再加血");

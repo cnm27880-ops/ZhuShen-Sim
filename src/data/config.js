@@ -64,6 +64,10 @@ export const CONFIG = {
   shop: {
     consumableCap: 3, // 出征耗材緩衝區最多囤幾份（下次出征全部套用，單場）
     worldPassCap: 0.06, // 全隊「特產裝備綁定世界通過率加成」合計上限
+    // 抗藥性（常駐藥的濫用防護）：同一個人、同一類藥（治傷／回理智各算）在滾動 days 天內用得越多次，效果越差。
+    // mult[n] = 已用 n 次後的下一次效果倍率（超過就用最後一個）；治傷的「全癒」藥最多視為 healCap 級。
+    // minBuyMult：逛街 AI 與一鍵批量使用，預期倍率低於這個數字就不買／不用，免得浪費。只管常駐商店的藥，黑市貨不受影響。
+    tolerance: { days: 7, mult: [1, 0.5, 0.25, 0.1], healCap: 3, minBuyMult: 0.5 },
     demonTendencyChance: 0.05, // 穿著帶「入魔傾向」被動的裝備，每天獲得走火入魔詞條的機率（4-E-8；t5_36 必定入魔）
   },
   market: {

@@ -5,7 +5,7 @@
 import { CONFIG } from "../data/config.js";
 import { SHOP_ITEMS, getShopItem, isNewItem } from "../data/shopItems.js";
 import { emit, spend, canAfford, shopTier, getSamsarite } from "./core.js";
-import { applyUse, useBlock, isPermanent } from "./shop.js";
+import { applyUse, useBlock, isPermanent, doseMult } from "./shop.js";
 import { logText } from "./templates.js";
 
 export const MAX_BATCH = 99; // 單次最多買幾份
@@ -74,12 +74,17 @@ export function useStock(state, itemId, targetId) {
   return { ok: true, note };
 }
 
+/** 這件物資屬於哪幾類藥（對應抗藥性的 heal／sanity） */
+export const needKinds = (item) => [item?.effect?.healInjury ? "heal" : null, item?.effect?.sanity ? "sanity" : null].filter(Boolean);
+
 /** 一鍵批量使用：把這件物資依需求高低餵給所有「有需求、能用」的人，直到用完或沒人需要 */
 export function useStockMany(state, itemId) {
+  const item = getShopItem(itemId);
   const fed = [];
   for (const { s, need, block } of stockTargets(state, itemId)) {
     if (block || need <= 0) continue;
     if (stockCount(state, itemId) < 1) break;
+    if (isStockable(item) && needKinds(item).some((k) => doseMult(state, s, k) < CONFIG.shop.tolerance.minBuyMult)) continue; // 抗藥性太強：批量使用跳過，免得浪費
     const r = useStock(state, itemId, s.id);
     if (r.ok) fed.push(s.name);
   }

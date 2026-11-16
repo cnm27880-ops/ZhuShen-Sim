@@ -42,7 +42,8 @@ import { buildGossip } from "../engine/gossip.js";
 import { applyAutoMode, currentAutoMode } from "../engine/autoMode.js";
 import { bioOf, graveBio } from "../engine/life.js";
 import { transferGear } from "../engine/gearTransfer.js";
-import { stockableItems, stockList, stockCount, stockTargets, buyStock, useStock, useStockMany, checkBuyStock } from "../engine/inventory.js";
+import { stockableItems, stockList, stockCount, stockTargets, buyStock, useStock, useStockMany, checkBuyStock, needKinds } from "../engine/inventory.js";
+import { doseMult } from "../engine/shop.js";
 import { drawGossipCard, downloadGossipPng, copyText } from "./gossipCard.js";
 import { RIVAL_SQUADS } from "../data/rivals.js";
 import {
@@ -1106,9 +1107,13 @@ function inventory() {
   const item = getShopItem(modal.itemId);
   const people = item
     ? stockTargets(state, item.id)
-        .map(({ s, need, block }) => `<div class="option ${block ? "locked" : ""}" ${block ? `style="opacity:.55" title="${block}"` : `data-action="use-stock" data-id="${s.id}"`}>
-          ${rankBadge(s.rank)}<span class="grow">${s.name}<br /><small>理智 ${s.stats.sanity}・${injuryLabel(s)}${block ? `・<span class="bad">${block}</span>` : need > 0 ? "・<span class=\"good\">需要</span>" : ""}</small></span>
-          <small>${block ? "" : "點我使用"}</small></div>`)
+        .map(({ s, need, block }) => {
+          const tol = Math.min(...needKinds(item).map((k) => doseMult(state, s, k)), 1);
+          const tolTag = !block && tol < 1 ? `・<span class="bad">抗藥性：效果 ${Math.round(tol * 100)}%</span>` : "";
+          return `<div class="option ${block ? "locked" : ""}" ${block ? `style="opacity:.55" title="${block}"` : `data-action="use-stock" data-id="${s.id}"`}>
+          ${rankBadge(s.rank)}<span class="grow">${s.name}<br /><small>理智 ${s.stats.sanity}・${injuryLabel(s)}${block ? `・<span class="bad">${block}</span>` : need > 0 ? "・<span class=\"good\">需要</span>" : ""}${tolTag}</small></span>
+          <small>${block ? "" : "點我使用"}</small></div>`;
+        })
         .join("")
     : "";
   return `<h3>物資</h3>
