@@ -31,7 +31,25 @@ export const CONFIG = {
   recycle: { sanityLoss: 5 }, // 主神回收爐：其他人理智扣多少（計畫未定）；返還積分改看階級 RANKS[rank].recycleRefund（4-C-3）
   // 絕境空投（4-C-3）：存活人數（不含催熟艙）< minAlive 且積分 < pointsBelow，連續滿 everyDays 天，主神免費空投 1 名新人
   // rescue：true 時空投當作安全網，「沒人又借不到錢」不再直接判遊戲結束（否則全滅當下就死檔，空投來不及；4-C-6）
-  airdrop: { minAlive: 2, pointsBelow: 120, everyDays: 3, rank: "C", rescue: true },
+  // 掛機壓力設計（A-3，露葵 2026-11 拍板）：空投取消（enabled=false，程式保留），團滅改成真結局（rescue=false）；改由下面的 ending 處理新手救濟
+  airdrop: { enabled: false, minAlive: 2, pointsBelow: 120, everyDays: 3, rank: "C", rescue: false },
+  // 團滅結局與評分（A-3；engine/ending.js）。數字都是暫定值，需露葵驗證
+  ending: {
+    protectDays: 15, // 遊戲天數 < 這個數字：不判負債結局；名冊死光時給一次性新手救濟（只有一次）
+    debtGraceDays: 3, // 負債結局：頂到破產線（debtLimitOf）連續滿這麼多天才結束（副本結算可能還來得及補救）
+    relief: { count: 3, rank: "C" }, // 新手救濟：保護期內第一次死光（且抽不起最便宜卡池）時，免費補幾名新人
+    // 評分 = 各項加總（取整）：存活天數、首通尾王章數、總通關場數、英靈碑累計入碑數、公庫峰值（相對開局積分取 log10）、最高世代
+    score: { perDay: 1, perBossChapter: 500, perClear: 10, perStele: 20, perGeneration: 100, peakLog: 100 },
+    // 稱號：取分數 >= min 的最高一檔
+    titles: [
+      { min: 0, title: "三天就被換掉的主管" },
+      { min: 150, title: "剛學會當社畜的主管" },
+      { min: 600, title: "撐過一陣子的主管" },
+      { min: 2000, title: "資深壓榨者" },
+      { min: 6000, title: "讓主神記住名字的主管" },
+      { min: 15000, title: "主神都想請教的傳奇主管" },
+    ],
+  },
   // 商店 6 階的解鎖條件（第二批試玩回饋 16）：改看章節尾王首通，不再看累積花費。索引 0 = Tier 1。
   // 值 = 要先首通哪一章的尾王（0 = 開局就有）。Tier 2 = 通關第 1 章尾王 … Tier 6 = 通關第 5 章尾王。
   shopTierBossChapter: [0, 1, 2, 3, 4, 5],

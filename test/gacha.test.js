@@ -166,19 +166,19 @@ test("gachaInfo：四池都有資料，並帶解鎖／不能抽的原因", () =>
 });
 
 test("遊戲結束判定用基礎價：沒人且連初級池基礎價都付不起才結束", () => {
-  CONFIG.airdrop.rescue = false; // 這個測試看的是舊規則的判定線；空投救援開著就不會結束（見 engine.test）
   const state = createNewGame(3);
+  state.tick = CONFIG.ticksPerDay * CONFIG.ending.protectDays; // 過了新手保護期（A-3：保護期內死光會先發救濟，見 ending.test）
   state.samsarites = [];
   state.points = CONFIG.space.debtLimit[0] + 119;
   assert.equal(checkGameOver(state), true);
   const s2 = createNewGame(3);
+  s2.tick = state.tick;
   s2.samsarites = [];
   s2.points = CONFIG.space.debtLimit[0] + 120;
   assert.equal(checkGameOver(s2), false);
   // 本週漲價後（實際價 > 可用積分）但基礎價付得起：還不算結束（下週價格就回來了）
   s2.gacha.pools.basic.pulls = 5;
   assert.equal(checkGameOver(s2), false);
-  CONFIG.airdrop.rescue = true;
 });
 
 test("存檔：卡池狀態與因果結晶會保存", () => {

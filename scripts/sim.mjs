@@ -74,7 +74,10 @@ const TAX = args.tax ?? CONFIG.tax.default; // --tax=0.4：公庫稅率
 // 4-F：--facilities=0 關閉自動建設、--erosion=0 關閉自動挑戰侵蝕（預設都開，模擬「自然演化」）
 const SIM_FACILITIES = args.facilities !== 0;
 const SIM_EROSION = args.erosion !== 0;
-const SIM_STRATEGY = process.argv.find((a) => a.startsWith("--autoStrategy="))?.split("=")[1] ?? "off";
+// A-3：--bot=full（預設，現行機器人：每天補人／買裝備／強化／賞賜／回收）｜--bot=idle（放著不管：只開自動派遣、自動建設、自動挑戰侵蝕，不做任何手動操作）
+const BOT = process.argv.find((a) => a.startsWith("--bot="))?.split("=")[1] ?? "full";
+// idle 機器人模擬「開著預設自動派遣就走開的玩家」，預設用玩家預設策略；full 機器人維持 off（基準曲線）
+const SIM_STRATEGY = process.argv.find((a) => a.startsWith("--autoStrategy="))?.split("=")[1] ?? (BOT === "idle" ? CONFIG.auto.defaultStrategy : "off");
 const FORCE_STYLE = process.argv.find((a) => a.startsWith("--forceStyle="))?.split("=")[1] ?? null;
 if (FORCE_STYLE) CONFIG.squad.forceStyle = FORCE_STYLE;
 CONFIG.pressure.historyMax = 999; // sim 要看完整考核紀錄
@@ -119,6 +122,12 @@ function bestPool(state, days = RESERVE_DAYS) {
 }
 
 function botDay(state) {
+  // 0. 名冊歸零：真人玩家會借債抽最便宜的卡翻身（A-3：空投取消後，沒有這步機器人會永遠卡在負債邊緣）
+  if (alive(state).length === 0) {
+    for (const pool of CONFIG.gacha.pools) {
+      if (checkGacha(state, pool.id).ok && pullGacha(state, pool.id)) break;
+    }
+  }
   // 1. 補人
   for (let guard = 0; alive(state).length < TEAM_TARGET && guard < 10; guard++) {
     const c = bestPool(state);
@@ -190,7 +199,7 @@ function playOne(seed) {
   const styleDays = {}; // 每個流派在位的天數（4-E-6）
   let lastDay = 0;
   while (currentDay(state) <= DAYS && !state.gameOver) {
-    if (state.tick % CONFIG.ticksPerDay === botTick) {
+    if (BOT !== "idle" && state.tick % CONFIG.ticksPerDay === botTick) {
       const before = state.totalSpent;
       botDay(state);
       botSpent += state.totalSpent - before;
@@ -250,6 +259,10 @@ function playOne(seed) {
   return {
     clearDay: state.chapterClearDay,
     bankruptDay,
+    ending: state.ending?.result ?? null, // 團滅結局（A-3）：{ type, day, total, title, ... }
+    finalDay: currentDay(state),
+    reliefUsed: state.ending?.reliefUsed ?? false,
+    emptyRoster: !state.ending && alive(state).length === 0, // 名冊歸零、但積分還抽得起卡所以沒有結局（機器人不抽卡 = 實質崩壞）
     deaths: state.graveyard.filter((g) => !g.cause.includes("回收爐")).length,
     purged: state.graveyard.filter((g) => g.cause.includes("抹殺")).length, // 被主神抹殺（強制任務逾期等）
     mand,
@@ -314,10 +327,10 @@ if (args.json) {
     const days = results.map((r) => r.clearDay[ch]).filter(Boolean);
     return { ch, frac: days.length / SEEDS, median: days.length ? pctl(days, 0.5) : null, p25: days.length ? pctl(days, 0.25) : null, p75: days.length ? pctl(days, 0.75) : null };
   });
-  console.log(JSON.stringify({ chapters, purged: avg(results.map((r) => r.purged)), mandRuns: avg(results.map((r) => r.mand.runs)), mandWinRate: results.reduce((n, r) => n + r.mand.wins, 0) / Math.max(1, results.reduce((n, r) => n + r.mand.runs, 0)), alive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), income: avg(results.map((r) => r.income / DAYS)), points: avg(results.map((r) => r.points)), walletSpent: avg(results.map((r) => r.walletSpent)), relics: avg(results.map((r) => r.relics)), bankrupt: results.filter((r) => r.bankruptDay).length / SEEDS }));
+  console.log(JSON.stringify({ chapters, purged: avg(results.map((r) => r.purged)), mandRuns: avg(results.map((r) => r.mand.runs)), mandWinRate: results.reduce((n, r) => n + r.mand.wins, 0) / Math.max(1, results.reduce((n, r) => n + r.mand.runs, 0)), alive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), income: avg(results.map((r) => r.income / DAYS)), points: avg(results.map((r) => r.points)), walletSpent: avg(results.map((r) => r.walletSpent)), relics: avg(results.map((r) => r.relics)), bankrupt: results.filter((r) => r.bankruptDay).length / SEEDS, bot: BOT, emptyRoster: results.filter((r) => r.emptyRoster).length, endings: { roster: results.filter((r) => r.ending?.type === "roster").length, debt: results.filter((r) => r.ending?.type === "debt").length, medianDay: pctl(results.filter((r) => r.ending).map((r) => r.ending.day), 0.5), avgScore: avg(results.map((r) => r.ending?.total ?? 0)) } }));
   process.exit(0);
 }
-console.log(`\n主神空間平衡模擬：${SEEDS} 組種子 × 最多 ${DAYS} 天（${((Date.now() - t0) / 1000).toFixed(1)} 秒）\n`);
+console.log(`\n主神空間平衡模擬：${SEEDS} 組種子 × 最多 ${DAYS} 天（${((Date.now() - t0) / 1000).toFixed(1)} 秒）・機器人 ${BOT}\n`);
 console.log("章節 | 首通尾王比例 | 天數 P25 / 中位數 / P75 | 目標天數 | 中位數偏差");
 for (let ch = 1; ch <= 5; ch++) {
   const days = results.map((r) => r.clearDay[ch]).filter(Boolean);
@@ -327,7 +340,12 @@ for (let ch = 1; ch <= 5; ch++) {
   console.log(`第 ${ch} 章 | ${String(Math.round((days.length / SEEDS) * 100)).padStart(3)}% | ${pctl(days, 0.25)} / ${med} / ${pctl(days, 0.75)} | Day ${TARGET[ch]} | ${diff}`);
 }
 const bankrupt = results.filter((r) => r.bankruptDay);
-console.log(`\n遊戲結束（沒人又借不到錢）：${bankrupt.length}/${SEEDS} 局${bankrupt.length ? `，中位數第 ${pctl(bankrupt.map((r) => r.bankruptDay), 0.5)} 天` : ""}`);
+console.log(`\n遊戲結束（團滅）：${bankrupt.length}/${SEEDS} 局${bankrupt.length ? `，中位數第 ${pctl(bankrupt.map((r) => r.bankruptDay), 0.5)} 天` : ""}`);
+{
+  const ended = results.filter((r) => r.ending);
+  const byType = (t) => ended.filter((r) => r.ending.type === t).length;
+  console.log(`  結局分類（A-3）：死光 ${byType("roster")}・破產 ${byType("debt")}${ended.length ? `・結局平均評分 ${avg(ended.map((r) => r.ending.total))}` : ""}・新手救濟用掉 ${results.filter((r) => r.reliefUsed).length} 局・名冊歸零但未結局（實質崩壞）${results.filter((r) => r.emptyRoster).length} 局・沒結束的局平均撐到 Day ${avg(results.filter((r) => !r.ending).map((r) => r.finalDay))}`);
+}
 console.log(`曾經負債的局：${results.filter((r) => r.lowestPoints < 0).length}/${SEEDS}`);
 console.log(`平均死亡人數：${avg(results.map((r) => r.deaths))}　平均存活：${avg(results.map((r) => r.alive))}　平均最終積分：${avg(results.map((r) => r.points))}`);
 console.log(`平均出征場數：${avg(results.map((r) => r.attempts))}　平均通關場數：${avg(results.map((r) => r.clears))}　平均累積花費：${avg(results.map((r) => r.totalSpent))}`);
