@@ -29,7 +29,7 @@ export const TYPE_CATEGORY = {
   // 許願
   wish: "wish", wishAccept: "wish", wishDone: "wish", wishFail: "wish",
   // 主神：搞事、強制任務、借錢
-  god: "god", godEvent: "god", mandatory: "god", debt: "god",
+  god: "god", godEvent: "god", mandatory: "god", debt: "god", kpi: "god", kpiStart: "god", kpiWarn: "god", tithe: "god",
   // 日常：其餘（吃飯睡覺、買東西、抽卡、生小孩、基建…）
   dayEnd: "daily", shop: "daily", shopTier: "daily", market: "daily", wallet: "daily", gacha: "daily", gachaPity: "daily", birth: "daily",
   healed: "daily", lowSanity: "daily", shock: "daily", airdrop: "daily", facility: "daily", autoRisk: "daily", autoIdle: "daily", system: "daily",

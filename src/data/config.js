@@ -325,6 +325,44 @@ export const CONFIG = {
     rogueCrystalChance: 0.35, // 擊敗後掉因果結晶機率
   },
 
+  // ── 壓力系統（Phase A-2：主神抽成＋主神考核；引擎 engine/pressure.js）──
+  // 設計：壓力錨定在公庫存量，不看天數或戰力（衝太快的玩家公庫還小，自然不被抽）。空間 Lv.1 完全零觸發；陣列索引 = 空間等級 - 1。
+  pressure: {
+    startLevel: 2, // 空間等級 >= 這個才啟動（Lv.1 新手期豁免）
+    startDay: 30, // 且遊戲天數 >= 這個才開始第一期考核（第一次結算約在 Day 60）
+    // 累進抽成：每日對公庫「超過免稅額 L 的部分」按邊際級距計稅（只對超額部分，跟個人所得稅一樣）
+    exempt: [0, 40000, 150000, 500000, 1500000], // 免稅額 L（Lv.1 = 0 代表關閉）
+    brackets: [ // upTo = 該級距上限（L 的倍數），rate = 每日稅率
+      { upTo: 3, rate: 0.006 },
+      { upTo: 10, rate: 0.015 },
+      { upTo: Infinity, rate: 0.03 },
+    ],
+    dailyCapPct: 0.04, // 單日抽成不超過公庫的 3%（且抽完公庫不低於 L）
+    logEveryDays: 7, // 日誌每幾天彙總一則抽成（避免洗版）
+    // 主神考核：每期 reviewDays 天，三項過兩項算達標（通關數、營收、戰死人數）
+    reviewDays: 30,
+    needPass: 2,
+    targetClears: [0, 18, 22, 27, 32], // 期間成功結算場數
+    targetEarned: [0, 8000, 28000, 115000, 1100000], // 期間入公庫的積分（稅入）
+    // 戰死上限 = 空間等級 - 1 人（副本戰死＋被主神抹殺）
+    targetJitter: 0.1, // 通關數與營收目標在期初用獨立亂數流浮動 ±10%（主神臨時加碼）
+    passSanity: 10, // 達標：全員理智 +10
+    passTaxCutPct: 0.5, // 達標：之後一期累進抽成 -50%
+    perfectFreeRefresh: 2, // 3 項全過：黑市免費手動刷新次數
+    failSanity: 8, // 未達標：全員理智 -8（理智已 <= sanityFloor 的人不再扣，扣到最低停在 sanityFloor）
+    sanityFloor: 20,
+    failFinePct: 0.08, // 未達標罰金 = 公庫超過 L 部分的 8%
+    failFineCapPct: 0.15, // 罰金最多公庫的 15%（且不低於 L）
+    failTaxSurge: 0.5, // 未達標：之後一期累進抽成 +50%
+    streakStep: 0.5, // 連敗加重：第 n 次連續未達標，罰金與理智 ×(1 + 0.5 × (n-1))，最多 streakMax
+    streakMax: 2,
+    reliefAfter: 2, // 連續未達標達這個次數，下期目標開始減免
+    reliefStep: 0.15, // 每多一次 -15%
+    reliefMax: 0.3, // 最多 -30%
+    historyMax: 6, // 保留幾期的考核紀錄
+    warnDays: 5, // 距離考核結算剩幾天時提醒一次
+  },
+
   // ── 主神搞事（Phase 3-E；種類資料在 src/data/godEvents.js，數字全部「計畫未定」）──
   godEvent: {
     chance: 0.08, // 每天（沒在冷卻、沒有待回覆事件時）發生的機率
@@ -616,6 +654,7 @@ export const PAUSE_EVENTS = {
   autoIdle: { label: "自動派遣找不到合適隊伍", default: false },
   wish: { label: "輪迴者許願（彈窗讓你答應或拒絕）", default: true },
   godEvent: { label: "主神搞事（彈窗讓你照辦或花積分化解）", default: true },
+  kpi: { label: "主神考核結算（達標或被罰，自動處理，不需回覆）", default: false },
   stele: { label: "有人名字刻上英靈碑", default: false },
   squad: { label: "隊長異動（冊封、順延、政變、撤換）", default: false },
   drama: { label: "狗血人際事件（慶功、批鬥、夜襲、修羅場）", default: false },

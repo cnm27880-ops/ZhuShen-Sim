@@ -76,6 +76,8 @@ const SIM_EROSION = args.erosion !== 0;
 const SIM_STRATEGY = process.argv.find((a) => a.startsWith("--autoStrategy="))?.split("=")[1] ?? "off";
 const FORCE_STYLE = process.argv.find((a) => a.startsWith("--forceStyle="))?.split("=")[1] ?? null;
 if (FORCE_STYLE) CONFIG.squad.forceStyle = FORCE_STYLE;
+CONFIG.pressure.historyMax = 999; // sim 要看完整考核紀錄
+if (args.pressure === 0) CONFIG.pressure.startLevel = 99; // --pressure=0：關閉壓力系統（A-2 基準對照）
 const GROW_RESERVE_DAYS = args.growReserve ?? 8;
 const SEEDS = args.seeds || 100;
 const DAYS = args.days || 120;
@@ -255,6 +257,7 @@ function playOne(seed) {
     maxErosion: state.maxErosion ?? 0,
     rivalStats: state.rivals?.stats ?? {},
     stele: state.memorialStele.length,
+    pressure: state.pressure,
     alive: state.samsarites.length,
     points: state.points,
     lowestPoints,
@@ -293,7 +296,8 @@ const avg = (arr) => (arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length)
 
 const t0 = Date.now();
 const results = [];
-for (let seed = 1; seed <= SEEDS; seed++) results.push(playOne(seed));
+const SEED_FROM = args.seedFrom || 1; // 平行跑時用：從第幾組種子開始（--seedFrom=4 --seeds=3 → 種子 4,5,6）
+for (let seed = SEED_FROM; seed < SEED_FROM + SEEDS; seed++) results.push(playOne(seed));
 
 const TARGET = { 1: 30, 2: 80, 3: 165, 4: 300, 5: 450 }; // 露葵 2026-11-14 定的錨點（誤差 ±20% 內算達標）
 if (args.perseed) {
@@ -327,6 +331,18 @@ console.log(`最終空間等級分布：${[1, 2, 3, 4, 5].map((lv) => `Lv.${lv}�
 console.log(`最終最高基因鎖分布：${[0, 1, 2, 3, 4].map((g) => `${g}階×${results.filter((r) => r.maxGene === g).length}`).join("　")}`);
 console.log(`平均最強戰力：${avg(results.map((r) => r.topPower))}　平均剩餘因果結晶：${avg(results.map((r) => r.crystals))}`);
 console.log(`平均總收入（副本獎勵）：${avg(results.map((r) => r.income))}　每天約 ${avg(results.map((r) => r.income / DAYS))}`);
+{
+  const pr = results.map((r) => r.pressure);
+  const hist = pr.flatMap((p) => p.history);
+  for (let lv = 2; lv <= 5; lv++) {
+    const h = hist.filter((x) => x.level === lv);
+    if (!h.length) continue;
+    const med = (k) => pctl(h.map((x) => x.got[k]), 0.5);
+    const p25 = (k) => pctl(h.map((x) => x.got[k]), 0.25);
+    console.log(`  考核 Lv.${lv}：${h.length} 期・達標 ${Math.round((h.filter((x) => x.pass).length / h.length) * 100)}%・通關 P25/中位 ${p25("clears")}/${med("clears")}・入帳 ${p25("earned")}/${med("earned")}・戰死 中位 ${med("deaths")}`);
+  }
+  console.log(`壓力系統（A-2，每局平均）：抽成累計 ${avg(pr.map((p) => p.titheTotal))}・罰金累計 ${avg(pr.map((p) => p.fineTotal))}・考核 ${(hist.length / SEEDS).toFixed(1)} 期、達標率 ${hist.length ? Math.round((hist.filter((h) => h.pass).length / hist.length) * 100) : 0}%、全過率 ${hist.length ? Math.round((hist.filter((h) => h.perfect).length / hist.length) * 100) : 0}%・期末連敗均值 ${avg(pr.map((p) => p.streak))}`);
+}
 console.log(`雙錢包（稅率 ${TAX}）：公庫期末均值 ${avg(results.map((r) => r.points))}（中位數 ${pctl(results.map((r) => r.points), 0.5)}）・輪迴者總消費 ${avg(results.map((r) => r.walletSpent))}・公庫（機器人）總支出 ${avg(results.map((r) => r.botSpent))}・期末私房錢合計 ${avg(results.map((r) => r.wallets))}`);
 console.log(`奇物收集：平均 ${avg(results.map((r) => r.relics))} / 60（中位數 ${pctl(results.map((r) => r.relics), 0.5)}）`);
 const mandRuns = results.reduce((n, r) => n + r.mand.runs, 0);

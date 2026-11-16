@@ -5,6 +5,7 @@
 //   房數與過關門檻依章節（CONFIG.dungeon.chapters）；賭徒型標籤每房間再隨機浮動
 
 import { addLifeOnce } from "./life.js"; // 一生大事記（功能 5）
+import { pressureRecord } from "./pressure.js"; // 壓力系統：考核通關場數（A-2）
 import { CONFIG, INJURIES } from "../data/config.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
 import { getMutation } from "../data/mutations.js";
@@ -546,6 +547,7 @@ function finishRun(state, run) {
     }
     loot = distributeLoot(state, survivors, reward, { run, dungeon }); // 先抽稅入公庫（流派覆寫分潤見 4-E-2），其餘由存活隊員平分進私房錢（4-D-1）
     if (stats) stats.clears += 1;
+    pressureRecord(state, "clears", 1); // 考核通關場數（A-2）
     squadAfterClear(state, survivors); // 羈絆流：存活通關全隊理智 +4（4-E-2）
     if (dungeon.boss && !run.mandatory) for (const s of survivors) s.maxBossChapter = Math.max(s.maxBossChapter ?? 0, dungeon.chapter); // 遺物履歷（4-E-4）
     // 尾王守門：只算該章前 3 關（常規副本）的成功結算次數，含首通與重打
