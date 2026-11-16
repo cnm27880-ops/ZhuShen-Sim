@@ -392,6 +392,12 @@ footer { background: rgba(255, 255, 255, 0.9); border-top: 1px solid var(--line)
 .bar { height: 4px; margin-top: 6px; border-radius: 2px; background: #edf0f5; overflow: hidden; }
 .bar > i { display: block; height: 100%; border-radius: 2px; background: #000; }
 .bar.low > i { background: #dc2626; }
+.bar.grudge { height: 3px; margin-top: 3px; }
+.bar.grudge > i { background: #7c2d12; }
+.tension-card { border-left: 4px solid #f97316; }
+.tension-card.lv2 { border-left-color: #dc2626; }
+.tension-card.lv3 { border-left-color: #7f1d1d; background: #fff1f2; }
+.tension-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .rank { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 6px; color: #fff; font-size: 12px; font-weight: 800; text-align: center; }
 .rank-C { background: var(--rank-C); } .rank-B { background: var(--rank-B); } .rank-A { background: var(--rank-A); }
 .rank-S { background: #eab308; }

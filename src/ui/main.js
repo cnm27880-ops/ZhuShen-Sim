@@ -34,6 +34,8 @@ import { relicInfo } from "../engine/relics.js";
 import { setTaxRate, taxRateOf } from "../engine/wallet.js";
 import { steleBonusOf } from "../engine/memorial.js";
 import { levyWallets, levyPreview, checkLevy } from "../engine/levy.js";
+import { pendingTension, tensionOptions, resolveTension, tensionParties, climateIndex } from "../engine/tension.js"; // A-3 階段 2：人際張力與怨氣
+import { getTensionKind, CLIMATE_LEVELS } from "../data/tensionEvents.js";
 import { kpiStatus, exemptOf, titheMultOf, pressureActive } from "../engine/pressure.js";
 import { MANDATORY_ID, pendingMandatory, buildMandatoryDungeon } from "../engine/mandatory.js";
 import { RIVAL_ID, pendingRival, buildRivalDungeon, rivalInfo } from "../engine/rivals.js";
@@ -276,6 +278,12 @@ function renderTopbar() {
   $("btn-wishes").style.display = waiting + ongoing > 0 ? "" : "none";
   $("btn-wishes").textContent = waiting > 0 ? `許願 (${waiting})` : `許願（進行中 ${ongoing}）`; // 沒有待回覆但有進行中的許願時，也要能點進去查清單
   $("btn-wishes").classList.toggle("alert", waiting > 0);
+
+  const tensions = pendingTension(state).length; // 麻煩清單：有待處理的人際摩擦、或空間氣氛不平靜時才顯示
+  const climate = climateIndex(state);
+  $("btn-tension").style.display = tensions > 0 || climate > 0 ? "" : "none";
+  $("btn-tension").textContent = `${CLIMATE_LEVELS[climate].icon} 麻煩清單${tensions > 0 ? ` (${tensions})` : ""}`;
+  $("btn-tension").classList.toggle("alert", tensions > 0 || climate > 1);
 
   const godWaiting = Boolean(pendingGodEvent(state));
   $("btn-god").style.display = godWaiting || activeMission(state) ? "" : "none";
@@ -653,6 +661,7 @@ function cardInner(s) {
       <div class="card-top"><span class="grow">${s.name}</span><span class="tag-dots">${tagDots(s)}</span><span class="follow-btn ${s.id === state.settings.followId ? "on" : ""}" data-action="toggle-follow" data-id="${s.id}" title="${s.id === state.settings.followId ? "取消鎖定視角" : "鎖定視角（他下副本時畫面跟著切）"}">👁</span></div>
       <div class="card-meta"><span>戰力 <b>${effectivePower(s)}</b></span><span>理智 <b>${s.stats.sanity}</b></span></div>
       <div class="bar ${s.stats.sanity < 40 ? "low" : ""}" title="理智"><i style="width:${s.stats.sanity}%"></i></div>
+      ${(s.grudge ?? 0) > 0 ? `<div class="bar grudge" title="怨氣 ${CONFIG.tension.warnAt <= s.grudge ? "（已過警戒線）" : ""}"><i style="width:${s.grudge}%"></i></div>` : ""}
       <div class="card-subs"><span>生命 <b>${subStat(s, "hp")}</b></span><span>防 <b>${subStat(s, "defense")}</b></span><span>速 <b>${subStat(s, "speed")}</b></span><span>運 <b>${subStat(s, "luck")}</b></span></div>
       <div class="card-grow"><span>基因鎖 <b>${s.geneLock ?? 0}</b> 階</span><span>強化 <b>${s.enhanceCount ?? 0}/${enhanceCapOf(s)}</b></span><span>私房錢 <b>${s.wallet ?? 0}</b></span></div>
       <div class="card-tags">${(s.tags ?? []).map(getTag).filter(Boolean).slice(0, 4).map((t) => `<span class="tag-dot-${t.rarity}-chip">${esc(t.name)}</span>`).join("")}</div>
@@ -772,7 +781,7 @@ function renderModal() {
   document.body.classList.toggle("modal-open", Boolean(modal)); // 開著放大視窗時，角落的副本迷你小窗（#run-list）自動隱藏，關窗恢復（雙視窗互斥，4-E-7）
   $("modal-backdrop").style.display = modal ? "flex" : "none";
   if (!modal) return;
-  const builders = { leaderboard: leaderboardPanel, syncChoice, guide, dispatch, gacha, shop, detail, stele, kpi, levy: levyPanel, squad, settings, runResult, gameOver, confirmRecycle, batchRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel, inventory };
+  const builders = { tension: tensionPanel, leaderboard: leaderboardPanel, syncChoice, guide, dispatch, gacha, shop, detail, stele, kpi, levy: levyPanel, squad, settings, runResult, gameOver, confirmRecycle, batchRecycle, relations, wish, godEvent, facility, gossip, rivalAlert, auto: autoPanel, inventory };
   $("modal").innerHTML = builders[modal.name]();
   if (modal.name === "gossip") drawGossipCard($("gossip-canvas"), buildGossip(state)); // 畫報紙圖卡（Canvas，要等 innerHTML 寫完才拿得到元素）
 }
@@ -1569,6 +1578,46 @@ function stele() {
     <div class="modal-actions">${closeButton}</div>`;
 }
 
+/** 麻煩清單（A-3 階段 2）：輪迴者之間的人際摩擦。期限用遊戲日，暫停不消耗；無視或逾期會讓雙方怨氣上升，怨氣爆表就會叛逃、動手、政變或抗命 */
+function tensionPanel() {
+  const day = currentDay(state);
+  const list = pendingTension(state);
+  const T = CONFIG.tension;
+  const cl = CLIMATE_LEVELS[climateIndex(state)];
+  const rows = list
+    .map((ev) => {
+      const { a, b } = tensionParties(state, ev);
+      if (!a || !b) return "";
+      const k = getTensionKind(ev.kind);
+      const o = tensionOptions(state, ev);
+      const left = Math.max(0, ev.deadlineDay - day);
+      const lvTxt = ["", "初起", "升級", "一觸即發"][ev.level];
+      return `<div class="option tension-card lv${ev.level}">
+        <span class="option-icon">${k.icon}</span>
+        <span class="grow"><b>${k.name}</b>・${esc(a.name)} × ${esc(b.name)}<br />
+          <small>${lvTxt}（第 ${ev.level} 級）・還剩 ${left} 天・怨氣 ${esc(a.name)} ${Math.round(a.grudge ?? 0)}／${esc(b.name)} ${Math.round(b.grudge ?? 0)}</small>
+          <div class="tension-actions">
+            <button data-action="tension-mediate" data-id="${ev.id}" ${o.mediate.ok ? "" : "disabled"} title="免費；成功率 ${Math.round(o.mediate.chance * 100)}%，失敗只能試一次">調停 ${o.mediate.tried ? "（已試過）" : `${Math.round(o.mediate.chance * 100)}%`}</button>
+            <button data-action="tension-comp" data-id="${ev.id}" data-payee="${a.id}" ${o.compensate.ok ? "" : "disabled"} title="花公庫；受補償者怨氣大降，另一方會不平">補償 ${esc(a.name)}（${o.compensate.cost}）</button>
+            <button data-action="tension-comp" data-id="${ev.id}" data-payee="${b.id}" ${o.compensate.ok ? "" : "disabled"} title="花公庫；受補償者怨氣大降，另一方會不平">補償 ${esc(b.name)}</button>
+            <button data-action="tension-sep" data-id="${ev.id}" data-rest="${a.id}" ${o.separate.ok ? "" : "disabled"} title="讓他放假 ${o.separate.days} 天，這對 ${T.apart.days} 天內不容易再吵">拆開：${esc(a.name)} 放假</button>
+            <button data-action="tension-sep" data-id="${ev.id}" data-rest="${b.id}" ${o.separate.ok ? "" : "disabled"}>拆開：${esc(b.name)} 放假</button>
+          </div></span></div>`;
+    })
+    .join("");
+  const angry = state.samsarites
+    .filter((s) => (s.grudge ?? 0) >= T.warnAt)
+    .sort((x, y) => y.grudge - x.grudge)
+    .map((s) => `<div class="option"><span class="grow">${esc(s.name)}<small>怨氣 ${Math.round(s.grudge)}${s.grudge >= T.crisisAt ? "・⚠️ 隨時可能叛逃／動手／政變／抗命" : "・過了警戒線"}</small></span></div>`)
+    .join("");
+  return `<h3>${cl.icon} 麻煩清單 <small>空間氣氛：${cl.name}</small></h3>
+    <p class="hint">人越多，吵架越多。不處理的摩擦會升級，雙方怨氣與仇恨一起漲；怨氣 ≥ ${T.crisisAt} 的人每天都有機會出大事。小事（初起）無視也行，但別讓它拖到一觸即發。期限是遊戲內日數，暫停時不會減少。<br />預防：讓合得來的人同隊、選能服眾的隊長（會自動勸架）、戀人／好友不容易吵、必要時讓人放假分開。</p>
+    ${modal.note ? `<div class="summary" style="margin-bottom:8px">${modal.note}</div>` : ""}
+    <div class="option-list">${rows || `<div class="empty">目前沒有待處理的摩擦。</div>`}</div>
+    ${angry ? `<h4 style="margin:10px 0 4px">⚠️ 怨氣偏高的人</h4><div class="option-list">${angry}</div>` : ""}
+    <div class="modal-actions">${closeButton}</div>`;
+}
+
 /** 強徵私房錢面板：三檔預覽、冷卻、發動結果（手動，沒有自動版） */
 function levyPanel() {
   const g = state.levy;
@@ -2243,6 +2292,24 @@ const actions = {
   "refuse-wish"(el) {
     refuseWish(state, Number(el.dataset.id));
     if (pendingWishes(state).length === 0) modal = null;
+    saveGame();
+  },
+  "open-tension"() {
+    modal = { name: "tension" };
+  },
+  "tension-mediate"(el) {
+    const r = resolveTension(state, Number(el.dataset.id), "mediate");
+    modal.note = !r.ok ? `<span class="bad">${r.reason}</span>` : r.success ? "🕊️ 調停成功，雙方暫時休戰。" : `<span class="bad">🕊️ 調停失敗，兩人更火大了（這件事只能再靠補償或拆開）。</span>`;
+    saveGame();
+  },
+  "tension-comp"(el) {
+    const r = resolveTension(state, Number(el.dataset.id), "compensate", { payeeId: Number(el.dataset.payee) });
+    modal.note = r.ok ? `💰 花了 ${r.cost} 分安撫對方；另一方心裡不太平衡。` : `<span class="bad">${r.reason}</span>`;
+    saveGame();
+  },
+  "tension-sep"(el) {
+    const r = resolveTension(state, Number(el.dataset.id), "separate", { restId: Number(el.dataset.rest) });
+    modal.note = r.ok ? "🧳 已安排放假，兩人暫時分開。" : `<span class="bad">${r.reason}</span>`;
     saveGame();
   },
   "open-levy"() {

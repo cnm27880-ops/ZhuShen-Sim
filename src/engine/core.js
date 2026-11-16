@@ -26,6 +26,7 @@ import { relicBonusOf, refreshRelicBonus } from "./relics.js"; // 同上（Phase
 import { leaveHeirloom, dailyLineage } from "./lineage.js"; // 同上（Phase 4-E-4 遺物、子嗣、叛逃）
 import { newTraitState, rollTraits, ensureTraits } from "./personality.js"; // 輪迴者個性（隱藏維度，v1a）
 import { dailyTraits } from "./traitEvents.js"; // 同上（個性事件，獨立亂數流）
+import { dailyTension, newTensionState, tensionOf } from "./tension.js"; // 同上（A-3 階段 2：人際張力與怨氣，獨立亂數流）
 import { dailyDrama } from "./drama.js"; // 同上（Phase 4-E-3 5:2:1 狗血事件）
 import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, communalInherit, styleOf, squadSteleMult } from "./squad.js"; // 同上（Phase 4-E 小隊隊長與流派）
 import { addLife, addLifeOnce, bioOf, compactBio } from "./life.js"; // 人物傳記（功能 5；循環引用只在執行時呼叫）
@@ -90,6 +91,7 @@ export function createNewGame(seed = freshSeed()) {
     sanity: newSanityState(seed), // 理智暴走：獨立亂數流（見 engine/sanity.js）
     levy: newLevyState(seed), // 強徵私房錢：冷卻與拒繳亂數流（見 engine/levy.js）
     trait: newTraitState(seed), // 個性事件：獨立亂數流（見 engine/traitEvents.js）
+    tension: newTensionState(seed), // 人際張力與怨氣：待處理事件、冷卻、獨立亂數流（A-3 階段 2，見 engine/tension.js）
     pressure: newPressureState(seed), // 壓力系統：抽成與考核（見 engine/pressure.js）
     god: newGodState(seed), // 主神搞事：冷卻、待回覆事件、突襲任務（見 engine/godEvents.js）
     market: newMarketState(seed), // 8 格分槽黑市（含獨立亂數流 market.rngState；見 engine/market.js）
@@ -209,6 +211,7 @@ export function createSamsarite(state, rank, rng = state) {
     traits: null, // 隱藏個性五軸（-100～100，永不顯示；下面由種子＋id 雜湊產生，不吃亂數）
     traitSeen: [], // 已揭露的性格側寫 [{ day, axis, sign, text }]
     traitEventLast: {}, // 個性事件冷卻 { _any: 天, 事件id: 天 }
+    grudge: 0, // 怨氣 0~100（A-3 階段 2，見 engine/tension.js）：無視或逾期的人際摩擦會累積，過門檻出叛逃／互殺／政變／抗命
   };
   person.traits = rollTraits(state, person);
   return person;
@@ -567,6 +570,7 @@ export function advanceTick(state, beforeMandatory = null) {
     dailyPressure(state); // 主神抽成與考核（A-2，獨立亂數流；Lv.1 零觸發）
     dailyGod(state); // 主神搞事：任務逾期、事件過期、骰新事件（Phase 3-E，用獨立亂數流）
     dailyRelations(state); // 留守的人互動、搞事（Phase 2-B）
+    dailyTension(state); // 人際張力：每一對在家的人擲機率、逾期升級、怨氣後果（A-3 階段 2，獨立亂數流）
     dailyNursery(state); // 催熟倒數、戀人懷孕（Phase 3-F；放在關係事件之後，剛升級的靈魂伴侶今天就有機會）
     dailyDrama(state); // 5:2:1 人際事件：熱血羈絆／派系摩擦／八點檔修羅場（Phase 4-E-3，獨立亂數流）
     dailySquad(state); // 自動冊封／隊長缺位繼任／養殖流怨氣（Phase 4-E-1，獨立亂數流）
@@ -646,6 +650,8 @@ export function deserialize(json) {
   state.levy ??= newLevyState(state.rngState); // 舊存檔沒有強徵欄位
   state.trait ??= newTraitState(state.rngState); // 舊存檔沒有個性事件欄位
   for (const s of state.samsarites) ensureTraits(state, s); // 舊存檔用同一套雜湊補個性五軸（不吃亂數）
+  tensionOf(state); // 舊存檔沒有人際張力欄位（A-3 階段 2）：補預設
+  for (const s of state.samsarites) s.grudge ??= 0;
   state.pressure ??= newPressureState(state.rngState); // 舊存檔沒有壓力系統欄位（A-2）；下一個啟動條件滿足時才開始第一期
   state.god ??= newGodState(state.rngState); // 舊存檔沒有主神搞事欄位（Phase 3-E）
   state.god.pending ??= null;

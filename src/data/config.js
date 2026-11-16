@@ -386,6 +386,61 @@ export const CONFIG = {
     minWallet: 30, // 要掏錢／被收費的人，私房錢至少要有這麼多
   },
 
+  // ── 離心力：人際張力與怨氣（A-3 階段 2；引擎 engine/tension.js，事件資料 data/tensionEvents.js）──
+  // 設計：每天對「都在主神空間的每一對人」擲張力機率，期望事件量隨在家人數平方成長，沒有任何人數上限。
+  // 事件帶遊戲內期限（暫停不消耗）；玩家可調停／補償／拆開／無視。無視或逾期 → 怨氣上升；怨氣過門檻 → 叛逃／互殺／政變／抗命。
+  // 以下全部是暫定值，需 sim 校正（--bot=idle／casual／full × --roster 掃描）。
+  tension: {
+    enabled: true,
+    baseChance: 0.03, // 一對中性關係的人，每天產生張力事件的基礎機率（sim 校準：n=6 約每 20 天一件、n=24 約每天 0.7 件，讓 attention k=1 在大名冊忙不過來、k=3 勉強夠用）
+    maxChance: 0.12, // 單一對每天機率上限
+    hateMult: { dislike: 4, hate: 8, nemesis: 12 }, // 任一方向仇恨 >= 討厭線／仇恨線／死敵
+    negAffinityMult: 2, // 雙向淨好感都 < 0
+    ambitionMult: 3, // 野心 vs 野心（兩人都 >= personalityMin）
+    altruismMult: 2.5, // 利他 vs 利己（一個 >= +min、一個 <= -min）
+    personalityMin: 40,
+    captainMult: 2, // 一方是隊長，另一方順從度 <= -min 且對隊長淨好感 <= captainAffinity
+    captainAffinity: -15,
+    triangleMult: 3, // 搶同一人（雙方對第三人淨好感都 >= fanAffinity）
+    triangleLoverMult: 4, // …而且其中一方是第三人的戀人／靈魂伴侶
+    fanAffinity: 45,
+    lowSanity: [{ below: 30, mult: 2 }, { below: 60, mult: 1.3 }], // 兩人較低的理智
+    grudgeDiv: 100, // 雙方怨氣加總 ÷ 這個數字 = 額外倍率（1 + (gA+gB)/100）
+    // 預防（降低產生率）
+    loverMult: 0.3, // 戀人／靈魂伴侶
+    friendMult: 0.5, // 雙向淨好感都 >= friendAffinity
+    friendAffinity: 50,
+    apartMult: 0.2, // 「拆開」期間
+    pairCooldown: 8, // 處理完（或爆發）後同一對至少隔幾天才會再有事
+    deadlineDays: [3, 2, 1], // 等級 1／2／3 的處理期限（遊戲日，用 currentDay 計，暫停不消耗）
+    // 無視逾期：雙方怨氣 + ignoreGrudge[等級-1]、互相仇恨 + ignoreHate，等級 1～2 升一級重發，等級 3 結束（爆發）
+    ignoreGrudge: [10, 15, 20],
+    ignoreHate: 6,
+    // 調停：成功率 = base + obedience×平均順從度/100 + captain×(隊長對雙方淨好感>=0 則加) + sanity×(兩人平均理智-50)/100，夾在 min~max；每件事只能試一次
+    mediate: { base: 0.55, obedience: 0.15, captain: 0.1, sanity: 0.2, min: 0.2, max: 0.9, okGrudge: -15, okHate: -10, failGrudge: 5, failHate: 4 },
+    // 補償（選一方）：花公庫 = costDays × 兩人日維持費 × 等級倍率 × (1.5 ^ 近期補償次數)
+    compensate: { costDays: 3, levelMult: [1, 1.5, 2], repeatMult: 1.5, repeatWindow: 20, payeeGrudge: -25, payeeAffinity: 8, otherGrudge: 10, otherHate: 6 },
+    // 拆開：指定一人放假（不能派遣），該對產生率降低
+    apart: { vacationDays: 3, days: 6 },
+    // 隊長自動調停（只處理等級 1、隊長不在事件裡、對雙方淨好感 >= 0、理智 >= captainSanity）
+    captainAuto: { chance: 0.25, captainSanity: 50, grudge: -8, hate: -5 },
+    // 怨氣
+    grudgeDecay: 1, // 每天自然消退
+    warnAt: 50, // 警報線（alerts.js；降到 rearmAt 以下重新武裝）
+    rearmAt: 30,
+    crisisAt: 70, // 達到就每天擲後果
+    crisisChance: 0.12,
+    afterOutcome: 35, // 後果發生後怨氣回到這個數字
+    // 後果權重（available 才抽）：defect 叛逃／kill 互殺／coup 政變夜襲／defy 抗命（不爽心情，兜底）
+    outcomes: { defect: 25, kill: 25, coup: 20, defy: 30 },
+    courageWeight: 0.25, // 膽識每 +100 讓叛逃／互殺權重 × (1 + 0.25)；順從度 -100 同理（個性只改權重，不顯示數字）
+    killMinHate: 60, // 互殺對象：仇恨最高且 >= 這個數字
+    coupMinGrudge: 50, // 政變：怨氣 >= 這個數字且對隊長淨好感 <= 0 的人至少 minConspirators 個
+    minConspirators: 2,
+    elopeGrudge: 70, // 私奔候選：怨氣 >= 這個數字（rivals.js elopeCandidate）
+    climate: [30, 60], // 空間氣氛等級線（最高怨氣）：平靜 / 暗流 / 一觸即發
+  },
+
   // ── 壓力系統（Phase A-2：主神抽成＋主神考核；引擎 engine/pressure.js）──
   // 設計：壓力錨定在公庫存量，不看天數或戰力（衝太快的玩家公庫還小，自然不被抽）。空間 Lv.1 完全零觸發；陣列索引 = 空間等級 - 1。
   pressure: {
@@ -725,6 +780,8 @@ export const PAUSE_EVENTS = {
   rival: { label: "洲際碰撞任務（刷出當天與剩餘 1 天預警）", default: true },
   injurySevere: { label: "有人重傷／致命傷", default: true },
   lowSanity: { label: "有人理智低於 20（快崩潰）", default: true },
+  grudge: { label: "有人怨氣爆表（快要叛逃、動手或抗命）", default: true },
+  tension: { label: "輪迴者之間起了摩擦（麻煩清單新增；人多時會很頻繁）", default: false },
 };
 
 // 自動小幫手三種模式（功能 4）：取代一堆開關。pause："all" 全部事件都暫停、"major" 預設重大事件（PAUSE_EVENTS 的 default）暫停、
@@ -737,6 +794,7 @@ export const AUTO_MODES = {
 
 // 新增暫停事件的門檻（問題 5）：傷勢 >= severeInjury、理智 < lowSanity 時各提醒一次（恢復後才會再提醒）
 export const ALERT_LEVELS = { severeInjury: 2, lowSanity: 20 };
+// 怨氣警報線在 CONFIG.tension.warnAt／rearmAt（A-3 階段 2）
 
 // 雲端功能（Google 登入、雲端存檔、排行榜）的前端數字。後端的上限在 worker/limits.js。
 export const CLOUD = {

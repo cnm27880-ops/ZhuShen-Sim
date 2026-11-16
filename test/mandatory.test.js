@@ -3,6 +3,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { CONFIG } from "../src/data/config.js";
+
+CONFIG.tension.enabled = false; // 這個檔案測強制任務；無人看管時的人際張力（A-3 階段 2，見 test/tension.test.js）會讓人叛逃／互殺、干擾人數與派遣，所以整個檔案關閉
 import { createNewGame, createSamsarite, currentDay, advanceTick, serialize, deserialize } from "../src/engine/core.js";
 import { startRun, hurt, roomPassRate, dungeonOfRun } from "../src/engine/dungeon.js";
 import { step, tryAutoDispatch } from "../src/engine/dispatch.js";
