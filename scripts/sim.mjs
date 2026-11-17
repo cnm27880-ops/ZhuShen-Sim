@@ -82,6 +82,9 @@ const SIM_EROSION = args.erosion !== 0;
 // A-3 階段 3：--autolv=調解中樞等級,人力調度處等級（機器人願意買到幾級，預設 0,0 = 不投資，與階段 2 完全相同）；
 //   --repair=0 故障後機器人不維修（預設：idle 不修、casual 修（每件算 1 次關注，和張力事件共用 k）、full 全修）
 const AUTOLV = listArg("autolv") ?? [0, 0];
+// 診斷用：--autoUnlock=1 取消自動化的空間等級門檻、--autoCost=0.1 造價與維護費乘上倍率（只影響模擬，用來分離「機制強度」與「機器人買不起／進度不夠」）
+if (args.autoUnlock) for (const m of Object.values(CONFIG.automation.modules)) m.unlockSpace = m.unlockSpace.map(() => args.autoUnlock);
+if (args.autoCost) for (const m of Object.values(CONFIG.automation.modules)) { m.cost = m.cost.map((v) => Math.round(v * args.autoCost)); m.maint = m.maint.map((v) => Math.round(v * args.autoCost)); }
 const BOT = process.argv.find((a) => a.startsWith("--bot="))?.split("=")[1] ?? "full";
 const ATTENTION = BOT === "full" ? Infinity : BOT === "casual" ? (args.attention ?? 1) : 0;
 if (args.tension === 0) CONFIG.tension.enabled = false;
