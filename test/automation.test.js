@@ -156,6 +156,7 @@ test("維修：公庫不夠就修不了", () => {
 test("調解中樞：只處理等級 1、容量有限、不處理已試過或等級 3 的事件", () => {
   CONFIG.automation.modules.mediate.fault = [0, 0, 0];
   CONFIG.automation.modules.mediate.chanceMult = [1000, 1000, 1000]; // 必成功，方便數件數
+  CONFIG.automation.modules.mediate.capacity = [1, 2, 3]; // 測試固定容量，不跟著正式數字走
   const state = room(8);
   const [a, b, c, d, e, f, g, h] = state.samsarites;
   setLevel(state, "mediate", 1); // 容量 1、只處理等級 1
