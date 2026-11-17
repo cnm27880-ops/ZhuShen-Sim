@@ -32,7 +32,7 @@ export const TYPE_CATEGORY = {
   god: "god", godEvent: "god", mandatory: "god", debt: "god", kpi: "god", levy: "god", kpiStart: "god", kpiWarn: "god", tithe: "god",
   // 日常：其餘（吃飯睡覺、買東西、抽卡、生小孩、基建…）
   dayEnd: "daily", shop: "daily", shopTier: "daily", market: "daily", wallet: "daily", gacha: "daily", gachaPity: "daily", birth: "daily",
-  healed: "daily", lowSanity: "daily", shock: "daily", airdrop: "daily", facility: "daily", autoRisk: "daily", autoIdle: "daily", system: "daily",
+  healed: "daily", lowSanity: "daily", shock: "daily", airdrop: "daily", facility: "daily", autoRisk: "daily", autoIdle: "daily", system: "daily", automation: "daily", autoFault: "daily",
 };
 
 export const categoryOf = (type) => TYPE_CATEGORY[type] ?? "daily";

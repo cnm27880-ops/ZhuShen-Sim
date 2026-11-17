@@ -26,8 +26,9 @@ import { defect } from "./lineage.js";
 import { applyEvent } from "./drama.js";
 import { setMood } from "./wishes.js";
 import { logText } from "./templates.js";
+import { autoMediate } from "./automation.js";
 
-const T = () => CONFIG.tension;
+const T =() => CONFIG.tension;
 const clampG = (v) => Math.max(0, Math.min(100, Math.round(v)));
 
 // ───────── 狀態與亂數流 ─────────
@@ -241,7 +242,7 @@ export function resolveTension(state, id, action, opts = {}) {
 
   if (action === "mediate") {
     if (ev.tried) return { ok: false, reason: "已經調停過了，這次談不攏" };
-    const chance = mediateChance(state, ev);
+    const chance = mediateChance(state, ev) * (opts.chanceMult ?? 1); // 自動化中樞的自動調停成功率打折（A-3 階段 3）
     if (rand(tensionRng(state)) < chance) {
       for (const x of [a, b]) addGrudge(x, c.mediate.okGrudge);
       softenHate(state, a, b, { reduce: -c.mediate.okHate });
@@ -386,6 +387,7 @@ export function dailyTension(state) {
 
   t.pending = t.pending.filter((ev) => getSamsarite(state, ev.aId) && getSamsarite(state, ev.bId)); // 當事人不在了（死亡、叛逃、回收）
   captainAutoMediate(state);
+  autoMediate(state); // 自動化中樞：調解中樞（A-3 階段 3；沒投資或故障、停擺時什麼都不做）
   for (const ev of [...t.pending]) if (day >= ev.deadlineDay) expireEvent(state, ev);
 
   // 產生新事件：每一對在家的人各擲一次（有待辦或冷卻中的不擲）
