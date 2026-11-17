@@ -241,7 +241,7 @@ export function resolveTension(state, id, action, opts = {}) {
   if (!a || !b) return { ok: false, reason: "當事人不在了" };
 
   if (action === "mediate") {
-    if (ev.tried) return { ok: false, reason: "已經調停過了，這次談不攏" };
+    if (opts.auto ? ev.autoTried : ev.tried) return { ok: false, reason: "已經調停過了，這次談不攏" };
     const chance = mediateChance(state, ev) * (opts.chanceMult ?? 1); // 自動化中樞的自動調停成功率打折（A-3 階段 3）
     if (rand(tensionRng(state)) < chance) {
       for (const x of [a, b]) addGrudge(x, c.mediate.okGrudge);
@@ -255,7 +255,8 @@ export function resolveTension(state, id, action, opts = {}) {
     for (const x of [a, b]) addGrudge(x, c.mediate.failGrudge);
     addHate(state, a, b, c.mediate.failHate);
     addHate(state, b, a, c.mediate.failHate);
-    ev.tried = true;
+    if (opts.auto) ev.autoTried = true; // 自動調停失敗只用掉自動化的那一次，玩家仍可親手再試（A-3 階段 3：避免自動化搶走玩家的調停機會）
+    else ev.tried = true;
     t.stats.mediateFail += 1;
     emit(state, "tension", logText(state, "tensionMediateFail", { A: a, B: b }));
     return { ok: true, success: false, chance };

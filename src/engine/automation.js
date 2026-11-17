@@ -142,11 +142,11 @@ export function autoMediate(state) {
   let n = 0;
   for (const ev of pendingTension(state)) {
     if (n >= cap) break;
-    if (ev.tried || ev.level > maxLv) continue;
+    if (ev.tried || ev.autoTried || ev.level > maxLv) continue; // 玩家已親手試過、或自動化已試過（失敗不算玩家的那一次機會）的不再碰
     n += 1;
     a.stats.handled += 1;
     emit(state, "tension", logText(state, "autoMediate", { A: state.samsarites.find((s) => s.id === ev.aId), B: state.samsarites.find((s) => s.id === ev.bId) }));
-    const r = resolveTension(state, ev.id, "mediate", { chanceMult: mult });
+    const r = resolveTension(state, ev.id, "mediate", { chanceMult: mult, auto: true });
     if (r.ok && r.success) a.stats.ok += 1;
     else a.stats.fail += 1;
   }

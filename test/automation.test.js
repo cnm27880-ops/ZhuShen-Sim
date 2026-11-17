@@ -3,7 +3,7 @@ import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { CONFIG, PAUSE_EVENTS } from "../src/data/config.js";
 import { createNewGame, createSamsarite, serialize, deserialize, currentDay } from "../src/engine/core.js";
-import { tensionOf } from "../src/engine/tension.js";
+import { tensionOf, resolveTension } from "../src/engine/tension.js";
 import { automationOf, automationLevel, moduleActive, checkAutomationBuy, buyAutomation, repairCost, repairModule, dailyAutomation, autoMediate, setRecruitTarget, recruitCap } from "../src/engine/automation.js";
 
 const SAVE_A = JSON.stringify(CONFIG.automation);
@@ -182,7 +182,7 @@ test("調解中樞：只處理等級 1、容量有限、不處理已試過或等
   assert.ok(!ids.includes(ev3.id), "等級 2 的事件 Lv.3 會處理");
 });
 
-test("調解中樞：失敗和手動失敗一樣有後果，事件標為已試過、不會再被自動處理", () => {
+test("調解中樞：失敗和手動失敗一樣有後果，但只用掉自動化的那一次，玩家仍可親手再調停", () => {
   CONFIG.automation.modules.mediate.fault = [0, 0, 0];
   CONFIG.automation.modules.mediate.chanceMult = [0, 0, 0]; // 必失敗
   const state = room(4);
@@ -192,11 +192,15 @@ test("調解中樞：失敗和手動失敗一樣有後果，事件標為已試�
   const ev = addEvent(state, a, b, 1);
   const g0 = (a.grudge ?? 0) + (b.grudge ?? 0);
   autoMediate(state);
-  assert.equal(ev.tried, true);
+  assert.equal(ev.autoTried, true);
+  assert.equal(ev.tried, false, "不能搶走玩家的調停機會");
   assert.equal(automationOf(state).stats.fail, 1);
   assert.equal((a.grudge ?? 0) + (b.grudge ?? 0), g0 + 2 * CONFIG.tension.mediate.failGrudge);
   autoMediate(state);
-  assert.equal(automationOf(state).stats.handled, 1, "已試過的事件不再自動處理");
+  assert.equal(automationOf(state).stats.handled, 1, "自動化對同一件事只試一次");
+  const r = resolveTension(state, ev.id, "mediate"); // 玩家親手調停仍然可以
+  assert.equal(r.ok, true);
+  assert.ok(r.chance > 0);
 });
 
 test("調解中樞：故障、停擺、沒投資時完全不處理", () => {
