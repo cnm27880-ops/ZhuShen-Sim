@@ -25,6 +25,7 @@ import { DUNGEONS } from "../src/data/dungeons.js";
 import { SHOP_ITEMS } from "../src/data/shopItems.js";
 import { createNewGame, currentDay, canAfford, pullGacha, checkGacha, upkeepOf, recycle, getSamsarite } from "../src/engine/core.js";
 import { pendingTension, tensionOptions, resolveTension } from "../src/engine/tension.js";
+import { automationOf, checkAutomationBuy, buyAutomation, repairModule, repairCost, setRecruitTarget } from "../src/engine/automation.js";
 import { popLimit } from "../src/engine/mandatory.js";
 import { step } from "../src/engine/dispatch.js";
 import { effectivePower } from "../src/engine/tags.js";
@@ -78,6 +79,12 @@ const SIM_EROSION = args.erosion !== 0;
 // A-3：--bot=full（預設，現行機器人：每天補人／買裝備／強化／賞賜／回收）｜--bot=idle（放著不管：只開自動派遣、自動建設、自動挑戰侵蝕，不做任何手動操作）
 // A-3 階段 2：--bot=casual --attention=k（idle ＋ 每天最多親手處理 k 件人際張力事件；k=1、3 模擬不同程度的玩家）；full 也處理「全部」張力事件
 //   --tension=0：關閉人際張力（對照組）；--recruit=0：idle 不補人（階段 1 的舊定義）；--roster=N 掃名冊上限（4、6、8、12、16、24）
+// A-3 階段 3：--autolv=調解中樞等級,人力調度處等級（機器人願意買到幾級，預設 0,0 = 不投資，與階段 2 完全相同）；
+//   --repair=0 故障後機器人不維修（預設：idle 不修、casual 修（每件算 1 次關注，和張力事件共用 k）、full 全修）
+const AUTOLV = listArg("autolv") ?? [0, 0];
+// 診斷用：--autoUnlock=1 取消自動化的空間等級門檻、--autoCost=0.1 造價與維護費乘上倍率（只影響模擬，用來分離「機制強度」與「機器人買不起／進度不夠」）
+if (args.autoUnlock) for (const m of Object.values(CONFIG.automation.modules)) m.unlockSpace = m.unlockSpace.map(() => args.autoUnlock);
+if (args.autoCost) for (const m of Object.values(CONFIG.automation.modules)) { m.cost = m.cost.map((v) => Math.round(v * args.autoCost)); m.maint = m.maint.map((v) => Math.round(v * args.autoCost)); }
 const BOT = process.argv.find((a) => a.startsWith("--bot="))?.split("=")[1] ?? "full";
 const ATTENTION = BOT === "full" ? Infinity : BOT === "casual" ? (args.attention ?? 1) : 0;
 if (args.tension === 0) CONFIG.tension.enabled = false;
@@ -98,7 +105,8 @@ const RESERVE_DAYS = args.reserve ?? 5; // 買東西後至少留幾天的維持�
 const SURPLUS_RESERVE_DAYS = 10; // 「剩錢多抽」要留更多緩衝
 const TRACE = args.trace || 0; // 除錯：指定一組種子，每 10 天印一次狀況
 let recruitClosed = false; // idle／casual：已補滿過一次，之後不再補人
-let handled = 0; // 機器人本局親手處理的張力事件數
+let handled = 0; // 機器人本局親手處理的張力事件數（casual 維修自動化也算 1 次）
+let handledToday = 0; // 今天已經花掉的關注次數（casual 維修自動化用）
 const RANK_VAL = { C: 0, B: 1, A: 2, S: 3 };
 
 function dailyUpkeep(state) {
@@ -174,6 +182,28 @@ function handleTension(state, k) {
     if (alive(state).length >= 6 && ev.level >= 2) {
       const [weak, strong] = effectivePower(a) <= effectivePower(b) ? [a, b] : [b, a];
       if (!resolveTension(state, ev.id, "separate", { restId: weak.id }).ok) resolveTension(state, ev.id, "separate", { restId: strong.id });
+    }
+  }
+}
+
+/** 自動化中樞的投資與維修：機器人像玩家一樣，公庫寬裕（花完仍留 20 天維持費）才買；idle 不修、casual 每件修理算 1 次關注、full 全修 */
+function automationDay(state) {
+  if (!AUTOLV[0] && !AUTOLV[1]) return;
+  ["mediate", "recruit"].forEach((id, i) => {
+    for (let guard = 0; guard < 3 && automationOf(state).levels[id] < AUTOLV[i]; guard++) {
+      const c = checkAutomationBuy(state, id);
+      if (!c.ok || !canSpare(state, c.cost, 20)) break;
+      buyAutomation(state, id);
+    }
+  });
+  if ((automationOf(state).levels.recruit ?? 0) > 0) setRecruitTarget(state, ROSTER_MAX);
+  if (args.repair === 0 || BOT === "idle") return;
+  let budget = BOT === "casual" ? Math.max(0, ATTENTION - handledToday) : Infinity;
+  for (const id of ["mediate", "recruit"]) {
+    if (budget <= 0) break;
+    if (automationOf(state).broken[id] && canSpare(state, repairCost(state, id), 10) && repairModule(state, id).ok) {
+      budget -= 1;
+      handled += 1;
     }
   }
 }
@@ -262,7 +292,10 @@ function playOne(seed) {
       const before = state.totalSpent;
       if (BOT === "full") botDay(state);
       else if (args.recruit !== 0) recruitDay(state);
+      const handledBefore = handled;
       if (ATTENTION > 0) handleTension(state, ATTENTION);
+      handledToday = handled - handledBefore;
+      automationDay(state);
       botSpent += state.totalSpent - before;
     }
     const spentBefore = state.totalSpent;
@@ -331,6 +364,8 @@ function playOne(seed) {
     traitEvents,
     tension: state.tension?.stats ?? {}, // 人際張力統計（A-3 階段 2）
     tensionHandled: handled,
+    automation: state.automation?.stats ?? {}, // 自動化中樞統計（A-3 階段 3）
+    autoLevels: { ...(state.automation?.levels ?? {}) },
     maxGrudge: Math.max(0, ...state.samsarites.map((x) => x.grudge ?? 0)),
     eroRuns,
     facilities: { ...state.facilities },
@@ -391,7 +426,7 @@ if (args.json) {
     const days = results.map((r) => r.clearDay[ch]).filter(Boolean);
     return { ch, frac: days.length / SEEDS, median: days.length ? pctl(days, 0.5) : null, p25: days.length ? pctl(days, 0.25) : null, p75: days.length ? pctl(days, 0.75) : null };
   });
-  console.log(JSON.stringify({ attrition: avg(results.map((r) => (r.tension?.outcomes?.defect ?? 0) + (r.tension?.outcomes?.kill ?? 0) + (r.tension?.outcomes?.coup ?? 0))), overdue: avg(results.map((r) => r.tension?.expired ?? 0)), bankruptDays: results.map((r) => r.bankruptDay), clearDays: [1, 2, 3, 4, 5].map((ch) => results.map((r) => r.clearDay[ch]).filter(Boolean)), seeds: SEEDS, collapsed: results.filter((r) => r.ending || r.emptyRoster).length, wiped: results.filter((r) => r.ending || r.alive <= 2).length, ended: results.filter((r) => r.ending).length, endTypes: { roster: results.filter((r) => r.ending?.type === 'roster').length, debt: results.filter((r) => r.ending?.type === 'debt').length, empty: results.filter((r) => r.emptyRoster).length }, finalAlive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), clears: avg(results.map((r) => r.clears)), level: avg(results.map((r) => r.level)), points: avg(results.map((r) => r.points)), tensionSum: results.reduce((m, r) => { for (const [k, v] of Object.entries(r.tension ?? {})) if (typeof v === 'number') m[k] = (m[k] ?? 0) + v; for (const [k, v] of Object.entries(r.tension?.outcomes ?? {})) m['o_' + k] = (m['o_' + k] ?? 0) + v; return m; }, {}), handled: avg(results.map((r) => r.tensionHandled)), chapters, purged: avg(results.map((r) => r.purged)), mandRuns: avg(results.map((r) => r.mand.runs)), mandWinRate: results.reduce((n, r) => n + r.mand.wins, 0) / Math.max(1, results.reduce((n, r) => n + r.mand.runs, 0)), alive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), income: avg(results.map((r) => r.income / DAYS)), points: avg(results.map((r) => r.points)), walletSpent: avg(results.map((r) => r.walletSpent)), relics: avg(results.map((r) => r.relics)), bankrupt: results.filter((r) => r.bankruptDay).length / SEEDS, bot: BOT, emptyRoster: results.filter((r) => r.emptyRoster).length, endings: { roster: results.filter((r) => r.ending?.type === "roster").length, debt: results.filter((r) => r.ending?.type === "debt").length, medianDay: pctl(results.filter((r) => r.ending).map((r) => r.ending.day), 0.5), avgScore: avg(results.map((r) => r.ending?.total ?? 0)) } }));
+  console.log(JSON.stringify({ attrition: avg(results.map((r) => (r.tension?.outcomes?.defect ?? 0) + (r.tension?.outcomes?.kill ?? 0) + (r.tension?.outcomes?.coup ?? 0))), overdue: avg(results.map((r) => r.tension?.expired ?? 0)), bankruptDays: results.map((r) => r.bankruptDay), clearDays: [1, 2, 3, 4, 5].map((ch) => results.map((r) => r.clearDay[ch]).filter(Boolean)), seeds: SEEDS, collapsed: results.filter((r) => r.ending || r.emptyRoster).length, wiped: results.filter((r) => r.ending || r.alive <= 2).length, ended: results.filter((r) => r.ending).length, endTypes: { roster: results.filter((r) => r.ending?.type === 'roster').length, debt: results.filter((r) => r.ending?.type === 'debt').length, empty: results.filter((r) => r.emptyRoster).length }, finalAlive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), clears: avg(results.map((r) => r.clears)), level: avg(results.map((r) => r.level)), points: avg(results.map((r) => r.points)), tensionSum: results.reduce((m, r) => { for (const [k, v] of Object.entries(r.tension ?? {})) if (typeof v === 'number') m[k] = (m[k] ?? 0) + v; for (const [k, v] of Object.entries(r.tension?.outcomes ?? {})) m['o_' + k] = (m['o_' + k] ?? 0) + v; return m; }, {}), handled: avg(results.map((r) => r.tensionHandled)), automation: ["handled", "ok", "fail", "recruits", "faults", "repairs", "offDays", "maintPaid"].reduce((m, k) => ((m[k] = avg(results.map((r) => r.automation?.[k] ?? 0))), m), {}), chapters, purged: avg(results.map((r) => r.purged)), mandRuns: avg(results.map((r) => r.mand.runs)), mandWinRate: results.reduce((n, r) => n + r.mand.wins, 0) / Math.max(1, results.reduce((n, r) => n + r.mand.runs, 0)), alive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), income: avg(results.map((r) => r.income / DAYS)), points: avg(results.map((r) => r.points)), walletSpent: avg(results.map((r) => r.walletSpent)), relics: avg(results.map((r) => r.relics)), bankrupt: results.filter((r) => r.bankruptDay).length / SEEDS, bot: BOT, emptyRoster: results.filter((r) => r.emptyRoster).length, endings: { roster: results.filter((r) => r.ending?.type === "roster").length, debt: results.filter((r) => r.ending?.type === "debt").length, medianDay: pctl(results.filter((r) => r.ending).map((r) => r.ending.day), 0.5), avgScore: avg(results.map((r) => r.ending?.total ?? 0)) } }));
   process.exit(0);
 }
 console.log(`\n主神空間平衡模擬：${SEEDS} 組種子 × 最多 ${DAYS} 天（${((Date.now() - t0) / 1000).toFixed(1)} 秒）・機器人 ${BOT}\n`);
@@ -421,6 +456,10 @@ console.log(`\n遊戲結束（團滅）：${bankrupt.length}/${SEEDS} 局${bankr
   console.log(`★主指標：張力人員流失 ${avg(results.map(attr))} 人／局（叛逃＋互殺＋政變）・逾期事件 ${T("expired")} 件／局・合計 ${avg(results.map((r) => attr(r) + (r.tension?.expired ?? 0)))}・機器人 ${BOT}${BOT === "casual" ? ` k=${ATTENTION}` : ""}・名冊上限 ${ROSTER_MAX}`);
   console.log(`(次要) 崩壞（結局＋實質崩壞）：${collapsed}/${SEEDS} 局（${Math.round((collapsed / SEEDS) * 100)}%）・實質團滅（含期末存活 ≤2 人）${wiped}/${SEEDS}・機器人 ${BOT}${BOT === "casual" ? ` k=${ATTENTION}` : ""}・名冊上限 ${ROSTER_MAX}・張力 ${CONFIG.tension.enabled ? "開" : "關"}`);
   console.log(`  人際張力（每局平均）：產生 ${T("created")}・逾期 ${T("expired")}・爆發 ${T("booms")}・機器人處理 ${avg(results.map((r) => r.tensionHandled))}（調停成功 ${T("mediateOk")}／失敗 ${T("mediateFail")}・補償 ${T("compensate")}・拆開 ${T("separate")}）・隊長自動調停 ${T("auto")}`);
+  if (AUTOLV[0] || AUTOLV[1]) {
+    const Au = (k) => avg(results.map((r) => r.automation?.[k] ?? 0));
+    console.log(`  自動化中樞（A-3 階段 3，目標 Lv.${AUTOLV.join("／Lv.")}，${args.repair === 0 || BOT === "idle" ? "不維修" : "會維修"}，每局平均）：期末等級 調解 ${avg(results.map((r) => r.autoLevels.mediate))}／補人 ${avg(results.map((r) => r.autoLevels.recruit))}・自動調停 ${Au("handled")} 件（成功 ${Au("ok")}／失敗 ${Au("fail")}）・自動補人 ${Au("recruits")} 人・故障 ${Au("faults")} 次／維修 ${Au("repairs")} 次（維修費 ${Au("repairSpent")}）・停擺（付不起維護費）${Au("offDays")} 天・維護費總額 ${Au("maintPaid")}`);
+  }
   console.log(`  怨氣後果（每局平均）：叛逃 ${O("defect")}・互殺 ${O("kill")}・政變 ${O("coup")}・抗命 ${O("defy")}　期末最高怨氣均值 ${avg(results.map((r) => r.maxGrudge))}`);
 }
 console.log(`曾經負債的局：${results.filter((r) => r.lowestPoints < 0).length}/${SEEDS}`);

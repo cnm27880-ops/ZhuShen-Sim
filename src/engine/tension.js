@@ -26,8 +26,9 @@ import { defect } from "./lineage.js";
 import { applyEvent } from "./drama.js";
 import { setMood } from "./wishes.js";
 import { logText } from "./templates.js";
+import { autoMediate } from "./automation.js";
 
-const T = () => CONFIG.tension;
+const T =() => CONFIG.tension;
 const clampG = (v) => Math.max(0, Math.min(100, Math.round(v)));
 
 // ───────── 狀態與亂數流 ─────────
@@ -240,8 +241,8 @@ export function resolveTension(state, id, action, opts = {}) {
   if (!a || !b) return { ok: false, reason: "當事人不在了" };
 
   if (action === "mediate") {
-    if (ev.tried) return { ok: false, reason: "已經調停過了，這次談不攏" };
-    const chance = mediateChance(state, ev);
+    if (opts.auto ? ev.autoTried : ev.tried) return { ok: false, reason: "已經調停過了，這次談不攏" };
+    const chance = mediateChance(state, ev) * (opts.chanceMult ?? 1); // 自動化中樞的自動調停成功率打折（A-3 階段 3）
     if (rand(tensionRng(state)) < chance) {
       for (const x of [a, b]) addGrudge(x, c.mediate.okGrudge);
       softenHate(state, a, b, { reduce: -c.mediate.okHate });
@@ -254,7 +255,8 @@ export function resolveTension(state, id, action, opts = {}) {
     for (const x of [a, b]) addGrudge(x, c.mediate.failGrudge);
     addHate(state, a, b, c.mediate.failHate);
     addHate(state, b, a, c.mediate.failHate);
-    ev.tried = true;
+    if (opts.auto) ev.autoTried = true; // 自動調停失敗只用掉自動化的那一次，玩家仍可親手再試（A-3 階段 3：避免自動化搶走玩家的調停機會）
+    else ev.tried = true;
     t.stats.mediateFail += 1;
     emit(state, "tension", logText(state, "tensionMediateFail", { A: a, B: b }));
     return { ok: true, success: false, chance };
@@ -386,6 +388,7 @@ export function dailyTension(state) {
 
   t.pending = t.pending.filter((ev) => getSamsarite(state, ev.aId) && getSamsarite(state, ev.bId)); // 當事人不在了（死亡、叛逃、回收）
   captainAutoMediate(state);
+  autoMediate(state); // 自動化中樞：調解中樞（A-3 階段 3；沒投資或故障、停擺時什麼都不做）
   for (const ev of [...t.pending]) if (day >= ev.deadlineDay) expireEvent(state, ev);
 
   // 產生新事件：每一對在家的人各擲一次（有待辦或冷卻中的不擲）

@@ -41,6 +41,7 @@ import { MANDATORY_ID, pendingMandatory, buildMandatoryDungeon } from "../engine
 import { RIVAL_ID, pendingRival, buildRivalDungeon, rivalInfo } from "../engine/rivals.js";
 import { erosionUnlocked, applyErosion, erosionBlock, erosionRMult, erosionRewardMult } from "../engine/erosion.js";
 import { facilityInfo, upgradeFacility, facilityTotal } from "../engine/facilities.js";
+import { automationInfo, buyAutomation, repairModule, setRecruitTarget, automationOf, recruitCap } from "../engine/automation.js";
 import { buildGossip } from "../engine/gossip.js";
 import { applyAutoMode, currentAutoMode } from "../engine/autoMode.js";
 import { bioOf, graveBio } from "../engine/life.js";
@@ -1746,8 +1747,25 @@ function facility() {
       </div>`;
     })
     .join("");
+  const autoCards = automationInfo(state)
+    .map((m) => {
+      const c = m.buy;
+      const maxed = m.lv >= m.max;
+      const status = m.lv === 0 ? "" : m.broken ? `<br /><small class="bad">💥 故障中，要維修才會運作</small>` : m.unpaid ? `<br /><small class="bad">🔌 公庫付不出維護費，今天停擺</small>` : `<br /><small class="good">運作中・維護費 ${m.maint} 分／天</small>`;
+      const next = maxed ? `<small class="good">已滿級</small>` : `<small>下一級 <b>${c.cost}</b> 分</small>${!c.ok ? `<br /><small class="bad">${c.reason}</small>` : ""}`;
+      const target = m.id === "recruit" && m.lv > 0 ? `<br /><small>名冊目標 <input type="number" min="1" max="${recruitCap(state)}" value="${automationOf(state).recruitTarget}" data-auto-target style="width:3em" />（上限 ${recruitCap(state)}）</small>` : "";
+      return `<div class="option" style="cursor:default">
+        <span class="option-icon">${m.icon}</span>
+        <span class="grow"><b>${m.name}</b> <small>Lv.${m.lv} / ${m.max}</small><br /><small>${m.desc}</small>${status}${target}<br />${next}</span>
+        ${m.broken ? `<button data-action="repair-automation" data-id="${m.id}">維修 ${m.repair} 分</button>` : ""}
+        <button class="primary" data-action="buy-automation" data-id="${m.id}" ${maxed || !c.ok ? "disabled" : ""}>${m.lv === 0 ? "建造" : "升級"}</button>
+      </div>`;
+    })
+    .join("");
   return `<h3>基建 <small>公庫 ${state.points}・侵蝕結晶 ${state.erosionCrystals ?? 0}</small></h3>
     <div class="option-list">${cards}</div>
+    <h3>⚙️ 自動化中樞 <small>要花錢蓋、每天吃維護費、會故障，放著不管遲早壞光</small></h3>
+    <div class="option-list">${autoCards}</div>
     <label class="option"><input type="checkbox" data-state-key="autoUpgradeFacilities" ${state.autoUpgradeFacilities ? "checked" : ""} /><span class="grow">自動建設</span></label>
     <label class="option"><input type="checkbox" data-state-key="autoErosion" ${state.autoErosion ? "checked" : ""} ${erosionUnlocked(state) ? "" : "disabled"} /><span class="grow">自動挑戰侵蝕</span></label>
     <div class="modal-actions">${closeButton}</div>`;
@@ -2177,6 +2195,16 @@ const actions = {
     if (!r.ok) alert(r.reason);
     saveGame();
   },
+  "buy-automation"(el) {
+    const r = buyAutomation(state, el.dataset.id);
+    if (!r.ok) alert(r.reason);
+    saveGame();
+  },
+  "repair-automation"(el) {
+    const r = repairModule(state, el.dataset.id);
+    if (!r.ok) alert(r.reason);
+    saveGame();
+  },
   "open-gossip"() {
     modal = { name: "gossip", note: "" };
   },
@@ -2603,6 +2631,7 @@ document.addEventListener("change", (event) => {
     if (el.dataset.settingKey === "autoPause") syncAutoPause(); // 關掉總開關時，若目前正因彈窗暫停就立刻恢復
   } else if (el.id === "auto-strategy") state.autoStrategy = el.value;
   else if (el.id === "auto-erosion") state.autoErosion = el.checked;
+  else if ("autoTarget" in el.dataset) setRecruitTarget(state, el.value); // 人力調度處的名冊目標
   else if (el.dataset.stateKey) state[el.dataset.stateKey] = el.checked; // 基建面板的「自動建設」等直接掛在 state 上的開關
   else if ("erosion" in el.dataset) {
     dispatchPick.erosion = Number(el.value);
