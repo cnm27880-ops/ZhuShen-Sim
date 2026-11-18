@@ -209,26 +209,37 @@ function automationDay(state) {
 }
 
 function botDay(state) {
+  let lgP = state.points; // 流水帳細分（--ledger=1）：每個步驟的公庫差額
+  const lg = (tag) => {
+    if (args.ledger && state.points !== lgP) console.log(`    [BOT D${currentDay(state)}] ${tag} ${Math.round(state.points - lgP)}`);
+    lgP = state.points;
+  };
   // 0. 名冊歸零：真人玩家會借債抽最便宜的卡翻身（A-3：空投取消後，沒有這步機器人會永遠卡在負債邊緣）
   if (alive(state).length === 0) {
     for (const pool of CONFIG.gacha.pools) {
       if (checkGacha(state, pool.id).ok && pullGacha(state, pool.id)) break;
     }
   }
+  lg("0 歸零抽卡");
   // 1. 補人
   for (let guard = 0; alive(state).length < TEAM_TARGET && guard < 10; guard++) {
     const c = bestPool(state);
     if (!c || !pullGacha(state, c.pool.id)) break;
   }
+  lg("1 補人抽卡");
   // 2. 裝備（只幫在家的核心 4 人買）
   const home = core4(state).filter((s) => s.location === "space");
   const gear = SHOP_ITEMS.filter((i) => i.kind === "gear" && i.category === "standard").sort((a, b) => itemStat(b, "power") - itemStat(a, "power"));
   for (const s of home) {
     for (const slot of GEAR_SLOTS) {
       const best = gear.find((i) => i.slot === slot && checkBuy(state, i, s).ok && canSpare(state, i.price));
-      if (best && gearPower(best.id) > gearPower(s.gear?.[slot])) buyItem(state, best.id, s.id);
+      if (best && gearPower(best.id) > gearPower(s.gear?.[slot])) {
+        if (args.ledger) console.log(`      [GEAR D${currentDay(state)}] ${s.name} ${slot}: ${s.gear?.[slot] ?? "空"} → ${best.id}(${best.price}) 戰力 ${gearPower(s.gear?.[slot])}→${gearPower(best.id)} 階 ${s.rank} 世代 ${s.generation ?? 0}`);
+        buyItem(state, best.id, s.id);
+      }
     }
   }
+  lg("2 裝備");
   // 2.5 黑市賞賜：公庫替核心 4 人買黑市的特產武防／血統（比身上的強才買；賞賜會綁定）
   const slotValue = (item) => (item ? itemStat(item, "power") : -1);
   for (const s of home) {
@@ -239,6 +250,7 @@ function botDay(state) {
       if (checkMarketBuy(state, index, s.id).ok && canSpare(state, slotPrice(state, slot).price)) buyMarketSlot(state, index, s.id);
     });
   }
+  lg("2.5 黑市賞賜");
   // 3. 養成：每次挑「最便宜、買得起」的一步（強化或突破基因鎖），直到沒有為止
   for (let guard = 0; guard < 200; guard++) {
     let pick = null;
@@ -250,6 +262,7 @@ function botDay(state) {
     if (!pick) break;
     (pick.kind === "enhance" ? enhance : breakGene)(state, pick.id);
   }
+  lg("3 養成");
   // 3.5 人口超標：回收最弱的非核心冗員（階級低、戰力低的先走）
   for (let guard = 0; guard < 10 && alive(state).length > Math.max(popLimit(state), ROSTER_MAX); guard++) { // A-3 階段 2：--roster 大於人口軟上限時不回收（掃名冊用）
     const core = new Set(core4(state).map((s) => s.id));
@@ -257,11 +270,13 @@ function botDay(state) {
     spare.sort((a, b) => RANK_VAL[a.rank] - RANK_VAL[b.rank] || effectivePower(a) - effectivePower(b));
     if (!spare[0] || !recycle(state, spare[0].id)) break;
   }
+  lg("3.5 回收");
   // 4. 剩錢：名冊還沒滿時，用「買得起的最高階卡池」多抽（不再抽了就回收，避免無謂的抽卡損耗）
   for (let guard = 0; alive(state).length < ROSTER_MAX && guard < 10; guard++) {
     const c = bestPool(state, SURPLUS_RESERVE_DAYS);
     if (!c || !pullGacha(state, c.pool.id)) break;
   }
+  lg("4 剩錢抽卡");
 }
 
 function playOne(seed) {
@@ -287,9 +302,12 @@ function playOne(seed) {
   const mand = { runs: 0, wins: 0, deaths: 0 }; // 強制任務
   const styleDays = {}; // 每個流派在位的天數（4-E-6）
   let lastDay = 0;
+  let ledgerBot = 0; // 流水帳（--ledger=1 + --trace）：當天機器人動作造成的公庫變化
+  let ledgerStep = 0; // 流水帳：當天每日結算（step）造成的公庫變化（含收入、維持費、自動建設等）
   while (currentDay(state) <= DAYS && !state.gameOver) {
     if (state.tick % CONFIG.ticksPerDay === botTick) {
       const before = state.totalSpent;
+      const ptsBefore = state.points; // 流水帳：機器人動作前的公庫
       if (BOT === "full") botDay(state);
       else if (args.recruit !== 0) recruitDay(state);
       const handledBefore = handled;
@@ -297,12 +315,18 @@ function playOne(seed) {
       handledToday = handled - handledBefore;
       automationDay(state);
       botSpent += state.totalSpent - before;
+      ledgerBot += state.points - ptsBefore;
     }
     const spentBefore = state.totalSpent;
+    const ptsStep = state.points; // 流水帳：每日結算（step）前的公庫
     step(state);
+    ledgerStep += state.points - ptsStep;
     walletSpent += state.totalSpent - spentBefore; // 輪迴者自主逛街發生在跨日結算（沒有別的花費會在 step 裡發生）
     lowestPoints = Math.min(lowestPoints, state.points);
     if (currentDay(state) !== lastDay) {
+      if (seed === TRACE && args.ledger) console.log(`  [LEDGER D${lastDay}] 公庫期末 ${Math.round(state.points)}・機器人動作 ${Math.round(ledgerBot)}・每日結算 ${Math.round(ledgerStep)}`);
+      ledgerBot = 0;
+      ledgerStep = 0;
       lastDay = currentDay(state);
       const st = styleOf(state);
       if (st) styleDays[st] = (styleDays[st] ?? 0) + 1;

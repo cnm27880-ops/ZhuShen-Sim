@@ -192,6 +192,13 @@ export const CONFIG = {
     purgeSanityLoss: 25, // 逾時抹殺後，全體存活者理智 -25
     failInjuryExtra: 1, // 單房失敗時受傷等級額外 +1
     deathRewardPct: 0.25, // 本場每戰死 1 名隊友，存活者結算總積分額外 +25%（加算）
+    // 天數底線壓力（A-3 階段 4，暫定值需露葵驗證）：只看天數、不記狀態；掛機者不會因為「沒人管」而自動變強，所以這裡逼他面對
+    floorRampDay: 60, // 這天之前完全不加壓（新手期不受影響）
+    floorIntervalStepDays: 30, // 從 floorRampDay 起，每過幾天把觸發間隔縮短一次
+    floorIntervalShrink: 1, // 每次縮短幾天
+    floorIntervalMin: 4, // 觸發間隔下限（天）；需大於 deadlineDays，玩家才有機會派隊
+    floorRPerDay: 0.004, // 推薦戰力 R 乘數：從 floorRampDay 起每天 +0.4%
+    floorRCap: 2, // R 乘數上限（×2，約 Day 310 封頂）
   },
 
   // ── 戰鬥副屬性（Phase 4-C-1）：hp／defense／speed／luck 取總值 = stats（初始＋強化＋頓悟）＋裝備白值，不吃基因鎖乘區 ──
@@ -523,7 +530,8 @@ export const CONFIG = {
     // 各種事件的數字。resolveCost = 花積分化解要多少（都比不化解的損失便宜）
     kinds: {
       // 臨時開銷稅：直接後果是純扣積分，所以化解不能只花更少的積分（4-E-7 修套利）：要花 resolveCost 分，再加全體留守者理智 -resolveSanityAll（異質代價）
-      tax: { weight: 30, loss: [60, 120], resolveCost: 40, resolveSanityAll: 5 },
+      // lossPct（A-3 階段 4，暫定）：實際扣款 = max(loss 隨機值 × 章節倍率, 公庫 × lossPct)，早期仍是固定小額，後期才真的痛
+      tax: { weight: 30, loss: [60, 120], lossPct: 0.03, resolveCost: 40, resolveSanityAll: 5 },
       shock: { weight: 30, sanityLoss: 20, resolveCost: 30 }, // 電擊抽查：點名一人理智 -20
       checkup: {
         weight: 25,

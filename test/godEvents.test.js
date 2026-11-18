@@ -549,7 +549,9 @@ test("主神搞事積分跟著天數章節乘倍率：Day 150（第 3 章 ×10�
       const cost = resolveCostOf(state, ev);
       assert.equal(cost, K()[kind].resolveCost * mult);
       if (kind === "tax") {
-        assert.ok(ev.params.loss >= K().tax.loss[0] * mult && ev.params.loss <= K().tax.loss[1] * mult);
+        // A-3 階段 4：損失 = max(固定小額×倍率, 公庫×lossPct)；公庫 10 億時比例項主導
+        assert.ok(ev.params.loss >= K().tax.loss[0] * mult, "不低於固定小額下限");
+        assert.ok(ev.params.loss >= Math.round(state.points * K().tax.lossPct), "不低於公庫比例下限");
         assert.ok(cost < ev.params.loss, "化解費要比損失便宜");
       }
       if (kind === "raid") assert.ok(ev.params.reward >= K().raid.rewardPoints[0] * mult);

@@ -33,9 +33,23 @@ export function popLimit(state) {
 }
 export const isOverPop = (state) => roster(state).length > popLimit(state);
 
-/** 目前的觸發間隔：人口超標就縮短 */
+/** 天數底線：從 floorRampDay 起，每 floorIntervalStepDays 天縮短一次間隔（只看天數，不存狀態） */
+export function floorShrinkOf(day) {
+  const c = M();
+  if (day < c.floorRampDay) return 0;
+  return Math.floor((day - c.floorRampDay) / c.floorIntervalStepDays) * c.floorIntervalShrink;
+}
+/** 天數底線：推薦戰力 R 的乘數，從 floorRampDay 起每天 +floorRPerDay，封頂 floorRCap */
+export function floorRMultOf(day) {
+  const c = M();
+  if (day < c.floorRampDay) return 1;
+  return Math.min(c.floorRCap, 1 + c.floorRPerDay * (day - c.floorRampDay));
+}
+
+/** 目前的觸發間隔：人口超標就縮短；天數底線再縮短（下限 floorIntervalMin） */
 export function mandatoryInterval(state) {
-  return isOverPop(state) ? M().overPopIntervalDays : M().intervalDays;
+  const base = isOverPop(state) ? M().overPopIntervalDays : M().intervalDays;
+  return Math.max(M().floorIntervalMin, base - floorShrinkOf(currentDay(state)));
 }
 /** 下一次觸發的天數（人口超標時每天重算，所以超標會立刻縮短倒數） */
 export function nextMandatoryDay(state) {
@@ -59,7 +73,8 @@ export function mandatoryR(state) {
   const base = M().baseR[(state.spaceLevel ?? 1) - 1];
   // 取「全員前 4 強」與「此刻可派的前 4 強」兩者較低者，主力都在副本裡時不會用他們的戰力把 R 墊高
   const top = Math.min(topPowerSum(state), topPowerSum(state, M().topN, true));
-  return Math.max(base, Math.round(top * M().powerMult));
+  // 天數底線：整體 R（含基準與前 4 強）再乘 floorRMultOf(今天)
+  return Math.round(Math.max(base, top * M().powerMult) * floorRMultOf(currentDay(state)));
 }
 
 /** 動態副本快照（依當下名冊與空間等級）；格式和 dungeons.js 的副本一樣，多了 mandatory／toClear／passCap／failInjuryExtra */
@@ -94,6 +109,11 @@ export function dailyMandatory(state) {
       emit(state, "mandatory", logText(state, "mandatoryLast", {}));
     }
     return;
+  }
+  // 天數底線預警：每到加壓步伐的那一天提醒一次（純天數判定，不寫狀態；過了 floorRampDay 才會觸發）
+  const c = M();
+  if (day >= c.floorRampDay && (day - c.floorRampDay) % c.floorIntervalStepDays === 0) {
+    emit(state, "mandatory", logText(state, "floorUp", { interval: mandatoryInterval(state), mult: Math.round(floorRMultOf(day) * 100) }));
   }
   if (day < nextMandatoryDay(state)) return;
   if (!state.samsarites.some((s) => s.location === "space")) return; // 沒人能派，等有人回家再說
