@@ -697,7 +697,7 @@ export const CONFIG = {
     dispatchAtTick: 5, // 每天第幾個時段檢查一次自動派遣
     holdForMandatory: true, // 強制任務待派時，前 4 強留給任務、等他們回家再派（期限前最後一個時段才硬派；4-C-6）
     defaultStrategy: "balanced", // 自動派遣風險策略預設（4-E-8）；sim 預設用 "off" 維持基準曲線
-    strategies: { safe: 1.2, balanced: 1.0, aggressive: 0.8, balancedNewbie: 0.85 }, // 隊伍總戰力 >= 關卡有效推薦戰力 × 倍率才出擊（balancedNewbie：空間 Lv.1 新手期的穩健檔）
+    strategies: { safe: 1.2, balanced: 1.0, aggressive: 0.8, balancedNewbie: 0.8 }, // 隊伍總戰力 >= 關卡有效推薦戰力 × 倍率才出擊（balancedNewbie：空間 Lv.1 新手期的均衡檔；A-3 Lv.1 修正由 0.85 放寬到 0.8，暫定值需露葵驗證）
     // 三種策略是一整套不同的行為（不只是戰力倍率）：minClear 通關率門檻、maxTeams 每輪（=每天）最多派幾隊、
     // maxInjury 隊員傷勢上限（0 無傷／1 輕傷／3 致命傷）、maxDeathRisk 預估「隊伍有人戰死」機率上限、reserve 至少留幾人在家休息。
     // 注意：玩家的 settings.protect.noInjured 開著時，傷員一律不派（策略只會比它更嚴，不會更鬆）。"off"（sim 基準曲線）不套用這些限制。
@@ -705,6 +705,12 @@ export const CONFIG = {
       safe: { minClear: 0.85, maxTeams: 1, maxInjury: 0, maxDeathRisk: 0.05, reserve: 2 },
       balanced: { minClear: 0.75, maxTeams: 2, maxInjury: 1, maxDeathRisk: 0.2, reserve: 1 },
       aggressive: { minClear: 0.6, maxTeams: 99, maxInjury: 3, maxDeathRisk: 1, reserve: 0 },
+    },
+    // 空間 Lv.1 新手期專用規則（A-3 Lv.1 經濟性團滅修正）：有列到的策略在 Lv.1 改用這組，Lv.2 起回到 rules；沒列到的策略不變。
+    // 只放寬通關率門檻 minClear（0.75 → 0.6）；其餘維持 balanced。sim（idle、名冊 12、40 組種子 × 450 天）：Lv.1 破產／死光 33% → 15%、
+    // Day≤60 死亡平均 1.95 → 2.38（+22%）。maxTeams／maxDeathRisk／reserve 單獨放寬幾乎沒有效果，所以不動。暫定值需露葵驗證。
+    newbieRules: {
+      balanced: { minClear: 0.6, maxTeams: 2, maxInjury: 1, maxDeathRisk: 0.2, reserve: 1 },
     },
     deathRehit: 0.5, // 死亡風險估算：同一人在副本裡被打中第二次時，戰死的平均機率（輕 20%／重 50%／致命 80% 的中間值，暫定，需驗證）
     riskLogEveryDays: 3, // 「任務風險過高，自動派遣暫緩出擊」最多每幾天提示一次
