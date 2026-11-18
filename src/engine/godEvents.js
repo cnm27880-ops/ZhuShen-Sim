@@ -106,7 +106,11 @@ export function dailyGod(state) {
   const params = {};
   let targetId = null;
   params.mult = godMult(state); // 天數章節倍率鎖進事件（回覆前跨章也不變）
-  if (def.mode === "tax") params.loss = randInt(g, ...G().kinds.tax.loss) * params.mult;
+  if (def.mode === "tax") {
+    // A-3 階段 4（天數底線）：損失 = max(固定小額 × 章節倍率, 公庫 × lossPct)，後期公庫大時主神搞事真的會痛；0 以下不扣
+    const flat = randInt(g, ...G().kinds.tax.loss) * params.mult;
+    params.loss = Math.max(0, Math.round(Math.max(flat, (state.points ?? 0) * G().kinds.tax.lossPct)));
+  }
   else if (def.mode === "raid") {
     const k = G().kinds.raid;
     const ready = atHome(state).filter((s) => !isOnVacation(s) && s.injury === 0);
@@ -250,6 +254,7 @@ export { getGodEvent };
 export function godEventEconomics(id) {
   const k = G().kinds[id];
   const def = GOD_EVENTS.find((e) => e.id === id);
+  // 稅務的實際扣款還會以公庫 × lossPct 為下限（天數底線），這裡只報固定小額的上限；化解費與理智代價照常比對
   const directPointsMax = def.mode === "tax" ? k.loss[1] : def.mode === "raid" ? k.penaltyPoints : 0;
   return { directPointsMax, directNonPoint: def.mode !== "tax", resolvePoints: k.resolveCost, /* 基準（第 1 章）數字；其他章同乘倍率，比例不變 */ resolveNonPoint: !!k.resolveSanityAll };
 }
