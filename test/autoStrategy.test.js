@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 
 import { CONFIG, PAUSE_EVENTS } from "../src/data/config.js";
 import { createNewGame, createSamsarite, currentDay } from "../src/engine/core.js";
-import { autoRatioGate, tryAutoDispatch, planAutoDispatch, autoMandatory, autoTargets } from "../src/engine/dispatch.js";
+import { autoRules, autoRatioGate, tryAutoDispatch, planAutoDispatch, autoMandatory, autoTargets } from "../src/engine/dispatch.js";
 import { partyPower, clearChance, deathRisk } from "../src/engine/dungeon.js";
 import { DUNGEONS } from "../src/data/dungeons.js";
 import { dailyMandatory } from "../src/engine/mandatory.js";
@@ -38,12 +38,12 @@ function withLooseSafe(fn) {
   }
 }
 
-test("風險策略門檻：safe 1.20／balanced 1.00（新手期 0.85）／aggressive 0.80／off 不檢查；預設 balanced", () => {
+test("風險策略門檻：safe 1.20／balanced 1.00（新手期 0.8）／aggressive 0.80／off 不檢查；預設 balanced", () => {
   const state = setup(30);
   assert.equal(state.autoStrategy, "balanced");
   assert.equal(autoRatioGate(state), 1.0);
   state.spaceLevel = 1;
-  assert.equal(autoRatioGate(state), 0.85, "新手期放寬");
+  assert.equal(autoRatioGate(state), 0.8, "新手期放寬");
   state.spaceLevel = 3;
   state.autoStrategy = "safe";
   assert.equal(autoRatioGate(state), 1.2);
@@ -249,4 +249,19 @@ test("強制任務：刷出當下發事件、倒數最後 1 天未派再提醒�
   assert.equal(state.events.filter((e) => e.type === "mandatory").length, before + 1, "不重複提醒");
   assert.ok(day >= 1);
   assert.equal(CONFIG.auto.holdForMandatory !== undefined, true);
+});
+
+test("Lv.1 新手期規則（A-3 Lv.1 修正）：均衡策略在 Lv.1 通關率門檻放寬，Lv.2 起回到 rules；其他策略不受影響", () => {
+  const state = setup(30);
+  state.autoStrategy = "balanced";
+  state.spaceLevel = 1;
+  assert.equal(autoRules(state).minClear, CONFIG.auto.newbieRules.balanced.minClear);
+  assert.ok(autoRules(state).minClear < CONFIG.auto.rules.balanced.minClear, "Lv.1 比 Lv.2 寬鬆");
+  state.spaceLevel = 2;
+  assert.equal(autoRules(state), CONFIG.auto.rules.balanced);
+  state.spaceLevel = 1;
+  state.autoStrategy = "safe";
+  assert.equal(autoRules(state), CONFIG.auto.rules.safe);
+  state.autoStrategy = "off";
+  assert.equal(autoRules(state).minClear, CONFIG.auto.minClearChance);
 });

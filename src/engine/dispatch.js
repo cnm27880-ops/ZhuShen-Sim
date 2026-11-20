@@ -34,6 +34,8 @@ function reservedForMandatory(state) {
 export function autoRules(state) {
   const key = state.autoStrategy ?? CONFIG.auto.defaultStrategy;
   if (key === "off") return { minClear: CONFIG.auto.minClearChance, maxTeams: Infinity, maxInjury: 3, maxDeathRisk: 1, reserve: 0 };
+  // 空間 Lv.1 新手期：該策略若有 CONFIG.auto.newbieRules[key]，整套規則改用它（Lv.2 起回到 rules）
+  if ((state.spaceLevel ?? 1) === 1 && CONFIG.auto.newbieRules?.[key]) return CONFIG.auto.newbieRules[key];
   return CONFIG.auto.rules[key] ?? CONFIG.auto.rules.balanced;
 }
 
@@ -97,7 +99,7 @@ function isBetterPlan(a, b) {
 
 /**
  * 自動派遣的「看戰力下菜」門檻（4-E-8）：隊伍總戰力 >= 關卡實際有效推薦戰力 × 倍率才出擊。
- * state.autoStrategy：safe 1.20／balanced 1.00（空間 Lv.1 新手期放寬為 0.85）／aggressive 0.80／off 不檢查（sim 基準曲線用）。
+ * state.autoStrategy：safe 1.20／balanced 1.00（空間 Lv.1 新手期放寬為 balancedNewbie，目前 0.8）／aggressive 0.80／off 不檢查（sim 基準曲線用）。
  */
 export function autoRatioGate(state) {
   const A = CONFIG.auto.strategies;
