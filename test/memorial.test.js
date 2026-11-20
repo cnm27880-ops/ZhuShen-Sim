@@ -104,11 +104,17 @@ test("副本戰死入碑；主動回收、空間內被同伴殺害不入碑", ()
 });
 
 test("主神抹殺（強制任務逾時）入碑", () => {
-  const { state } = setup(3, 5);
-  state.samsarites.forEach((s) => (s.geneLock = 1));
-  while (currentDay(state) < 29) advanceTick(state);
-  assert.ok(state.graveyard.length >= 1);
-  assert.equal(state.memorialStele.length, state.graveyard.length);
-  assert.ok(state.memorialStele.every((e) => e.kind === "purge" && e.cause === "被主神抹殺" && e.bonus === 0.04));
-  assert.ok(state.samsarites.every((s) => s.steleBonus === steleBonusOf(state)));
+  const tensionWas = CONFIG.tension.enabled;
+  CONFIG.tension.enabled = false; // 這個測試只看強制任務逾時的抹殺；無人看管 29 天會被人際張力的互殺／叛逃混進墓園（A-3，見 test/tension.test.js）
+  try {
+    const { state } = setup(3, 5);
+    state.samsarites.forEach((s) => (s.geneLock = 1));
+    while (currentDay(state) < 29) advanceTick(state);
+    assert.ok(state.graveyard.length >= 1);
+    assert.equal(state.memorialStele.length, state.graveyard.length);
+    assert.ok(state.memorialStele.every((e) => e.kind === "purge" && e.cause === "被主神抹殺" && e.bonus === 0.04));
+    assert.ok(state.samsarites.every((s) => s.steleBonus === steleBonusOf(state)));
+  } finally {
+    CONFIG.tension.enabled = tensionWas;
+  }
 });
