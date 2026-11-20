@@ -177,6 +177,8 @@ test("存檔：舊存檔補稅率與私房錢欄位；新欄位往返不遺失",
 });
 
 test("整合：自動派遣跑 60 天——私房錢不為負、數字都是整數、輪迴者有在自己逛街、奇物加成不超過封頂、不會遊戲結束", () => {
+  const tensionWas = CONFIG.tension.enabled;
+  CONFIG.tension.enabled = false; // 這個測試看雙錢包與逛街；無人看管 60 天會被人際張力改變局勢（A-3，見 test/tension.test.js）
   const state = createNewGame(1); // 種子 1：第二批回饋 20 改了每日互動骰，原種子 7 這局剛好沒人有私房錢可逛
   state.settings.autoDispatch = true;
   for (const key of Object.keys(state.settings.pauseOn)) state.settings.pauseOn[key] = false;
@@ -191,6 +193,7 @@ test("整合：自動派遣跑 60 天——私房錢不為負、數字都是整�
     }
     assert.ok(Number.isInteger(state.points));
   }
+  CONFIG.tension.enabled = tensionWas;
   assert.equal(state.gameOver, false);
   assert.ok(state.totalSpent > 0);
 });
