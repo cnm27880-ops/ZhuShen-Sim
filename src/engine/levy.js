@@ -46,7 +46,20 @@ export function refuseChance(state, s, tier) {
   if (partnerOf(state, s)) c += B.partner;
   if (Object.values(s.soulbound ?? {}).some(Boolean)) c += B.soulbound;
   if (cap && affinity(state, s, cap) < 0) c += B.negativeAffinity;
-  return Math.min(L().maxRefuse, c);
+  c += traitRefuseAdj(s);
+  return Math.max(0, Math.min(L().maxRefuse, c));
+}
+
+/** 個性對拒繳率的修正（純函式、不吃亂數）：叛逆與利己加、利他減，合計夾在 -capDown～+capUp */
+export function traitRefuseAdj(s) {
+  const T = L().traitRefuse;
+  if (!T?.enabled || !CONFIG.personality.enabled) return 0;
+  const tr = s.traits ?? {};
+  const pick = (v, pair) => (v >= T.strong ? pair.strong : v >= T.min ? pair.mid : 0);
+  const ob = tr.obedience ?? 0;
+  const al = tr.altruism ?? 0;
+  const adj = pick(-ob, T.rebel) + pick(-al, T.selfish) - pick(al, T.altruist);
+  return Math.max(-T.capDown, Math.min(T.capUp, adj));
 }
 
 /** 現在能不能發動？回傳 { ok, reason } */

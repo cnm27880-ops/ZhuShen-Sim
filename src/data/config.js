@@ -373,6 +373,19 @@ export const CONFIG = {
     veryLowSanityBelow: 30,
     maxRefuse: 0.9,
     refuseExtraAffinity: 5, // 拒繳者對隊長淨好感額外再扣這個數字（在該檔位的 affinity 之外）
+    // 個性掛鉤（個性系統 v1b ①，暫定值需露葵驗證）：只看 s.traits 的順從度 obedience 與利他度 altruism，永不顯示數字
+    // min／strong：|分數| 達到 min 算「有特色」、達到 strong 算「極端」；rebel 順從度低（叛逆）加拒繳率、selfish 利他度低（利己）加、
+    // altruist 利他度高減；個性加成合計夾在 -capDown～+capUp，之後仍受 maxRefuse 與 0 下限約束。順從度高（聽話）暫不影響
+    traitRefuse: {
+      enabled: true,
+      min: 40,
+      strong: 70,
+      rebel: { mid: 0.08, strong: 0.15 },
+      selfish: { mid: 0.06, strong: 0.1 },
+      altruist: { mid: 0.06, strong: 0.1 },
+      capUp: 0.2,
+      capDown: 0.1,
+    },
   },
 
   // ── 輪迴者個性系統 v1a（隱藏的五條個性維度；引擎 engine/personality.js、engine/traitEvents.js）──
