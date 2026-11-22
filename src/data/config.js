@@ -421,8 +421,9 @@ export const CONFIG = {
     pairCooldown: 8, // 處理完（或爆發）後同一對至少隔幾天才會再有事
     deadlineDays: [3, 2, 1], // 等級 1／2／3 的處理期限（遊戲日，用 currentDay 計，暫停不消耗）
     // 無視逾期：雙方怨氣 + ignoreGrudge[等級-1]、互相仇恨 + ignoreHate，等級 1～2 升一級重發，等級 3 結束（爆發）
-    ignoreGrudge: [10, 15, 20],
-    ignoreHate: 6,
+    // 2026-11 idle 掛機崩壞校準（露葵拍板目標：掛機崩壞中位數約 Day 100）：[10,15,20]／6 → [18,27,36]／7，只加重「不處理事件」的後果
+    ignoreGrudge: [18, 27, 36],
+    ignoreHate: 7,
     // 調停：成功率 = base + obedience×平均順從度/100 + captain×(隊長對雙方淨好感>=0 則加) + sanity×(兩人平均理智-50)/100，夾在 min~max；每件事只能試一次
     mediate: { base: 0.55, obedience: 0.15, captain: 0.1, sanity: 0.2, min: 0.2, max: 0.9, okGrudge: -15, okHate: -10, failGrudge: 5, failHate: 4 },
     // 補償（選一方）：花公庫 = costDays × 兩人日維持費 × 等級倍率 × (1.5 ^ 近期補償次數)
