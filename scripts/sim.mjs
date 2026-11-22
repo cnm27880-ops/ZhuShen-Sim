@@ -304,6 +304,7 @@ function playOne(seed) {
   const mand = { runs: 0, wins: 0, deaths: 0 }; // 強制任務
   const styleDays = {}; // 每個流派在位的天數（4-E-6）
   let lastDay = 0;
+  let lowDay = null; // 存活（名冊不含催熟艙）第一次降到 <= 2 人的遊戲日（崩壞定義 A′ 的一半）
   let ledgerBot = 0; // 流水帳（--ledger=1 + --trace）：當天機器人動作造成的公庫變化
   let ledgerStep = 0; // 流水帳：當天每日結算（step）造成的公庫變化（含收入、維持費、自動建設等）
   while (currentDay(state) <= DAYS && !state.gameOver) {
@@ -325,6 +326,7 @@ function playOne(seed) {
     ledgerStep += state.points - ptsStep;
     walletSpent += state.totalSpent - spentBefore; // 輪迴者自主逛街發生在跨日結算（沒有別的花費會在 step 裡發生）
     lowestPoints = Math.min(lowestPoints, state.points);
+    if (lowDay === null && alive(state).length <= 2) lowDay = currentDay(state);
     if (currentDay(state) !== lastDay) {
       if (seed === TRACE && args.ledger) console.log(`  [LEDGER D${lastDay}] 公庫期末 ${Math.round(state.points)}・機器人動作 ${Math.round(ledgerBot)}・每日結算 ${Math.round(ledgerStep)}`);
       ledgerBot = 0;
@@ -381,6 +383,9 @@ function playOne(seed) {
     bankruptDay,
     ending: state.ending?.result ?? null, // 團滅結局（A-3）：{ type, day, total, title, ... }
     finalDay: currentDay(state),
+    lowDay,
+    // 崩壞天數 A′（露葵拍板）：存活 <= 2 人的第一天，或遊戲結局（破產／死光）那天，取較早者；都沒發生為 null
+    collapseDay: [lowDay, state.ending?.result?.day ?? null].filter((d) => d !== null).reduce((m, d) => (m === null || d < m ? d : m), null),
     reliefUsed: state.ending?.reliefUsed ?? false,
     emptyRoster: !state.ending && alive(state).length === 0, // 名冊歸零、但積分還抽得起卡所以沒有結局（機器人不抽卡 = 實質崩壞）
     deaths: state.graveyard.filter((g) => !g.cause.includes("回收爐")).length,
@@ -435,6 +440,13 @@ const pctl = (arr, p) => {
   const sorted = [...arr].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p))];
 };
+// 崩壞天數摘要：沒崩壞的局當作 Infinity（= 超過模擬天數），只用來排序算百分位，不進平均；百分位落在未崩壞區間時回傳 null
+const collapseSummary = (rs) => {
+  const sorted = rs.map((r) => r.collapseDay ?? Infinity).sort((a, b) => a - b);
+  const at = (p) => { const v = sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p))]; return Number.isFinite(v) ? v : null; };
+  const within = (d) => sorted.filter((v) => v <= d).length;
+  return { n: sorted.length, median: at(0.5), p25: at(0.25), p75: at(0.75), le60: within(60), le100: within(100), le150: within(150), uncollapsed: sorted.filter((v) => !Number.isFinite(v)).length };
+};
 const avg = (arr) => (arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : "-");
 
 const t0 = Date.now();
@@ -453,7 +465,7 @@ if (args.json) {
     const days = results.map((r) => r.clearDay[ch]).filter(Boolean);
     return { ch, frac: days.length / SEEDS, median: days.length ? pctl(days, 0.5) : null, p25: days.length ? pctl(days, 0.25) : null, p75: days.length ? pctl(days, 0.75) : null };
   });
-  console.log(JSON.stringify({ perSeed: results.map((r) => ({ end: r.ending?.type ?? null, endDay: r.ending?.day ?? null, alive: r.alive, deaths: r.deaths, level: r.level, ch1: r.clearDay[1] ?? null, deathsByDay: r.deathDays })), attrition: avg(results.map((r) => (r.tension?.outcomes?.defect ?? 0) + (r.tension?.outcomes?.kill ?? 0) + (r.tension?.outcomes?.coup ?? 0))), overdue: avg(results.map((r) => r.tension?.expired ?? 0)), bankruptDays: results.map((r) => r.bankruptDay), clearDays: [1, 2, 3, 4, 5].map((ch) => results.map((r) => r.clearDay[ch]).filter(Boolean)), seeds: SEEDS, collapsed: results.filter((r) => r.ending || r.emptyRoster).length, wiped: results.filter((r) => r.ending || r.alive <= 2).length, ended: results.filter((r) => r.ending).length, endTypes: { roster: results.filter((r) => r.ending?.type === 'roster').length, debt: results.filter((r) => r.ending?.type === 'debt').length, empty: results.filter((r) => r.emptyRoster).length }, finalAlive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), clears: avg(results.map((r) => r.clears)), level: avg(results.map((r) => r.level)), points: avg(results.map((r) => r.points)), tensionSum: results.reduce((m, r) => { for (const [k, v] of Object.entries(r.tension ?? {})) if (typeof v === 'number') m[k] = (m[k] ?? 0) + v; for (const [k, v] of Object.entries(r.tension?.outcomes ?? {})) m['o_' + k] = (m['o_' + k] ?? 0) + v; return m; }, {}), handled: avg(results.map((r) => r.tensionHandled)), automation: ["handled", "ok", "fail", "recruits", "faults", "repairs", "offDays", "maintPaid"].reduce((m, k) => ((m[k] = avg(results.map((r) => r.automation?.[k] ?? 0))), m), {}), chapters, purged: avg(results.map((r) => r.purged)), mandRuns: avg(results.map((r) => r.mand.runs)), mandWinRate: results.reduce((n, r) => n + r.mand.wins, 0) / Math.max(1, results.reduce((n, r) => n + r.mand.runs, 0)), alive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), income: avg(results.map((r) => r.income / DAYS)), points: avg(results.map((r) => r.points)), walletSpent: avg(results.map((r) => r.walletSpent)), relics: avg(results.map((r) => r.relics)), bankrupt: results.filter((r) => r.bankruptDay).length / SEEDS, bot: BOT, emptyRoster: results.filter((r) => r.emptyRoster).length, endings: { roster: results.filter((r) => r.ending?.type === "roster").length, debt: results.filter((r) => r.ending?.type === "debt").length, medianDay: pctl(results.filter((r) => r.ending).map((r) => r.ending.day), 0.5), avgScore: avg(results.map((r) => r.ending?.total ?? 0)) } }));
+  console.log(JSON.stringify({ perSeed: results.map((r) => ({ end: r.ending?.type ?? null, endDay: r.ending?.day ?? null, alive: r.alive, deaths: r.deaths, level: r.level, ch1: r.clearDay[1] ?? null, deathsByDay: r.deathDays, lowDay: r.lowDay, collapseDay: r.collapseDay })), collapse: collapseSummary(results), attrition: avg(results.map((r) => (r.tension?.outcomes?.defect ?? 0) + (r.tension?.outcomes?.kill ?? 0) + (r.tension?.outcomes?.coup ?? 0))), overdue: avg(results.map((r) => r.tension?.expired ?? 0)), bankruptDays: results.map((r) => r.bankruptDay), clearDays: [1, 2, 3, 4, 5].map((ch) => results.map((r) => r.clearDay[ch]).filter(Boolean)), seeds: SEEDS, collapsed: results.filter((r) => r.ending || r.emptyRoster).length, wiped: results.filter((r) => r.ending || r.alive <= 2).length, ended: results.filter((r) => r.ending).length, endTypes: { roster: results.filter((r) => r.ending?.type === 'roster').length, debt: results.filter((r) => r.ending?.type === 'debt').length, empty: results.filter((r) => r.emptyRoster).length }, finalAlive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), clears: avg(results.map((r) => r.clears)), level: avg(results.map((r) => r.level)), points: avg(results.map((r) => r.points)), tensionSum: results.reduce((m, r) => { for (const [k, v] of Object.entries(r.tension ?? {})) if (typeof v === 'number') m[k] = (m[k] ?? 0) + v; for (const [k, v] of Object.entries(r.tension?.outcomes ?? {})) m['o_' + k] = (m['o_' + k] ?? 0) + v; return m; }, {}), handled: avg(results.map((r) => r.tensionHandled)), automation: ["handled", "ok", "fail", "recruits", "faults", "repairs", "offDays", "maintPaid"].reduce((m, k) => ((m[k] = avg(results.map((r) => r.automation?.[k] ?? 0))), m), {}), chapters, purged: avg(results.map((r) => r.purged)), mandRuns: avg(results.map((r) => r.mand.runs)), mandWinRate: results.reduce((n, r) => n + r.mand.wins, 0) / Math.max(1, results.reduce((n, r) => n + r.mand.runs, 0)), alive: avg(results.map((r) => r.alive)), deaths: avg(results.map((r) => r.deaths)), income: avg(results.map((r) => r.income / DAYS)), points: avg(results.map((r) => r.points)), walletSpent: avg(results.map((r) => r.walletSpent)), relics: avg(results.map((r) => r.relics)), bankrupt: results.filter((r) => r.bankruptDay).length / SEEDS, bot: BOT, emptyRoster: results.filter((r) => r.emptyRoster).length, endings: { roster: results.filter((r) => r.ending?.type === "roster").length, debt: results.filter((r) => r.ending?.type === "debt").length, medianDay: pctl(results.filter((r) => r.ending).map((r) => r.ending.day), 0.5), avgScore: avg(results.map((r) => r.ending?.total ?? 0)) } }));
   process.exit(0);
 }
 console.log(`\n主神空間平衡模擬：${SEEDS} 組種子 × 最多 ${DAYS} 天（${((Date.now() - t0) / 1000).toFixed(1)} 秒）・機器人 ${BOT}\n`);
@@ -482,6 +494,11 @@ console.log(`\n遊戲結束（團滅）：${bankrupt.length}/${SEEDS} 局${bankr
   const attr = (r) => (r.tension?.outcomes?.defect ?? 0) + (r.tension?.outcomes?.kill ?? 0) + (r.tension?.outcomes?.coup ?? 0);
   console.log(`★主指標：張力人員流失 ${avg(results.map(attr))} 人／局（叛逃＋互殺＋政變）・逾期事件 ${T("expired")} 件／局・合計 ${avg(results.map((r) => attr(r) + (r.tension?.expired ?? 0)))}・機器人 ${BOT}${BOT === "casual" ? ` k=${ATTENTION}` : ""}・名冊上限 ${ROSTER_MAX}`);
   console.log(`(次要) 崩壞（結局＋實質崩壞）：${collapsed}/${SEEDS} 局（${Math.round((collapsed / SEEDS) * 100)}%）・實質團滅（含期末存活 ≤2 人）${wiped}/${SEEDS}・機器人 ${BOT}${BOT === "casual" ? ` k=${ATTENTION}` : ""}・名冊上限 ${ROSTER_MAX}・張力 ${CONFIG.tension.enabled ? "開" : "關"}`);
+  {
+    const c = collapseSummary(results);
+    const d = (v) => (v === null ? `>${DAYS}` : `Day ${v}`);
+    console.log(`★崩壞天數（A′＝存活 ≤2 人或結局，先到者）：中位數 ${d(c.median)}・P25 ${d(c.p25)}／P75 ${d(c.p75)}・≤60 天 ${c.le60}／≤100 天 ${c.le100}／≤150 天 ${c.le150}（共 ${c.n} 局）・未崩壞 ${c.uncollapsed} 局（算作 >${DAYS} 天，不進平均）`);
+  }
   console.log(`  人際張力（每局平均）：產生 ${T("created")}・逾期 ${T("expired")}・爆發 ${T("booms")}・機器人處理 ${avg(results.map((r) => r.tensionHandled))}（調停成功 ${T("mediateOk")}／失敗 ${T("mediateFail")}・補償 ${T("compensate")}・拆開 ${T("separate")}）・隊長自動調停 ${T("auto")}`);
   if (AUTOLV[0] || AUTOLV[1]) {
     const Au = (k) => avg(results.map((r) => r.automation?.[k] ?? 0));
