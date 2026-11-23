@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { CONFIG } from "../src/data/config.js";
 import { getShopItem } from "../src/data/shopItems.js";
 import { createNewGame, createSamsarite, setInjury } from "../src/engine/core.js";
-import { dailyShopping, isDramaProne } from "../src/engine/shopping.js";
+import { dailyShopping, isDramaProne, reservePctOf } from "../src/engine/shopping.js";
 import { marketOf } from "../src/engine/market.js";
 import { buyItem } from "../src/engine/shop.js";
 import { getRel } from "../src/engine/relations.js";
@@ -205,4 +205,160 @@ test("搞事冷卻：買過黑貨後 10 天內不再偷買，第 10 天後恢復
   } finally {
     CONFIG.shopping.dramaChance = saved;
   }
+});
+
+// ───────── 個性掛鉤 v1b ②：利他者代付、利己者囤錢偏黑貨 ─────────
+const withTraits = (s, altruism) => (s.traits = { altruism, ambition: 0, courage: 0, social: 0, obedience: 0 });
+const aidSetup = () => {
+  const state = setup(2, 11);
+  clearMarket(state);
+  const [a, b] = state.samsarites;
+  withTraits(a, 80);
+  withTraits(b, 0);
+  a.wallet = 2000;
+  b.wallet = 0;
+  setInjury(b, 2);
+  return { state, a, b };
+};
+
+test("個性：沒有個性特徵（或功能關閉）時，逛街結果與亂數流完全不變", () => {
+  const run = (mutate) => {
+    const state = setup(3, 21);
+    state.samsarites.forEach((s, i) => {
+      s.wallet = 800 + i * 300;
+      withTraits(s, 0);
+    });
+    mutate?.(state);
+    for (let d = 0; d < 5; d++) dailyShopping(state);
+    return JSON.stringify([state.aiShopRngState, state.samsarites.map((s) => [s.wallet, s.shopLog])]);
+  };
+  const base = run();
+  // 關閉個性功能，即使分數極端也與「沒有個性」逐項相同
+  CONFIG.shopping.trait.enabled = false;
+  try {
+    const off = (() => {
+      const state = setup(3, 21);
+      state.samsarites.forEach((s, i) => {
+        s.wallet = 800 + i * 300;
+        withTraits(s, i === 0 ? 90 : -90);
+      });
+      for (let d = 0; d < 5; d++) dailyShopping(state);
+      return JSON.stringify([state.aiShopRngState, state.samsarites.map((s) => [s.wallet, s.shopLog])]);
+    })();
+    assert.equal(off, base);
+  } finally {
+    CONFIG.shopping.trait.enabled = true;
+  }
+});
+
+test("利他者代付：重傷同伴買不起藥 → 轉帳讓他買藥，記冷卻與日誌", () => {
+  const { state, a, b } = aidSetup();
+  const before = state.aiShopRngState;
+  assert.ok(dailyShopping(state) >= 1);
+  assert.ok(b.injury < 2, "同伴傷勢下降");
+  assert.ok(a.wallet < 2000, "利他者掏了錢");
+  assert.notEqual(a.lastAidDay, undefined, "有記冷卻日");
+  assert.ok(a.shopLog.some((l) => /代付醫藥費（-(\d+)）/.test(l.text)), "利他者有日誌");
+  const gift = Number(a.shopLog.find((l) => /代付醫藥費/.test(l.text)).text.match(/-(\d+)/)[1]);
+  assert.ok(gift > 0 && gift <= Math.floor(2000 * CONFIG.shopping.trait.aid.giftPctMax), "不超過私房錢 30%");
+  assert.ok(b.shopLog.some((l) => /接濟/.test(l.text)), "同伴有日誌");
+  assert.equal(b.wallet, 0, "轉進去的錢全拿去買藥");
+  void before;
+});
+
+test("利他者代付：不觸發的情境", () => {
+  const A = CONFIG.shopping.trait.aid;
+  const cases = {
+    利他度不夠: ({ a }) => withTraits(a, 20),
+    自己理智低於門檻: () => (A.minSanity = 101),
+    自己重傷且自己也買不到藥: ({ a }) => {
+      setInjury(a, 2);
+      a.dosage = { heal: [0, 0, 0, 0], sanity: [] }; // 抗藥性太強，自己的急救不會動
+    },
+    同伴只是輕傷: ({ b }) => setInjury(b, 1),
+    同伴買得起: ({ b }) => (b.wallet = 1000),
+    功能關閉: () => (CONFIG.shopping.trait.enabled = false),
+  };
+  for (const [name, mutate] of Object.entries(cases)) {
+    const ctx = aidSetup();
+    const savedSan = A.minSanity;
+    try {
+      mutate(ctx);
+      dailyShopping(ctx.state);
+      assert.equal(ctx.a.lastAidDay, undefined, `${name}：不應代付`);
+      assert.ok(!ctx.a.shopLog?.some((l) => /代付/.test(l.text)), `${name}：沒有代付日誌`);
+    } finally {
+      CONFIG.shopping.trait.enabled = true;
+      A.minSanity = savedSan;
+    }
+  }
+});
+
+test("利他者代付：冷卻內不再代付，冷卻過後恢復", () => {
+  const { state, a, b } = aidSetup();
+  dailyShopping(state);
+  const first = a.lastAidDay;
+  assert.notEqual(first, undefined);
+  a.wallet = 2000;
+  b.wallet = 0;
+  setInjury(b, 2);
+  dailyShopping(state); // 同一天：冷卻中
+  assert.equal(a.lastAidDay, first);
+  assert.equal(b.injury, 2);
+  a.lastAidDay = first - CONFIG.shopping.trait.aid.cooldownDays; // 冷卻剛好過了
+  dailyShopping(state);
+  assert.equal(a.lastAidDay, first, "冷卻過後恢復代付");
+  assert.ok(b.injury < 2);
+});
+
+test("利他者代付：同伴因抗藥性不會買 → 根本不轉帳", () => {
+  const { state, a, b } = aidSetup();
+  const d = state.tick; // 任何當天紀錄都在滾動 7 天內
+  void d;
+  b.dosage = { heal: [0, 0, 0, 0], sanity: [] };
+  dailyShopping(state);
+  assert.equal(a.lastAidDay, undefined);
+  assert.equal(b.wallet, 0);
+  assert.equal(b.injury, 2);
+});
+
+test("利己者：備用金多留 15%；利他度不到門檻或利他者不受影響；強化臨界值改變", () => {
+  const T = CONFIG.shopping.trait;
+  const state = setup(1, 31);
+  const [s] = state.samsarites;
+  withTraits(s, -80);
+  assert.ok(Math.abs(reservePctOf(s) - (CONFIG.shopping.reservePct + T.hoard.extraReservePct)) < 1e-9);
+  withTraits(s, -20);
+  assert.equal(reservePctOf(s), CONFIG.shopping.reservePct);
+  withTraits(s, 80);
+  assert.equal(reservePctOf(s), CONFIG.shopping.reservePct, "利他者備用金不變");
+  // 臨界：第 1 次強化 80 分 = 私房錢 × 0.7 → 一般人（留 20%）買得起，利己者（留 35%）買不起
+  const s2 = setup(2, 32);
+  clearMarket(s2);
+  setSpentTier(s2, 50000);
+  const [normal, selfish] = s2.samsarites;
+  for (const x of [normal, selfish]) x.gear = { weapon: "weapon_myth", armor: "armor_myth", accessory: "t5_05", bloodline: "t5_07" };
+  withTraits(normal, 0);
+  withTraits(selfish, -80);
+  normal.wallet = selfish.wallet = Math.ceil(80 / 0.7);
+  dailyShopping(s2);
+  assert.equal(normal.enhanceCount, 1, "一般人自費強化");
+  assert.equal(selfish.enhanceCount, 0, "利己者備用金較高，強化費太貴就不買");
+});
+
+test("利己者偏愛黑貨：黑市權重 ×3，但抽樣次數（亂數流推進）與一般人相同", () => {
+  const run = (altruism) => {
+    const state = setup(1, 41);
+    const [s] = state.samsarites;
+    s.gear = { weapon: "weapon_myth", armor: "armor_myth", accessory: "t5_05", bloodline: "t5_07" };
+    setSpentTier(state, 50000);
+    withTraits(s, altruism);
+    s.wallet = 100000;
+    const before = state.aiShopRngState;
+    dailyShopping(state);
+    return { moved: state.aiShopRngState !== before, bought: s.shopLog?.length ?? 0 };
+  };
+  const a = run(0);
+  const b = run(-80);
+  assert.equal(a.moved, b.moved, "權重改變不影響抽樣次數");
 });

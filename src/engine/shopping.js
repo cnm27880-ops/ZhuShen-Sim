@@ -5,6 +5,7 @@
 //   2. 基礎換裝：缺武器／防具、或裝備階層低於目前已解鎖階層 → 買買得起的最好制式或黑市武防（絕不覆蓋 soulbound 綁定裝備）
 //   3. 自主強化／開基因鎖：花私房錢，且花完仍留 20% 備用金
 //   4. 性格偏好與敗家搞事：依詞條權重搶購黑市商品；戀愛／偏執／低理智者有 5% 機率偷買 drama（買過後 10 天冷卻） 黑貨對隊友用
+// 個性掛鉤（v1b ②）：利他者在自己沒事時替買不起藥的重傷同伴轉帳代付（aidAlly）；利己者備用金更高、搶購黑市時偏愛黑貨。全部不抽亂數。
 // 亂數用獨立流 state.aiShopRngState（數字），不動主亂數。每人最近的自主購買紀錄存在 s.shopLog（最多 CONFIG.shopping.logKeep 筆）。
 
 import { CONFIG } from "../data/config.js";
@@ -100,17 +101,70 @@ function execute(state, s, offer, extra = {}) {
 
 // ───────── 四個優先序 ─────────
 
+/** 治傷：抗藥性太強就不買；能一次治到輕傷以下的優先，其次便宜的。回傳是否買成 */
+function buyHeal(state, s) {
+  const heals = doseMult(state, s, "heal") < CONFIG.shop.tolerance.minBuyMult ? [] : offers(state, s, (i) => i.category === "consumable" && i.effect.healInjury); // 抗藥性太強就不浪費錢
+  heals.sort((a, b) => (b.item.effect.healInjury >= s.injury) - (a.item.effect.healInjury >= s.injury) || a.price - b.price);
+  return heals[0] ? execute(state, s, heals[0]) : false;
+}
+
 function emergency(state, s) {
-  if (s.injury >= 2) {
-    const heals = doseMult(state, s, "heal") < CONFIG.shop.tolerance.minBuyMult ? [] : offers(state, s, (i) => i.category === "consumable" && i.effect.healInjury); // 抗藥性太強就不浪費錢
-    // 能一次治到輕傷以下的優先，其次便宜的
-    heals.sort((a, b) => (b.item.effect.healInjury >= s.injury) - (a.item.effect.healInjury >= s.injury) || a.price - b.price);
-    if (heals[0]) return execute(state, s, heals[0]);
-  }
+  if (s.injury >= 2 && buyHeal(state, s)) return true;
   if ((s.stats.sanity ?? 100) < CONFIG.shopping.calmBelow) {
     const calms = doseMult(state, s, "sanity") < CONFIG.shop.tolerance.minBuyMult ? [] : offers(state, s, (i) => i.category === "consumable" && i.effect.sanity && !i.effect.healInjury && !i.effect.hateDelta);
     calms.sort((a, b) => a.price - b.price);
     if (calms[0]) return execute(state, s, calms[0]);
+  }
+  return false;
+}
+
+// ───────── 個性掛鉤（v1b ②）：全部不抽亂數 ─────────
+
+const traitOn = () => CONFIG.shopping.trait.enabled && CONFIG.personality.enabled;
+const altruismOf = (s) => s.traits?.altruism ?? 0;
+/** 利己者（利他度低）：囤錢、偏愛黑貨 */
+export const isHoarder = (s) => traitOn() && altruismOf(s) <= -CONFIG.shopping.trait.min;
+/** 這個人花完至少要留的備用金比例 */
+export const reservePctOf = (s) => CONFIG.shopping.reservePct + (isHoarder(s) ? CONFIG.shopping.trait.hoard.extraReservePct : 0);
+
+/**
+ * 利他者代付：自己沒事、有重傷同伴買不起治傷藥 → 轉帳（不超過私房錢 giftPctMax）讓對方買藥；買不成就退回。
+ * 目標與金額都是確定性規則（最重傷者優先、同傷勢 id 小者優先；買得起的最便宜治傷藥），不碰亂數流。
+ */
+function aidAlly(state, s, ctx) {
+  const T = CONFIG.shopping.trait;
+  if (!traitOn() || altruismOf(s) < T.min) return false;
+  const A = T.aid;
+  const day = currentDay(state);
+  if ((ctx.aided ?? 0) >= A.maxPerDay) return false;
+  if (s.lastAidDay != null && day - s.lastAidDay < A.cooldownDays) return false;
+  if ((s.stats.sanity ?? 100) < A.minSanity || s.injury >= 2) return false;
+  const gift = Math.floor(s.wallet * A.giftPctMax);
+  if (gift <= 0) return false;
+  const allies = state.samsarites
+    .filter((o) => o.id !== s.id && o.location === "space" && !(o.podLockDays > 0) && o.injury >= A.allyInjury)
+    .sort((a, b) => b.injury - a.injury || a.id - b.id);
+  for (const ally of allies) {
+    if (doseMult(state, ally, "heal") < CONFIG.shop.tolerance.minBuyMult) continue;
+    const isHeal = (i) => i.category === "consumable" && i.effect?.healInjury;
+    if (offers(state, ally, isHeal).length > 0) continue; // 他自己買得起，輪到他自己時會買
+    // 補足差額、花費最少的治傷藥：價格 - 對方私房錢 <= 上限
+    const need = Math.min(
+      ...SHOP_ITEMS.filter((i) => isHeal(i) && i.permanent && aiAllowed(state, ally, i)).map((i) => i.price - (ally.wallet ?? 0)).filter((d) => d > 0 && d <= gift),
+      Infinity
+    );
+    if (!Number.isFinite(need)) continue;
+    s.wallet -= need;
+    ally.wallet = (ally.wallet ?? 0) + need;
+    if (buyHeal(state, ally)) {
+      s.lastAidDay = day;
+      ctx.aided = (ctx.aided ?? 0) + 1;
+      logOf(state, s, `替 ${ally.name} 代付醫藥費（-${need}）`);
+      logOf(state, ally, `受 ${s.name} 接濟（+${need}）`);
+      return true;
+    }
+    ally.wallet -= need; // 沒買成：原路退回
+    s.wallet += need;
   }
   return false;
 }
@@ -129,7 +183,7 @@ function regear(state, s) {
 }
 
 function selfGrow(state, s) {
-  const keep = 1 - CONFIG.shopping.reservePct * (styleOf(state) === "elite" ? 0.5 : 1); // 花完仍要留 reservePct 備用金 → 費用 ≤ 私房錢 × 0.8；菁英流衝基因鎖只留一半備用金
+  const keep = 1 - reservePctOf(s) * (styleOf(state) === "elite" ? 0.5 : 1); // 花完仍要留 reservePct 備用金 → 費用 ≤ 私房錢 × 0.8；菁英流衝基因鎖只留一半備用金
   const bg = checkBreakGene(state, s.id, { payer: "wallet" });
   if (bg.ok && bg.cost <= s.wallet * keep) {
     breakGene(state, s.id, { payer: "wallet" });
@@ -153,7 +207,7 @@ function leisure(state, s, ctx) {
   const roll = !ctx.dramaRolled && !cooling && isDramaProne(state, s); // 每人每天只擲一次搞事骰（不論當天有幾次動作）
   ctx.dramaRolled = true;
   if (roll && rand(rng) < C.dramaChance) {
-    const cands = offers(state, s, (i) => i.category === "contraband" && i.kind !== "gear").filter((o) => o.src === "market" && o.price <= s.wallet * (1 - C.reservePct));
+    const cands = offers(state, s, (i) => i.category === "contraband" && i.kind !== "gear").filter((o) => o.src === "market" && o.price <= s.wallet * (1 - reservePctOf(s)));
     if (cands.length > 0) {
       const hit = cands[Math.floor(rand(rng) * cands.length)];
       if (execute(state, s, hit)) {
@@ -165,8 +219,8 @@ function leisure(state, s, ctx) {
   // 4b. 依性格偏好搶購黑市（含黑貨裝備，但權重低）：花完仍留備用金
   const w = buyTagWeights(s, state);
   const cands = offers(state, s, (i) => i.category !== "contraband" || i.kind === "gear")
-    .filter((o) => o.src === "market" && o.price <= s.wallet * (1 - C.reservePct))
-    .map((o) => ({ ...o, weight: w[AI_GROUP[o.item.aiBuyTag] ?? o.item.aiBuyTag] ?? 1 }));
+    .filter((o) => o.src === "market" && o.price <= s.wallet * (1 - reservePctOf(s)))
+    .map((o) => ({ ...o, weight: (w[AI_GROUP[o.item.aiBuyTag] ?? o.item.aiBuyTag] ?? 1) * (isHoarder(s) && o.item.category === "contraband" ? C.trait.hoard.contrabandWeightMult : 1) }));
   if (cands.length === 0) return false;
   return execute(state, s, weighted(rng, cands));
 }
@@ -205,7 +259,7 @@ function communalNeed(state, s) {
   const wantsSecond = (s.geneLock ?? 0) === 1 && cap && (cap.geneLock ?? 0) > 1; // 基因鎖低於現任隊長、目前 1 階：衝 2 階
   if (wantsFirst || wantsSecond) {
     const bg = checkBreakGene(state, s.id);
-    if (bg.ok) return Math.ceil(bg.cost / (1 - CONFIG.shopping.reservePct)); // 自主突破要留 20% 備用金，所以補貼要補到「費用 ÷ 0.8」才買得下去（沒花掉的會退回）
+    if (bg.ok) return Math.ceil(bg.cost / (1 - reservePctOf(s))); // 自主突破要留備用金（預設 20%，利己者更高），所以補貼要補到「費用 ÷ (1 - 備用金比例)」才買得下去（沒花掉的會退回）
   }
   return 0;
 }
@@ -255,7 +309,7 @@ export function dailyShopping(state) {
     const subsidy = communal ? communalSubsidy(state, s) : 0;
     for (let n = 0; n < C.maxActionsPerDay; n++) {
       if ((s.wallet ?? 0) <= 0) break;
-      const done = emergency(state, s) || regear(state, s) || selfGrow(state, s) || leisure(state, s, ctx);
+      const done = emergency(state, s) || aidAlly(state, s, ctx) || regear(state, s) || selfGrow(state, s) || leisure(state, s, ctx);
       if (!done) break;
       actions += 1;
     }

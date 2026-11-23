@@ -125,6 +125,15 @@ export const CONFIG = {
     dramaCooldownDays: 10, // 同一個人買過黑貨後，這麼多天內不會再偷買（保留偶發吃瓜驚喜感）
     tagWeight: { survival: 1, aggro: 1, communal: 0.5, drama: 0.1 }, // 搶購黑市的基礎偏好（詞條會再乘 2）
     logKeep: 6, // 每人最近的自主購買紀錄留幾筆（s.shopLog）
+    // 個性掛鉤（個性系統 v1b ②，暫定值需露葵驗證）：只看 s.traits.altruism 利他度，永不顯示數字；全部不抽亂數
+    // aid：利他度 >= min 的人，替「買不起治傷藥的重傷同伴」轉帳（上限自己私房錢的 giftPctMax）讓對方買藥；冷卻 cooldownDays、每人每天最多 maxPerDay 次
+    // hoard：利他度 <= -min 的人（利己），備用金比例多 extraReservePct，黑市搶購時黑貨權重 × contrabandWeightMult
+    trait: {
+      enabled: true,
+      min: 40,
+      aid: { cooldownDays: 3, maxPerDay: 1, giftPctMax: 0.3, minSanity: 45, allyInjury: 2 },
+      hoard: { extraReservePct: 0.15, contrabandWeightMult: 3 },
+    },
   },
 
   // ── 副本 ──
