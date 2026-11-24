@@ -227,20 +227,42 @@ function render() {
   renderModal();
   codex.sync(!coverOpen); // 詞條庫懸浮球：封面時藏起來，進遊戲後永遠在最上層
   codex.setFocus(modal?.name === "detail" && modal.id != null && modal.dead == null ? modal.id : null); // 開著小人檔案頁：詞條庫自動把他的詞條置頂，關掉就取消
-  for (const id of ["topbar", "actions", "roster", "modal", "log", "banner", "run-list"]) stripEmoji($(id));
+  watchEmoji(); // 第一次全掃一遍，之後只處理新插入／變動的節點（不再每 tick 走遍 7 個區塊的全部文字）
 }
 
 /** DESIGN.md：不用 emoji 當裝飾。畫面文字統一在這裡濾掉（小人頭頂泡泡是 CSS 圖形，不受影響；副本路線圖保留原樣） */
 const EMOJI_RE = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]/gu;
 const EMOJI_TEST = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]/u; // 判斷用（不帶 g，避免 lastIndex 跳過節點）
+/** 單一文字節點去 emoji（含 data-keep-emoji 保留區判斷）；沒有 emoji 就什麼都不做，所以重複呼叫很便宜 */
+function stripTextNode(n) {
+  if (!EMOJI_TEST.test(n.nodeValue) || n.parentElement?.closest("[data-keep-emoji]")) return;
+  const cleaned = n.nodeValue.replace(EMOJI_RE, "").replace(/^\s+/, (m) => (n.previousSibling ? m : ""));
+  n.nodeValue = cleaned.trim() === "" && n.parentElement?.textContent.trim() === "" ? "鎖" : cleaned;
+}
 function stripEmoji(root) {
   if (!root) return;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement?.closest("[data-keep-emoji]") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
   const hits = [];
   for (let n = walker.nextNode(); n; n = walker.nextNode()) if (EMOJI_TEST.test(n.nodeValue)) hits.push(n);
-  for (const n of hits) {
-    const cleaned = n.nodeValue.replace(EMOJI_RE, "").replace(/^\s+/, (m) => (n.previousSibling ? m : ""));
-    n.nodeValue = cleaned.trim() === "" && n.parentElement?.textContent.trim() === "" ? "鎖" : cleaned;
+  for (const n of hits) stripTextNode(n);
+}
+/** 原本每個 tick 對 7 個區塊各跑一次 TreeWalker 全掃（連剛建好的全新節點也掃）。改成：第一次全掃，之後用 MutationObserver 只處理「新插入或文字變了」的節點；
+ *  觀察者的回呼在同一個工作階段的微任務裡執行，早於瀏覽器繪製，所以畫面上不會閃過 emoji */
+const EMOJI_ROOTS = ["topbar", "actions", "roster", "modal", "log", "banner", "run-list"];
+let emojiObserver = null;
+function watchEmoji() {
+  if (emojiObserver) return;
+  emojiObserver = new MutationObserver((records) => {
+    for (const r of records) {
+      if (r.type === "characterData") stripTextNode(r.target);
+      else for (const n of r.addedNodes) n.nodeType === 3 ? stripTextNode(n) : n.nodeType === 1 && stripEmoji(n);
+    }
+  });
+  for (const id of EMOJI_ROOTS) {
+    const el = $(id);
+    if (!el) continue;
+    stripEmoji(el);
+    emojiObserver.observe(el, { childList: true, subtree: true, characterData: true });
   }
 }
 
@@ -257,9 +279,13 @@ function renderTopbar() {
   $("karma").textContent = `${state.karmaCrystals ?? 0}${erosionUnlocked(state) || (state.erosionCrystals ?? 0) > 0 ? ` ／ 侵蝕 ${state.erosionCrystals ?? 0}` : ""}`;
   $("karma").title = "因果結晶（神級抽卡）／侵蝕結晶（位面侵蝕通關掉落，升級高階基建用）";
 
-  $("speed-controls").innerHTML = CONFIG.speeds
-    .map((v) => `<button data-action="set-speed" data-value="${v}" class="${v === state.settings.speed ? "active" : ""}">${v}x</button>`)
-    .join("");
+  if ($("speed-controls").dataset.key !== String(state.settings.speed)) {
+    // 速度按鈕只有速度變了才重建（照 log-filter 的 dataset.key 做法）
+    $("speed-controls").innerHTML = CONFIG.speeds
+      .map((v) => `<button data-action="set-speed" data-value="${v}" class="${v === state.settings.speed ? "active" : ""}">${v}x</button>`)
+      .join("");
+    $("speed-controls").dataset.key = String(state.settings.speed);
+  }
   document.body.style.setProperty("--speed", state.settings.speed); // 讓小人滑動速度跟著遊戲速度變快
   $("btn-pause").textContent = state.settings.paused ? "繼續 (SPACE)" : "暫停 (SPACE)";
   const taxPct = Math.round(taxRateOf(state) * 100);
@@ -272,7 +298,10 @@ function renderTopbar() {
   $("btn-pause").classList.toggle("active", state.settings.paused);
 
   $("banner").style.display = state.settings.paused && bannerText ? "block" : "none";
-  $("banner").innerHTML = `${bannerText}<button data-action="toggle-pause">繼續</button>`;
+  if ($("banner").dataset.key !== bannerText) {
+    $("banner").innerHTML = `${bannerText}<button data-action="toggle-pause">繼續</button>`;
+    $("banner").dataset.key = bannerText;
+  }
 
   const waiting = pendingWishes(state).length;
   const ongoing = (state.wishes ?? []).filter((w) => w.status === "active").length;
@@ -503,7 +532,7 @@ function renderSpace() {
 function renderRunList(viewing = null) {
   const box = $("run-list");
   box.style.display = state.runs.length ? "flex" : "none";
-  box.innerHTML = state.runs
+  const html = state.runs
     .map((run) => {
       const dungeon = dungeonOfRun(run);
       const party = run.partyIds.map((id) => getSamsarite(state, id)).filter(Boolean);
@@ -525,6 +554,10 @@ function renderRunList(viewing = null) {
       </div>`;
     })
     .join("");
+  if (box._html !== html) {
+    box.innerHTML = html;
+    box._html = html;
+  }
 }
 
 // 詞條庫懸浮球：永遠在最上層，視窗可一直開著對照
@@ -532,6 +565,10 @@ const codex = createCodex({ getState: () => state, describeTag: (t) => describeT
 
 let logFilter = "all"; // 主神日誌目前篩選的分類（只存在畫面，不進存檔）
 
+const logEntryHtml = (e) => `<div class="log-entry log-${e.type}"><span class="log-day">D${e.day}</span><span class="log-cat cat-${categoryOf(e.type)}">${LOG_BADGE[categoryOf(e.type)]}</span>${e.text}</div>`;
+const logView = { filter: null, last: null, empty: false }; // 上次畫到哪：篩選、最後一條（物件參照）、是不是「沒有紀錄」的提示
+
+/** 日誌增量附加：只把新增的條目加到尾端、超過上限被丟掉的舊條目從頭移除；篩選變了、讀檔換了整份日誌、或對不上時才整份重建 */
 function renderLog() {
   const log = $("log");
   const bar = LOG_CATEGORIES.map(([id, label]) => `<button data-action="log-filter" data-id="${id}" class="${logFilter === id ? "active" : ""}">${label}</button>`).join("");
@@ -539,11 +576,27 @@ function renderLog() {
     $("log-filter").innerHTML = bar;
     $("log-filter").dataset.key = logFilter;
   }
+  const cur = logFilter === "all" ? state.log : state.log.filter((e) => categoryOf(e.type) === logFilter);
+  const v = logView;
+  const tail = cur[cur.length - 1] ?? null;
+  const sameFilter = v.filter === logFilter;
+  if (sameFilter && !v.empty && tail && tail === v.last && log.childElementCount === cur.length) return; // 沒有新條目：什麼都不碰（連捲動位置都不讀）
   const wasAtBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
-  log.innerHTML = state.log
-    .filter((e) => logFilter === "all" || categoryOf(e.type) === logFilter)
-    .map((e) => `<div class="log-entry log-${e.type}"><span class="log-day">D${e.day}</span><span class="log-cat cat-${categoryOf(e.type)}">${LOG_BADGE[categoryOf(e.type)]}</span>${e.text}</div>`)
-    .join("") || `<div class="muted" style="padding:8px 0">這一類還沒有紀錄。</div>`;
+  const idx = sameFilter && !v.empty && v.last ? cur.lastIndexOf(v.last) : -1;
+  let ok = false;
+  if (idx >= 0) {
+    // 增量：新條目附加到尾端，被截斷的舊條目從頭移除
+    const fresh = cur.slice(idx + 1);
+    if (fresh.length) log.insertAdjacentHTML("beforeend", fresh.map(logEntryHtml).join(""));
+    while (log.childElementCount > cur.length && log.firstElementChild) log.firstElementChild.remove();
+    ok = log.childElementCount === cur.length; // 數量對不上就退回整份重建
+  }
+  if (!ok) {
+    log.innerHTML = cur.map(logEntryHtml).join("") || `<div class="muted" style="padding:8px 0">這一類還沒有紀錄。</div>`;
+  }
+  v.filter = logFilter;
+  v.last = tail;
+  v.empty = cur.length === 0;
   if (wasAtBottom || log.dataset.f !== logFilter) log.scrollTop = log.scrollHeight;
   log.dataset.f = logFilter;
 }
@@ -693,6 +746,21 @@ function rosterInteract(ms = 250) {
   rosterEl.addEventListener("scroll", () => rosterInteract(), { passive: true });
 }
 
+/** 名冊卡的便宜版本 key：卡片內容只吃這些欄位。key 沒變就不必每個 tick 為每個人重建整張卡片的 HTML 字串（currentDay 讓每天至少強制重建一次當保險） */
+function rosterKey(s) {
+  const w = wishesOf(state, s.id)[0];
+  const last = s.life?.[s.life.length - 1];
+  const m = s.mood;
+  return [
+    currentDay(state), s.rank, s.name, effectivePower(s), s.stats.sanity, s.grudge ?? 0,
+    subStat(s, "hp"), subStat(s, "defense"), subStat(s, "speed"), subStat(s, "luck"),
+    s.geneLock ?? 0, s.enhanceCount ?? 0, s.wallet ?? 0, (s.tags ?? []).join(","),
+    s.location, s.injury, s.restDaysLeft, s.podDaysLeft, s.vacationDays, s.defyDays, m?.kind, m?.daysLeft,
+    w ? `${w.kind}:${w.status}` : "", s.life?.length ?? 0, last?.day, last?.text,
+    s.id === state.settings.followId ? 1 : 0,
+  ].join("|");
+}
+
 function renderRoster() {
   const root = $("roster");
   const keepLeft = root.scrollLeft;
@@ -714,10 +782,14 @@ function renderRoster() {
     const cls = `card stack rank-border-${s.rank} ${s.location === "dungeon" ? "away" : s.location === "pod" ? "pod" : ""}${raisedId === s.id ? " raised" : ""}`;
     if (el.className !== cls) el.className = cls;
     if (!busy || el._html === undefined) {
-      const html = cardInner(s);
-      if (el._html !== html) {
-        el.innerHTML = html;
-        el._html = html;
+      const key = rosterKey(s);
+      if (el._key !== key || el._html === undefined) {
+        const html = cardInner(s);
+        if (el._html !== html) {
+          el.innerHTML = html;
+          el._html = html;
+        }
+        el._key = key;
       }
     }
     el.style.zIndex = raisedId === s.id ? "60" : String(i + 1);
