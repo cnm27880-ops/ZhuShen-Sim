@@ -22,6 +22,7 @@ import { giveBirth, hatch, podBabies } from "./children.js";
 import { popLimit } from "./mandatory.js";
 import { squadRng, squadOf, squadUnlocked, captainOf, squadMembers, bump, styleOf } from "./squad.js";
 import { talentFloor } from "./facilities.js";
+import { isLoyal, defectAffinityShift } from "./personality.js";
 import { logText } from "./templates.js";
 
 const L = () => CONFIG.lineage;
@@ -208,6 +209,7 @@ export function isDefectImmune(state, s) {
   const cap = captainOf(state);
   if (!cap || cap.id === s.id) return true;
   if (affinity(state, s, cap) > 0) return true;
+  if (isLoyal(s)) return true; // 個性 v2：順從度極高的死忠不叛逃
   if (Object.entries(s.soulbound ?? {}).some(([slot, v]) => v && s.gear?.[slot])) return true;
   return !!s.customProfile;
 }
@@ -216,7 +218,7 @@ export function isDefectImmune(state, s) {
 // （4-E-7 放寬：淨好感 <= -45 且（理智 < 45 或持有 demon_path））
 export const defectEligible = (state, s) => {
   const cap = captainOf(state);
-  return !!cap && s.location === "space" && affinity(state, s, cap) <= L().rogueAffinity && (s.stats.sanity < L().rogueSanity || (s.tags ?? []).includes(L().rogueTag));
+  return !!cap && s.location === "space" && affinity(state, s, cap) <= L().rogueAffinity + defectAffinityShift(s) && (s.stats.sanity < L().rogueSanity || (s.tags ?? []).includes(L().rogueTag));
 };
 
 /** 叛逃：帶著私房錢離開空間，轉化成野生 Boss（不進墳場、不入碑） */

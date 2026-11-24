@@ -56,6 +56,64 @@ export function newTraitState(seed = 0) {
   return { rngState: (seed ^ 0x7a17) | 0 };
 }
 
+// ───────── v2：副本擋刀／背刺、叛逃與私奔門檻（純函式，不吃亂數；數字 CONFIG.personality.v2） ─────────
+
+const V2 = () => CONFIG.personality.v2;
+const v2On = () => !!(CONFIG.personality.enabled && V2()?.enabled);
+const score = (s, axis) => s?.traits?.[axis] ?? 0;
+
+/** 擋刀機率倍率（只看守護者本人）：利他高更敢擋、利他低不太想擋；膽識同理。關閉或沒特色回傳 1 */
+export function protectMult(s) {
+  if (!v2On()) return 1;
+  const c = V2();
+  let m = 1;
+  const a = score(s, "altruism");
+  if (a >= c.min) m *= c.protect.altruismHi;
+  else if (a <= -c.min) m *= c.protect.altruismLo;
+  const k = score(s, "courage");
+  if (k >= c.min) m *= c.protect.courageHi;
+  else if (k <= -c.min) m *= c.protect.courageLo;
+  return m;
+}
+
+/** 陰謀者：利他 <= -min 且野心 >= +min（沒有背刺詞條也可能在副本裡背刺隊友） */
+export function isSchemer(s) {
+  if (!v2On() || !V2().schemer.enabled) return false;
+  const c = V2();
+  return score(s, "altruism") <= -c.min && score(s, "ambition") >= c.min;
+}
+
+/** 死忠：順從度 >= loyalMin，叛逃與私奔 100% 免疫 */
+export function isLoyal(s) {
+  return v2On() && score(s, "obedience") >= V2().loyalMin;
+}
+
+const shiftOf = (s, tbl) => {
+  if (!v2On()) return 0;
+  const o = score(s, "obedience");
+  if (o >= V2().min) return tbl.obeyHi;
+  if (o <= -V2().min) return tbl.obeyLo;
+  return 0;
+};
+/** 叛逃淨好感門檻位移（加在 rogueAffinity 上：正＝更容易叛逃） */
+export const defectAffinityShift = (s) => shiftOf(s, V2()?.defectShift ?? {});
+/** 私奔淨好感門檻位移（加在 elope.affinity 上） */
+export const elopeAffinityShift = (s) => shiftOf(s, V2()?.elopeShift ?? {});
+
+/** 陰謀者背刺專用亂數流（state.trait.clashRngState；缺欄位用本局種子補）。不動主亂數 */
+export function clashRng(state) {
+  const t = (state.trait ??= newTraitState(state.seed ?? 0));
+  t.clashRngState ??= ((state.seed ?? 0) ^ 0xc1a5) | 0;
+  return {
+    get rngState() {
+      return t.clashRngState;
+    },
+    set rngState(v) {
+      t.clashRngState = v;
+    },
+  };
+}
+
 /** 絕對值最大的軸（平手依 TRAIT_AXES 順序）；回傳 { axis, sign, abs } */
 export function dominantAxis(s) {
   let best = null;

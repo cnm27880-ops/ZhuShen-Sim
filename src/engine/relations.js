@@ -14,6 +14,7 @@ import { effectivePower, sanityClashMult, loveGainMultOf } from "./tags.js";
 import { logText } from "./templates.js";
 import { captainOf } from "./squad.js";
 import { gearMult } from "./gearFx.js";
+import { protectMult, isSchemer, clashRng } from "./personality.js";
 import { addLife } from "./life.js"; // 一生大事記（功能 5）
 import { maybeWish } from "./wishes.js";
 import {
@@ -514,6 +515,15 @@ export function pickClash(state, party, roomIndex, mult = 1) {
         return { attacker: s, victim: pick(state, party.filter((o) => o.id !== s.id)), kind: "backstab" };
       }
     }
+    // 個性 v2：沒有背刺詞條的「陰謀者」（利他低＋野心高）也可能背刺；用獨立亂數流，放在原判定之後，不動主亂數
+    for (const s of party) {
+      if (!hasTag(s, "backstabber") && isSchemer(s)) {
+        const rng = clashRng(state);
+        if (rand(rng) < Math.min(1, R().backstabChance * CONFIG.personality.v2.schemer.mult * sanityClashMult(s) * mult)) {
+          return { attacker: s, victim: pick(rng, party.filter((o) => o.id !== s.id)), kind: "backstab" };
+        }
+      }
+    }
   }
   return null;
 }
@@ -536,6 +546,11 @@ export function afterClash(state, clash) {
 export function findProtector(state, party, victim) {
   const guards = party.filter((o) => o.id !== victim.id && ["adore", "soulmate"].includes(pairLevel(state, o, victim)));
   if (guards.length === 0) return null;
-  for (const guard of guards) if (rand(state) < R().protectChance) return guard; // #25：每位守護者各擲一次，第一位成功的出手
+  for (const guard of guards) {
+    // #25：每位守護者各擲一次，第一位成功的出手；個性 v2：利他／膽識影響擋刀機率（擲骰次數不變）
+    const m = protectMult(guard);
+    const chance = m === 1 ? R().protectChance : Math.min(CONFIG.personality.v2.protect.cap, R().protectChance * m);
+    if (rand(state) < chance) return guard;
+  }
   return null;
 }

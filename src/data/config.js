@@ -417,6 +417,18 @@ export const CONFIG = {
     // 每個留守者（非隊長）每天固定擲 1 次 chance，擲中就找「事件 × 對象」；隊長不當任何一方；冷卻沿用 personCooldown／eventCooldown；
     // 走獨立亂數流 state.trait.duetRngState（不動主亂數，也不動單人事件的亂數順序）
     duet: { enabled: true, chance: 0.02 },
+    // 個性 v2（暫定值需露葵驗證；enabled=false 時副本擋刀／背刺、叛逃、私奔與 v1b 逐項相同）：
+    // 擋刀只調「守護者」的機率（候選人仍是愛慕／靈魂伴侶，擲骰次數不變，不動主亂數順序）；
+    // 非背刺詞條的「陰謀者」背刺走獨立亂數流 state.trait.clashRngState；叛逃／私奔只調門檻與免疫。
+    v2: {
+      enabled: true,
+      min: 40, // 該軸絕對值至少多少才算「有特色」（跟 eventMin 同義，獨立設定）
+      protect: { altruismHi: 1.4, altruismLo: 0.5, courageHi: 1.15, courageLo: 0.8, cap: 0.6 }, // 擋刀機率倍率（乘在 relations.protectChance 上）、機率上限
+      schemer: { enabled: true, mult: 0.3 }, // 利他 <= -min 且野心 >= +min 的非背刺詞條者：每房背刺機率 = backstabChance × mult × 理智倍率 × 突變倍率
+      loyalMin: 70, // 順從度 >= 這個值：叛逃、私奔 100% 免疫（死忠）
+      defectShift: { obeyHi: -5, obeyLo: 5 }, // 叛逃淨好感門檻位移（順從度 >= min 收緊、<= -min 放寬；rogueAffinity -45 → -50／-40）
+      elopeShift: { obeyHi: -10, obeyLo: 5 }, // 私奔淨好感門檻位移（elope.affinity -5 → -15／0）
+    },
   },
 
   // ── 離心力：人際張力與怨氣（A-3 階段 2；引擎 engine/tension.js，事件資料 data/tensionEvents.js）──
