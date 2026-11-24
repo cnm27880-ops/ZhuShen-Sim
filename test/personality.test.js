@@ -5,11 +5,11 @@ import assert from "node:assert/strict";
 import { CONFIG } from "../src/data/config.js";
 import { LOGS } from "../src/data/logs.js";
 import { TRAIT_AXES, PROFILE_LINES, ARCHETYPES, TAG_TRAIT_BIAS } from "../src/data/personality.js";
-import { TRAIT_EVENTS } from "../src/data/traitEvents.js";
+import { TRAIT_EVENTS, TRAIT_DUETS } from "../src/data/traitEvents.js";
 import { createNewGame, createSamsarite, advanceTick, serialize, deserialize } from "../src/engine/core.js";
 import { rawTraitScore, rollTraits, archetypeOf, traitProfile, ensureTraits } from "../src/engine/personality.js";
-import { playTraitEvent, dailyTraits } from "../src/engine/traitEvents.js";
-import { addLove, getRel } from "../src/engine/relations.js";
+import { playTraitEvent, dailyTraits, playTraitDuet, dailyTraitDuets } from "../src/engine/traitEvents.js";
+import { addLove, getRel, affinity } from "../src/engine/relations.js";
 import { appointCaptain } from "../src/engine/squad.js";
 
 function setup(n, seed = 5) {
@@ -246,4 +246,171 @@ test("跑多天不會壞：個性事件有發生、理智與私房錢不出現 N
     assert.ok(s.wallet >= 0);
   }
   assert.ok(state.samsarites.some((s) => s.traitSeen.length > 0) || state.log.some((l) => l.type === "trait"));
+});
+
+// ───────── 個性系統 v1b ③：雙人碰撞事件 ─────────
+const duet = (id) => TRAIT_DUETS.find((e) => e.id === id);
+const flat = (...ps) => ps.forEach((s) => TRAIT_AXES.forEach((ax) => (s.traits[ax] = 0)));
+const setTraits = (s, o) => Object.assign(s.traits, o);
+
+test("雙人事件資料表完整：6 個、每個有 3 句日誌、軸與正負合法、涵蓋五條軸", () => {
+  assert.equal(TRAIT_DUETS.length, 6);
+  const axes = new Set();
+  for (const e of TRAIT_DUETS) {
+    assert.ok(LOGS[`trait_duet_${e.id}`]?.length >= 3, e.id);
+    for (const side of [e.a, e.b]) {
+      assert.ok(TRAIT_AXES.includes(side.axis) && (side.sign === 1 || side.sign === -1));
+      axes.add(side.axis);
+    }
+  }
+  assert.equal(axes.size, 5);
+});
+
+test("6 個雙人事件：條件符合時各自發生，效果與雙方揭露都正確", () => {
+  const cases = [
+    ["exploit", { altruism: -80 }, { altruism: 80 }],
+    ["rivalry", { ambition: 80 }, { ambition: 80 }],
+    ["routeClash", { courage: 80 }, { courage: -80 }],
+    ["humility", { altruism: 80 }, { altruism: 80 }],
+    ["dragOut", { social: 80 }, { social: -80 }],
+    ["lecture", { obedience: 80 }, { obedience: -80 }],
+  ];
+  for (const [id, ta, tb] of cases) {
+    const { state, people: [a, b] } = setup(2, 61);
+    flat(a, b);
+    setTraits(a, ta);
+    setTraits(b, tb);
+    a.wallet = 100;
+    b.wallet = 100;
+    a.stats.sanity = b.stats.sanity = 80;
+    const e = duet(id);
+    const affAB = affinity(state, a, b);
+    const affBA = affinity(state, b, a);
+    assert.equal(playTraitDuet(state, a, b, e).ok, true, id);
+    assert.equal(a.stats.sanity, 80 + (e.fx.sanityA ?? 0), `${id} A 理智`);
+    assert.equal(b.stats.sanity, 80 + (e.fx.sanityB ?? 0), `${id} B 理智`);
+    assert.equal(a.wallet, 100 + (e.fx.take ?? 0));
+    assert.equal(b.wallet, 100 - (e.fx.take ?? 0));
+    assert.equal(affinity(state, a, b), affAB + (e.fx.loveAB ?? 0) - (e.fx.dropAB ?? 0), `${id} A→B`);
+    assert.equal(affinity(state, b, a), affBA + (e.fx.loveBA ?? 0) - (e.fx.dropBA ?? 0) - (e.fx.hateBA ?? 0), `${id} B→A`);
+    assert.equal(a.traitSeen.length, 1, `${id} A 揭露`);
+    assert.equal(b.traitSeen.length, 1, `${id} B 揭露`);
+    assert.equal(a.traitSeen[0].axis, e.a.axis);
+    assert.equal(b.traitSeen[0].sign, e.b.sign);
+    assert.ok(state.log.some((l) => l.type === "trait" && l.text.includes(a.name) && l.text.includes(b.name)), `${id} 日誌`);
+  }
+});
+
+test("雙人事件不發生：條件不符、對象沒錢、同一人、不在空間", () => {
+  const { state, people: [a, b] } = setup(2, 62);
+  flat(a, b);
+  setTraits(a, { altruism: -80 });
+  setTraits(b, { altruism: 20 }); // 不夠利他
+  a.wallet = b.wallet = 100;
+  assert.equal(playTraitDuet(state, a, b, duet("exploit")).ok, false);
+  setTraits(b, { altruism: 80 });
+  b.wallet = 10; // 低於 minWallet
+  assert.equal(playTraitDuet(state, a, b, duet("exploit")).ok, false);
+  b.wallet = 100;
+  assert.equal(playTraitDuet(state, a, a, duet("rivalry")).ok, false);
+  b.location = "dungeon";
+  assert.equal(playTraitDuet(state, a, b, duet("exploit")).ok, false);
+});
+
+test("雙人事件：隊長不當任何一方，隊長對所有人的好感與戰力都不變", () => {
+  const { state, people: [a, b, c] } = setup(3, 63);
+  state.spaceLevel = 2;
+  appointCaptain(state, c.id, true);
+  flat(a, b, c);
+  for (const s of [a, b, c]) {
+    s.wallet = 200;
+    setTraits(s, { ambition: 90, altruism: 90, courage: 90, social: 90, obedience: 90 });
+  }
+  setTraits(b, { courage: -90, social: -90, obedience: -90, altruism: -90 });
+  assert.equal(playTraitDuet(state, a, c, duet("rivalry")).ok, false);
+  assert.equal(playTraitDuet(state, c, a, duet("rivalry")).ok, false);
+  const snap = () => [a, b].flatMap((x) => [getRel(state, x, c), getRel(state, c, x)].map((r) => [r.love, r.hate]));
+  const before = snap();
+  const sanC = c.stats.sanity;
+  for (const e of TRAIT_DUETS) {
+    playTraitDuet(state, a, b, e);
+    playTraitDuet(state, b, a, e);
+  }
+  assert.deepEqual(snap(), before, "和隊長的好感不變");
+  assert.equal(c.stats.sanity, sanC);
+  // 每日結算也不會讓隊長進場
+  CONFIG.personality.duet.chance = 1;
+  try {
+    for (let d = 0; d < 20; d++) {
+      state.tick += CONFIG.ticksPerDay;
+      dailyTraitDuets(state);
+    }
+  } finally {
+    CONFIG.personality.duet.chance = 0.02;
+  }
+  assert.deepEqual(snap(), before);
+  assert.equal(c.traitSeen.length, 0);
+});
+
+test("雙人事件：沿用冷卻（個人 10 天、同事件 20 天），冷卻中不發生", () => {
+  const { state, people: [a, b] } = setup(2, 64);
+  state.settings.autoDispatch = false;
+  flat(a, b);
+  setTraits(a, { ambition: 90 });
+  setTraits(b, { ambition: 90 });
+  CONFIG.personality.duet.chance = 1;
+  try {
+    dailyTraitDuets(state);
+    assert.equal(a.traitSeen.length + b.traitSeen.length, 2, "第一次發生，雙方各揭露一條");
+    dailyTraitDuets(state);
+    assert.equal(a.traitSeen.length + b.traitSeen.length, 2, "冷卻中不再發生");
+    state.tick += CONFIG.ticksPerDay * (CONFIG.personality.eventCooldown + 1);
+    dailyTraitDuets(state);
+    assert.equal(a.traitSeen.length + b.traitSeen.length, 4, "冷卻過後恢復");
+  } finally {
+    CONFIG.personality.duet.chance = 0.02;
+  }
+});
+
+test("雙人事件：不動主亂數與單人事件的亂數流，只動自己的 duetRngState", () => {
+  const { state, people: [a, b] } = setup(2, 65);
+  state.settings.autoDispatch = false;
+  flat(a, b);
+  setTraits(a, { ambition: 90 });
+  setTraits(b, { ambition: 90 });
+  const main = state.rngState;
+  CONFIG.personality.duet.chance = 1;
+  try {
+    const single = state.trait?.rngState;
+    dailyTraitDuets(state);
+    assert.equal(state.rngState, main, "主亂數沒動");
+    assert.equal(state.trait.rngState, single, "單人事件的亂數流沒動");
+    assert.notEqual(state.trait.duetRngState, undefined);
+  } finally {
+    CONFIG.personality.duet.chance = 0.02;
+  }
+});
+
+test("關閉雙人事件：跑 40 天完全不碰雙人事件的亂數流與日誌；開啟時狀態合法", () => {
+  const run = (enabled) => {
+    const state = createNewGame(66);
+    for (const s of state.samsarites) s.wallet = 300;
+    CONFIG.personality.eventChance = 0.5;
+    CONFIG.personality.duet.enabled = enabled;
+    try {
+      for (let i = 0; i < CONFIG.ticksPerDay * 40; i++) advanceTick(state);
+    } finally {
+      CONFIG.personality.eventChance = 0.03;
+      CONFIG.personality.duet.enabled = true;
+    }
+    return state;
+  };
+  const off = run(false);
+  assert.equal(off.trait.duetRngState, undefined, "關閉時完全不碰雙人事件的亂數流");
+  assert.ok(!off.log.some((l) => l.type === "trait" && /trait_duet/.test(l.text)));
+  const on = run(true);
+  for (const s of [...on.samsarites, ...off.samsarites]) {
+    assert.ok(Number.isFinite(s.stats.sanity) && s.stats.sanity >= 0 && s.stats.sanity <= 100);
+    assert.ok(s.wallet >= 0);
+  }
 });
