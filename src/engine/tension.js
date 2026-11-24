@@ -24,7 +24,7 @@ import { getRel, affinity, pairStatus, addHate, addLove, softenHate, afterDeath,
 import { captainOf } from "./squad.js";
 import { defect } from "./lineage.js";
 import { applyEvent } from "./drama.js";
-import { setMood } from "./wishes.js";
+import { setMood, startDefy } from "./wishes.js";
 import { logText } from "./templates.js";
 import { autoMediate } from "./automation.js";
 
@@ -364,6 +364,7 @@ function runOutcome(state, s) {
   } else {
     emit(state, "grudge", logText(state, "grudgeDefy", { A: s }));
     emit(state, "grudge", setMood(state, s, "upset"), { samsariteId: s.id });
+    startDefy(state, s, CONFIG.personality.v3?.defyDays ?? 0); // 個性 v3：真的拒絕出征幾天（強制任務與洲際碰撞照樣徵召）
   }
   if (state.samsarites.includes(s)) s.grudge = Math.min(s.grudge ?? 0, c.afterOutcome);
   return pick.kind;

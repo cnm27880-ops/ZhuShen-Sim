@@ -12,7 +12,7 @@ import { getMutation } from "../data/mutations.js";
 import { firstRelicOf, hiddenRelicOf } from "../data/relics.js";
 import { ENV_TAGS, getEnvTag } from "../data/tags.js";
 import { rand, pick, weighted } from "./rng.js";
-import { wishesAfterRun } from "./wishes.js";
+import { wishesAfterRun, isDefiant } from "./wishes.js";
 import { godAfterRun } from "./godEvents.js";
 import { rollInsights, rollKarmaDrop } from "./growth.js";
 import { effectivePower, worldPassBonus, moodPassBonus, tagPassBonus, tagSwing, tagRewardPct, injuryShieldOf, dodgeOf, defenseChance, speedSaveChance, luckRewardPct } from "./tags.js";
@@ -241,6 +241,8 @@ export function startRun(state, dungeonId, partyIds, opts = {}) {
   if (locked) return { ok: false, reason: `${locked.name} 已鎖定（🔒），不能派遣` };
   const resting = party.find((s) => (s.vacationDays ?? 0) > 0);
   if (resting) return { ok: false, reason: `${resting.name} 正在放假（還要 ${resting.vacationDays} 天）` };
+  const defiant = mandatory ? null : party.find(isDefiant); // 個性 v3：抗命的人不肯出征（強制任務與洲際碰撞照樣徵召）
+  if (defiant) return { ok: false, reason: `${defiant.name} 正在抗命（還要 ${defiant.defyDays} 天），不肯出征` };
   const lockedIn = party.find((s) => (s.podLockDays ?? 0) > 0);
   if (lockedIn) return { ok: false, reason: `${lockedIn.name} 被鎖在私人休眠艙裡（還要 ${lockedIn.podLockDays} 天）` };
 

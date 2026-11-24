@@ -562,6 +562,7 @@ function moodLabel(s) {
 function statusExtras(s) {
   const parts = [];
   if (s.vacationDays > 0) parts.push(`🏖️ 休假中（${s.vacationDays} 天）`);
+  if (s.defyDays > 0) parts.push(`😠 抗命中（${s.defyDays} 天）`);
   const mood = moodLabel(s);
   if (mood) parts.push(mood);
   const wish = wishesOf(state, s.id)[0];

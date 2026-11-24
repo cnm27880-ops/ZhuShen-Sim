@@ -13,7 +13,7 @@ import { GOD_EVENTS, getGodEvent } from "../data/godEvents.js";
 import { DUNGEONS, getDungeon } from "../data/dungeons.js";
 import { randInt, pick, rand, weighted } from "./rng.js";
 import { emit, currentDay, spend, canAfford, getSamsarite, setInjury, announceDebtIfNew, debtLimitOf } from "./core.js";
-import { setMood, isOnVacation } from "./wishes.js";
+import { setMood, isOnVacation, isDefiant } from "./wishes.js";
 import { logText } from "./templates.js";
 import { godMult, targetDungeons } from "./dayChapter.js";
 
@@ -64,7 +64,7 @@ function possibleEvents(state) {
     const k = G().kinds[def.id];
     if (!k || k.weight <= 0) continue;
     if (def.mode === "raid") {
-      const ready = home.some((s) => !isOnVacation(s) && s.injury === 0);
+      const ready = home.some((s) => !isOnVacation(s) && !isDefiant(s) && s.injury === 0);
       const dungeons = targetDungeons(state, k.dungeonPowerCap).length > 0;
       if (!ready || !dungeons || state.god.mission) continue; // 沒人能出任務、沒副本可指定、或已有任務在身
     }
@@ -113,7 +113,7 @@ export function dailyGod(state) {
   }
   else if (def.mode === "raid") {
     const k = G().kinds.raid;
-    const ready = atHome(state).filter((s) => !isOnVacation(s) && s.injury === 0);
+    const ready = atHome(state).filter((s) => !isOnVacation(s) && !isDefiant(s) && s.injury === 0);
     targetId = pick(g, ready).id;
     params.dungeonId = pick(g, targetDungeons(state, k.dungeonPowerCap)).id;
     params.reward = randInt(g, ...k.rewardPoints) * params.mult;

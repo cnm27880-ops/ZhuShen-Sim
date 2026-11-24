@@ -100,6 +100,17 @@ export const defectAffinityShift = (s) => shiftOf(s, V2()?.defectShift ?? {});
 /** 私奔淨好感門檻位移（加在 elope.affinity 上） */
 export const elopeAffinityShift = (s) => shiftOf(s, V2()?.elopeShift ?? {});
 
+/** 許願種類權重倍率（v3）：該軸 >= +min 乘 hi、<= -min 乘 lo；關閉或沒特色回傳 1。只調權重，不影響擲骰次數 */
+export function wishWeightMult(s, kind) {
+  const c = CONFIG.personality.v3;
+  const w = c?.wishWeight?.[kind];
+  if (!c?.enabled || !CONFIG.personality.enabled || !w) return 1;
+  const v = s?.traits?.[w.axis] ?? 0;
+  if (v >= c.min) return w.hi;
+  if (v <= -c.min) return w.lo;
+  return 1;
+}
+
 /** 陰謀者背刺專用亂數流（state.trait.clashRngState；缺欄位用本局種子補）。不動主亂數 */
 export function clashRng(state) {
   const t = (state.trait ??= newTraitState(state.seed ?? 0));

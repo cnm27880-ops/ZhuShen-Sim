@@ -429,6 +429,22 @@ export const CONFIG = {
       defectShift: { obeyHi: -5, obeyLo: 5 }, // 叛逃淨好感門檻位移（順從度 >= min 收緊、<= -min 放寬；rogueAffinity -45 → -50／-40）
       elopeShift: { obeyHi: -10, obeyLo: 5 }, // 私奔淨好感門檻位移（elope.affinity -5 → -15／0）
     },
+    // 個性 v3（暫定值需露葵驗證；enabled=false 時許願權重與抗命都回到 v2）：
+    // 「抗命」＝ s.defyDays > 0 的人不肯出征（一般派遣／自動派遣／突襲任務都不派他）；強制任務與洲際碰撞照樣徵召（不然會害玩家被抹殺／戰敗）。
+    // 觸發只有兩個、都不擲骰：①張力怨氣後果的「抗命」（tension.js）；②順從度 <= -min 的人，許願被玩家拒絕。
+    // 許願權重只調 weighted 的權重（擲骰次數不變）：該軸 >= +min 乘 hi、<= -min 乘 lo。
+    v3: {
+      enabled: true,
+      min: 40,
+      defyDays: 3, // 張力怨氣「抗命」的天數
+      refuseDefy: { obedienceMax: -40, days: 2 }, // 順從度 <= -40 的人許願被拒絕：額外抗命幾天
+      wishWeight: {
+        eat: { axis: "altruism", lo: 1.5, hi: 0.8 }, // 利己愛吃好的
+        vacation: { axis: "obedience", lo: 1.5, hi: 0.7 }, // 叛逆愛放假
+        dungeon: { axis: "courage", lo: 0.5, hi: 1.5 }, // 膽大想去副本
+        gear: { axis: "ambition", lo: 0.8, hi: 1.4 }, // 野心想要裝備
+      },
+    },
   },
 
   // ── 離心力：人際張力與怨氣（A-3 階段 2；引擎 engine/tension.js，事件資料 data/tensionEvents.js）──

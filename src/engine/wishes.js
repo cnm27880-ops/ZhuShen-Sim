@@ -13,6 +13,7 @@ import { targetDungeons, godMult } from "./dayChapter.js";
 import { randInt, pick, rand, weighted } from "./rng.js";
 import { emit, currentDay, spend, canAfford, getSamsarite, shopTier } from "./core.js";
 import { logText } from "./templates.js";
+import { wishWeightMult } from "./personality.js";
 
 const W = () => CONFIG.wish;
 
@@ -20,6 +21,17 @@ export const wishesOf = (state, id) => (state.wishes ?? []).filter((w) => w.sams
 export const pendingWishes = (state) => (state.wishes ?? []).filter((w) => w.status === "pending");
 export const getWishById = (state, id) => (state.wishes ?? []).find((w) => w.id === id);
 export const isOnVacation = (s) => (s.vacationDays ?? 0) > 0;
+/** 抗命中（個性 v3）：不肯出征（強制任務與洲際碰撞照樣徵召） */
+export const isDefiant = (s) => (s.defyDays ?? 0) > 0;
+
+/** 開始抗命 days 天（已在抗命就取較長者）。只寫日誌，不動心情與亂數 */
+export function startDefy(state, s, days) {
+  if (!CONFIG.personality.v3?.enabled || !s || s.location === "pod" || days <= 0) return false;
+  const was = isDefiant(s);
+  s.defyDays = Math.max(s.defyDays ?? 0, days);
+  if (!was) emit(state, "grudge", logText(state, "defyStart", { A: s, days: s.defyDays }), { samsariteId: s.id });
+  return true;
+}
 
 /** 文字模板用的變數（也給畫面彈窗填 costDesc／doneDesc） */
 export function wishVars(state, w) {
@@ -45,11 +57,11 @@ function possibleWishes(state, s) {
   for (const def of WISHES) {
     const k = W().kinds[def.id];
     if (!k) continue;
-    if (def.mode === "pay") out.push({ def, weight: k.weight, params: { cost: randInt(state, ...k.cost) * godMult(state) } });
-    else if (def.mode === "rest") out.push({ def, weight: k.weight, params: { rest: randInt(state, ...k.restDays) } });
+    if (def.mode === "pay") out.push({ def, weight: k.weight * wishWeightMult(s, def.id), params: { cost: randInt(state, ...k.cost) * godMult(state) } });
+    else if (def.mode === "rest") out.push({ def, weight: k.weight * wishWeightMult(s, def.id), params: { rest: randInt(state, ...k.restDays) } });
     else if (def.mode === "dungeon") {
       const options = targetDungeons(state, W().dungeonPowerCap); // 跟著天數與進度走（第四批 7）；全部打不動才退回固定上限
-      if (options.length > 0) out.push({ def, weight: k.weight, params: { dungeonId: pick(state, options).id } });
+      if (options.length > 0) out.push({ def, weight: k.weight * wishWeightMult(s, def.id), params: { dungeonId: pick(state, options).id } });
     } else if (def.mode === "gear") {
       const tier = shopTier(state);
       // 只准許「比該欄位現有裝備更高階」的裝備；欄位是空的才准任意階；沒有更高階可挑就不出這個願（試玩回饋 15）
@@ -58,7 +70,7 @@ function possibleWishes(state, s) {
         const cur = s.gear?.[i.slot] ? getShopItem(s.gear[i.slot]) : null;
         return !cur || i.tier > (cur.tier ?? 0);
       });
-      if (options.length > 0) out.push({ def, weight: k.weight, params: { itemId: pick(state, options).id } });
+      if (options.length > 0) out.push({ def, weight: k.weight * wishWeightMult(s, def.id), params: { itemId: pick(state, options).id } });
     }
   }
   return out;
@@ -121,6 +133,10 @@ export function refuseWish(state, wishId) {
   const w = getWishById(state, wishId);
   if (!w || w.status !== "pending") return { ok: false, reason: "這個許願已經處理過了" };
   failWish(state, w, "wishRefuse");
+  // 個性 v3：叛逆的人許願被拒絕，除了不爽還會抗命幾天（確定性，不擲骰）
+  const who = getSamsarite(state, w.samsariteId);
+  const rd = CONFIG.personality.v3?.refuseDefy;
+  if (who && rd && (who.traits?.obedience ?? 0) <= rd.obedienceMax) startDefy(state, who, rd.days);
   return { ok: true };
 }
 
@@ -185,6 +201,9 @@ export function dailyWishes(state) {
   const day = currentDay(state);
   for (const s of state.samsarites) {
     if (s.mood && --s.mood.daysLeft <= 0) s.mood = null;
+  }
+  for (const s of state.samsarites) {
+    if ((s.defyDays ?? 0) > 0 && s.location === "space") s.defyDays -= 1; // 抗命只在主神空間裡倒數（個性 v3）
   }
   for (const s of [...state.samsarites]) {
     if (!isOnVacation(s) || s.location !== "space") continue; // 假期只在主神空間裡倒數（#27）
