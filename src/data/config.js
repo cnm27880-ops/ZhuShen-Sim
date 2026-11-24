@@ -413,6 +413,10 @@ export const CONFIG = {
     seenCap: 12, // 每人最多保留幾筆已揭露側寫（超過丟最舊的）
     sanityFloor: 1, // 個性事件扣理智不會扣到比這個低（避免觸發暴走）
     minWallet: 30, // 要掏錢／被收費的人，私房錢至少要有這麼多
+    // 雙人碰撞事件（v1b ③，暫定值需露葵驗證；事件內容與效果數字在 data/traitEvents.js 的 TRAIT_DUETS）：
+    // 每個留守者（非隊長）每天固定擲 1 次 chance，擲中就找「事件 × 對象」；隊長不當任何一方；冷卻沿用 personCooldown／eventCooldown；
+    // 走獨立亂數流 state.trait.duetRngState（不動主亂數，也不動單人事件的亂數順序）
+    duet: { enabled: true, chance: 0.02 },
   },
 
   // ── 離心力：人際張力與怨氣（A-3 階段 2；引擎 engine/tension.js，事件資料 data/tensionEvents.js）──

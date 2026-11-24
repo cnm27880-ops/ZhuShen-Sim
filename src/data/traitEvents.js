@@ -20,3 +20,19 @@ export const TRAIT_EVENTS = [
 ];
 
 export const getTraitEvent = (id) => TRAIT_EVENTS.find((e) => e.id === id);
+
+// ───────── 個性系統 v1b ③：6 個雙人碰撞事件（A＝發起者、B＝對象）─────────
+// 欄位：id／a、b（各自的軸與正負：雙方該軸 |分數| 都要 ≥ CONFIG.personality.eventMin 才成立）／weight（乘上雙方分數絕對值和當權重）／
+//       fx（效果，全部很小）：sanityA／sanityB 理智 Δ、take A 向 B 收私房錢（B 至少要有 minWallet）、
+//       hateBA B 對 A 的仇恨增加、dropAB／dropBA 淨好感下降（A 對 B／B 對 A）、loveAB／loveBA 好感增加。
+// 日誌句：LOGS["trait_duet_" + id]，可用 {A}、{B}。機率與開關：CONFIG.personality.duet。
+// 鐵則：隊長不當任何一方（所以不動對隊長的好感）、不動戰力與通過率、野心競爭只寫日誌與小幅互降好感（奪權留給 v2）。
+
+export const TRAIT_DUETS = [
+  { id: "exploit", a: { axis: "altruism", sign: -1 }, b: { axis: "altruism", sign: 1 }, weight: 1, fx: { take: 8, sanityA: 1, sanityB: -1, hateBA: 2 } },
+  { id: "rivalry", a: { axis: "ambition", sign: 1 }, b: { axis: "ambition", sign: 1 }, weight: 1, fx: { sanityA: -1, sanityB: -1, dropAB: 2, dropBA: 2 } },
+  { id: "routeClash", a: { axis: "courage", sign: 1 }, b: { axis: "courage", sign: -1 }, weight: 1, fx: { sanityA: -1, sanityB: -2, dropAB: 1, dropBA: 1 } },
+  { id: "humility", a: { axis: "altruism", sign: 1 }, b: { axis: "altruism", sign: 1 }, weight: 1, fx: { sanityA: 1, sanityB: 1, loveAB: 2, loveBA: 2 } },
+  { id: "dragOut", a: { axis: "social", sign: 1 }, b: { axis: "social", sign: -1 }, weight: 1, fx: { sanityA: 1, sanityB: -1, dropBA: 1 } },
+  { id: "lecture", a: { axis: "obedience", sign: 1 }, b: { axis: "obedience", sign: -1 }, weight: 1, fx: { sanityA: -1, dropAB: 1, dropBA: 1 } },
+];
