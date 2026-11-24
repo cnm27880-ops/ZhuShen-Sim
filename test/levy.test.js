@@ -162,3 +162,57 @@ test("預覽不吃亂數；催熟艙嬰兒不被徵；存檔相容", () => {
 test("日誌模板每個 key 至少 2 個版本", () => {
   for (const k of ["levyDone", "levyRefuse"]) assert.ok(LOGS[k]?.length >= 2, k);
 });
+
+test("個性掛鉤：叛逆／利己加拒繳率、利他降低、有上限、純函式", () => {
+  const state = setup(3, 5000);
+  const [a, , c] = state.samsarites;
+  state.squad.captainId = c.id;
+  const tier = tierOf("firm");
+  const T = CONFIG.levy.traitRefuse;
+  const near = (x, y) => assert.ok(Math.abs(x - y) < 1e-9, `${x} ≠ ${y}`);
+  a.traits = { obedience: 0, altruism: 0 };
+  const base = refuseChance(state, a, tier);
+  near(base, tier.refuse); // 無個性影響＝與原本相同
+  const rngBefore = state.levy?.rngState;
+  a.traits = { obedience: -50, altruism: 0 };
+  near(refuseChance(state, a, tier), base + T.rebel.mid);
+  a.traits = { obedience: -80, altruism: 0 };
+  near(refuseChance(state, a, tier), base + T.rebel.strong);
+  a.traits = { obedience: 0, altruism: -50 };
+  near(refuseChance(state, a, tier), base + T.selfish.mid);
+  a.traits = { obedience: 0, altruism: -80 };
+  near(refuseChance(state, a, tier), base + T.selfish.strong);
+  a.traits = { obedience: 0, altruism: 50 };
+  near(refuseChance(state, a, tier), base - T.altruist.mid);
+  a.traits = { obedience: 0, altruism: 80 };
+  near(refuseChance(state, a, tier), base - T.altruist.strong);
+  a.traits = { obedience: 80, altruism: 0 };
+  near(refuseChance(state, a, tier), base); // 順從度高暫不影響
+  a.traits = { obedience: -100, altruism: -100 };
+  near(refuseChance(state, a, tier), base + T.capUp); // 0.15+0.10 超過上限 → 夾在 capUp
+  // 利他者在溫和檔（基礎 5%）不會變成負數
+  a.traits = { obedience: 0, altruism: 100 };
+  assert.equal(refuseChance(state, a, tierOf("mild")), Math.max(0, tierOf("mild").refuse - T.altruist.strong));
+  // 其他加成全疊滿 + 極端個性，仍 ≤ maxRefuse
+  a.stats.sanity = 0;
+  a.soulbound = { weapon: true };
+  a.traits = { obedience: -100, altruism: -100 };
+  assert.ok(refuseChance(state, a, tierOf("raid")) <= CONFIG.levy.maxRefuse);
+  // 隊長不拒繳
+  c.traits = { obedience: -100, altruism: -100 };
+  assert.equal(refuseChance(state, c, tier), 0);
+  // 開關關閉 → 與無個性相同
+  a.stats.sanity = 100;
+  a.soulbound = {};
+  T.enabled = false;
+  try {
+    a.traits = { obedience: -100, altruism: -100 };
+    near(refuseChance(state, a, tier), base);
+  } finally {
+    T.enabled = true;
+  }
+  // 純函式：兩次結果相同、亂數流不動
+  a.traits = { obedience: -60, altruism: -60 };
+  assert.equal(refuseChance(state, a, tier), refuseChance(state, a, tier));
+  assert.equal(state.levy?.rngState, rngBefore);
+});
