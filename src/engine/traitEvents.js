@@ -7,7 +7,7 @@ import { rand, pick, weighted } from "./rng.js";
 import { emit, currentDay } from "./core.js"; // 循環引用：只在執行時呼叫，載入時不碰
 import { logText } from "./templates.js";
 import { addLove, addHate, shiftAffinity } from "./relations.js";
-import { captainOf } from "./squad.js";
+import { captainOf, addRivalMark } from "./squad.js";
 import { addLife } from "./life.js";
 import { TRAIT_EVENTS, TRAIT_DUETS } from "../data/traitEvents.js";
 import { newTraitState, profileLine } from "./personality.js";
@@ -161,6 +161,7 @@ export function playTraitDuet(state, a, b, ev) {
   if (fx.loveBA) addLove(state, b, a, fx.loveBA);
   if (fx.dropAB) shiftAffinity(state, a, b, -fx.dropAB);
   if (fx.dropBA) shiftAffinity(state, b, a, -fx.dropBA);
+  if (ev.id === "rivalry") addRivalMark(state, a, b); // A1：記宿怨標記，隊長缺位時影響奪權（不擲骰）
   emit(state, "trait", logText(state, `trait_duet_${ev.id}`, { A: a, B: b }), { samsariteId: a.id });
   reveal(state, a, ev.a);
   reveal(state, b, ev.b);

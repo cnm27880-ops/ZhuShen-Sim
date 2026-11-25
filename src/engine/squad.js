@@ -28,6 +28,36 @@ export function newSquadState() {
   return { captainId: null, style: null, communalFund: 0, captainSeq: 0, appointedDay: null, contraband: [], counters: {} };
 }
 
+// ───────── 野心競爭標記（A1：個性 rivalry 雙人事件 → 隊長繼承的奪權）─────────
+
+const RS = () => CONFIG.personality?.rivalSeize;
+
+/** rivalry 事件發生時記一筆宿怨標記；勝者＝當下 effectivePower 較高者，平手比 id（不擲骰）。同一對只留最新一筆，超過 markCap 丟最舊的 */
+export function addRivalMark(state, a, b) {
+  const R = RS();
+  if (!R?.enabled) return null;
+  const pa = effectivePower(a);
+  const pb = effectivePower(b);
+  const winner = pa > pb || (pa === pb && a.id < b.id) ? a : b;
+  const marks = (squadOf(state).rivalMarks ??= []);
+  const same = (m) => (m.a === a.id && m.b === b.id) || (m.a === b.id && m.b === a.id);
+  const i = marks.findIndex(same);
+  if (i >= 0) marks.splice(i, 1);
+  const mark = { a: a.id, b: b.id, winnerId: winner.id, day: currentDay(state) };
+  marks.push(mark);
+  while (marks.length > R.markCap) marks.shift();
+  bump(state, "rivalMark"); // 統計用：野心競爭標記累計次數
+  return mark;
+}
+
+/** 這兩人之間有沒有未過期的宿怨標記（沒有或功能關閉回傳 null） */
+export function rivalMarkBetween(state, a, b) {
+  const R = RS();
+  if (!R?.enabled) return null;
+  const day = currentDay(state);
+  return (squadOf(state).rivalMarks ?? []).find((m) => ((m.a === a.id && m.b === b.id) || (m.a === b.id && m.b === a.id)) && day - m.day <= R.markDays) ?? null;
+}
+
 /** 把 state.squadRngState 包成 rand() 吃得下的亂數物件（讀寫都落回 state） */
 export function squadRng(state) {
   return {
@@ -203,17 +233,20 @@ function succeed(state, pool) {
     const pa = effectivePower(a);
     const pb = effectivePower(b);
     const gap = (pa - pb) / pa;
-    const feud = affinity(state, a, b) < S().coupAffinity && affinity(state, b, a) < S().coupAffinity;
+    const mark = rivalMarkBetween(state, a, b); // A1：野心競爭的宿怨標記視同互相討厭
+    const feud = (affinity(state, a, b) < S().coupAffinity && affinity(state, b, a) < S().coupAffinity) || !!mark;
     if (gap < S().coupGapPct && (feud || deriveSquadStyle(a) !== deriveSquadStyle(b))) {
       // 隊長印記爭奪戰：依戰力比例擲骰，勝者上位，敗者受傷掉理智
-      const ca = pa * (1 + passiveSum(a, "coupPowerBonus")); // 篡權神格：政變奪權檢定戰力 +20%（4-E-8）
-      const cb = pb * (1 + passiveSum(b, "coupPowerBonus"));
+      const markPct = mark ? RS().winnerPowerPct : 0; // A1：標記勝者戰力加成
+      const ca = pa * (1 + passiveSum(a, "coupPowerBonus")) * (mark?.winnerId === a.id ? 1 + markPct : 1); // 篡權神格：政變奪權檢定戰力 +20%（4-E-8）
+      const cb = pb * (1 + passiveSum(b, "coupPowerBonus")) * (mark?.winnerId === b.id ? 1 + markPct : 1);
       const win = rand(squadRng(state)) < ca / (ca + cb);
       const [w, l] = win ? [a, b] : [b, a];
       setInjury(l, Math.min(3, l.injury + S().coupLoserInjury));
       l.stats.sanity = Math.max(0, l.stats.sanity - S().coupLoserSanity);
       const text = logText(state, "squadCoupFight", { A: w, B: l, san: S().coupLoserSanity });
       emit(state, "squad", text); // 編年史由 setCaptain 的「改朝換代」那一條記錄
+      if (mark) bump(state, "rivalSeize"); // 統計用：由野心競爭標記促成的奪權戰
       setCaptain(state, w, "coup");
       return w;
     }
