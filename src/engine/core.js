@@ -187,6 +187,7 @@ export function createSamsarite(state, rank, rng = state) {
     runs: 0,
     mood: null, // 心情狀態 { kind: "happy"|"upset", daysLeft }（見 engine/wishes.js）
     vacationDays: 0, // 許願放假：剩幾天不能派遣
+    defyDays: 0, // 抗命（個性 v3）：剩幾天不肯出征（強制任務與洲際碰撞照樣徵召）
     sabotaged: false, // 裝備被人動了手腳（借刀殺人），下次出征會倒楣
     wallet: 0, // 私房錢（4-D-1）：副本分潤進來，輪迴者自己逛街、強化用（見 engine/shopping.js）；戰死 50% 充公，回收 100% 歸公庫
     consumables: [], // 出征耗材緩衝區：商品 id 陣列，下次出發時全部套用成單場 runBuff（4-D-2）
@@ -632,6 +633,7 @@ export function deserialize(json) {
     s.gear ??= {};
     s.mood ??= null;
     s.vacationDays ??= 0;
+    s.defyDays ??= 0;
   }
   // 舊存檔只有單一 state.run：遷移成 state.runs 陣列
   state.runs ??= [];

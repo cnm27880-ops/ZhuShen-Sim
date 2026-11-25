@@ -62,6 +62,7 @@ function statusesOf(state, s) {
   if (m) out.push({ text: `${m.icon} ${m.label}（${s.mood.daysLeft} 天）`, tone: s.mood.kind === "upset" ? "bad" : "good" });
   if (s.stripped && currentDay(state) <= s.stripped.untilDay) out.push({ text: `被奪走裝備（${s.stripped.item}），不開心`, tone: "bad" });
   if (s.vacationDays > 0) out.push({ text: `🏖️ 放假中（${s.vacationDays} 天）`, tone: "" });
+  if (s.defyDays > 0) out.push({ text: `😠 抗命中（${s.defyDays} 天）`, tone: "bad" });
   if (s.podLockDays > 0) out.push({ text: `🛏️ 休眠艙（${s.podLockDays} 天）`, tone: "" });
   if (s.locked) out.push({ text: "🔒 已鎖定", tone: "" });
   return out;

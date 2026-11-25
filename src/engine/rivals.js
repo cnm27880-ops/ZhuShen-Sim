@@ -23,6 +23,7 @@ import { affinity, addLove } from "./relations.js";
 import { captainOf, styleOf, bump } from "./squad.js";
 import { topPowerSum, popLimit } from "./mandatory.js";
 import { grantRelic } from "./relics.js";
+import { isLoyal, elopeAffinityShift } from "./personality.js";
 import { addChronicle } from "./lineage.js";
 import { cancelWishesOf } from "./wishes.js";
 import { cancelGodOf } from "./godEvents.js";
@@ -334,6 +335,7 @@ export function isElopeImmune(state, s) {
   const cap = captainOf(state);
   if (cap && cap.id === s.id) return true;
   if (s.soulbound === true || Object.values(s.soulbound ?? {}).some(Boolean)) return true;
+  if (isLoyal(s)) return true; // 個性 v2：順從度極高的死忠不私奔
   return !!s.customProfile;
 }
 
@@ -341,7 +343,7 @@ export function isElopeImmune(state, s) {
 export function elopeCandidate(state, s, cap) {
   const a = affinity(state, s, cap);
   const c = R().elope;
-  return a <= c.affinity || ((s.stats?.sanity ?? 100) < c.lowSanity && a < c.lowSanityAffinity) || (s.grudge ?? 0) >= CONFIG.tension.elopeGrudge; // A-3 階段 2：怨氣爆表的人也可能私奔
+  return a <= c.affinity + elopeAffinityShift(s) || ((s.stats?.sanity ?? 100) < c.lowSanity && a < c.lowSanityAffinity) || (s.grudge ?? 0) >= CONFIG.tension.elopeGrudge; // A-3 階段 2：怨氣爆表的人也可能私奔
 }
 
 function elope(state, q, survivors, notes, chance, fightGone = { n: 0 }) {

@@ -160,6 +160,7 @@ test("叛逃放寬：淨好感 <= -45 且（理智 < 45 或持有 demon_path）�
   const e = createSamsarite(state, "C");
   e.tags = [];
   e.stats.sanity = 0;
+  e.traits = { altruism: 0, ambition: 0, courage: 0, social: 0, obedience: 0 }; // 個性 v2 會依順從度位移門檻；這裡只測基本門檻，所以固定成中性（位移由 personality2.test.js 負責）
   state.samsarites.push(e);
   shiftAffinity(state, e, cap, -44);
   assert.equal(defectEligible(state, e), false);
