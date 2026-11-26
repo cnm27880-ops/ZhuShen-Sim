@@ -1,16 +1,15 @@
 // 副本首通特殊獎勵（第二批試玩回饋，Phase 3-1）：27 個原本 specialRewards 為空的世界各補 3 件（首通時隨機掉 1 件，永久生效）。
-// 名稱是哈基米第二批稿（第四批換入）；種類（P／G／R／S）與效果是小克定的，改名字不動效果，id 不要動。ch1_01／03／05 的獎勵在 dungeons.js（ch1_03、ch1_05 的名字也已換成哈基米稿）。
+// 名稱是哈基米第二批稿（第四批換入）；id 不要動（舊存檔收藏紀錄靠它）。ch1_01／03／05 的獎勵在 dungeons.js（ch1_03 見 REAL_WORLDS）。
 //
-// 效果類型（引擎 engine/shop.js collectionEffects 已支援的 4 種，沒有新增機制）：
-//   P = passBonus   所有副本單房通過率加成
-//   G = genreBonus  該世界類型（靈異／科幻／奇幻）副本的通過率加成
-//   R = rewardPct   所有副本通關積分加成
-//   S = injuryShield 全員受傷時「少受一級」的機率（不是減傷幅度）
-// 數字（REWARD_VALUE）：普通關 P 1%／G 3%／R 3%／S 3%，尾王 ×1.5。
-// 因為收藏全部疊加，總量上限在 CONFIG.collection（passCap／genreCap／rewardCap／injuryShieldCap），避免 30 個世界全收完把通過率堆到爆。
+// 效果（2026-11-26 起改成 14 種新效果框架，見 data/collectionFx.js 與 CONFIG.collection；**特殊物品絕不加通過率／戰力**）。
+// 表裡的 P／G／R／S 是舊代號，現在是「暫代對照表」（2a 階段）：等哈基米配好 90 個物品的正式效果，只換 LEGACY_KIND 或直接把代號換成效果 key（寫 [名稱, 效果key] 或 [名稱, 效果key, 數值]）。
+//   P → intelGain（情報獲取）、G → insightChance（頓悟機率）、R → rewardPct（通關積分）、S → injuryShield（傷勢減免）
+// 數值預設 = CONFIG.collection.effects[key].unit，尾王 × CONFIG.collection.bossMult。
 
-export const REWARD_VALUE = { P: 0.01, G: 0.03, R: 0.03, S: 0.03 };
-export const BOSS_REWARD_MULT = 1.5;
+import { CONFIG } from "./config.js";
+import { describeFx } from "./collectionFx.js";
+
+export const LEGACY_KIND = { P: "intelGain", G: "insightChance", R: "rewardPct", S: "injuryShield" };
 
 /** 世界 id → 3 件獎勵 [名稱, 類型]；順序即 id 後綴 _r1／_r2／_r3 */
 export const WORLD_REWARDS = {
@@ -43,17 +42,12 @@ export const WORLD_REWARDS = {
   ch5_boss: [["主神碎片", "P"], ["創世泥板", "G"], ["終焉之冠", "R"]],
 };
 
-const pct = (v) => `${Math.round(v * 1000) / 10}%`;
-
 /** 依世界（id／boss／genre）組出該世界的首通特殊獎勵陣列；沒有登錄的世界回傳 [] */
 export function buildWorldRewards(world) {
-  const mult = world.boss ? BOSS_REWARD_MULT : 1;
-  return (WORLD_REWARDS[world.id] ?? []).map(([name, kind], i) => {
-    const v = Math.round(REWARD_VALUE[kind] * mult * 1000) / 1000;
-    const id = `${world.id}_r${i + 1}`;
-    if (kind === "P") return { id, name, desc: `所有副本通過率 +${pct(v)}。`, effect: { passBonus: v } };
-    if (kind === "G") return { id, name, desc: `${world.genre}副本通過率 +${pct(v)}。`, effect: { genreBonus: { [world.genre]: v } } };
-    if (kind === "R") return { id, name, desc: `所有副本通關積分 +${pct(v)}。`, effect: { rewardPct: v } };
-    return { id, name, desc: `全員受傷時多 ${pct(v)} 機率少受一級。`, effect: { injuryShield: v } };
+  const mult = world.boss ? CONFIG.collection.bossMult : 1;
+  return (WORLD_REWARDS[world.id] ?? []).map(([name, kind, custom], i) => {
+    const key = LEGACY_KIND[kind] ?? kind;
+    const v = Math.round((custom ?? CONFIG.collection.effects[key].unit * mult) * 1000) / 1000;
+    return { id: `${world.id}_r${i + 1}`, name, desc: describeFx(key, v), effect: { [key]: v } };
   });
 }

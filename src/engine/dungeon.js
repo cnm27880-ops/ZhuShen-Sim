@@ -19,7 +19,8 @@ import { effectivePower, worldPassBonus, moodPassBonus, tagPassBonus, tagSwing, 
 import { partyRelationBonus, pickClash, clashText, afterClash, afterDeath, findProtector } from "./relations.js";
 import { logText } from "./templates.js";
 import { emit, setInjury, killSamsarite, checkGameOver, currentDay } from "./core.js";
-import { collectionEffects, collectionPassBonus, consumeRunBuffs } from "./shop.js";
+import { consumeRunBuffs } from "./shop.js";
+import { collectionEffects } from "./collectionFx.js"; // 特殊物品效果（不加通過率）
 import { MANDATORY_ID, buildMandatoryDungeon } from "./mandatory.js";
 import { distributeLoot } from "./wallet.js";
 import { grantRelic } from "./relics.js";
@@ -44,7 +45,7 @@ export function relationBonus(state, party) {
 
 /** 標籤與環境相性：標籤加成（含類型、環境相性）+ 環境本身的修正 + 副本特殊獎勵（收藏）的加成 */
 export function tagBonus(state, party, dungeon, env = null) {
-  return tagPassBonus(party, dungeon, env) + (env?.passMod ?? 0) + collectionPassBonus(state, dungeon) + worldPassBonus(party, dungeon);
+  return tagPassBonus(party, dungeon, env) + (env?.passMod ?? 0) + worldPassBonus(party, dungeon); // 特殊物品（收藏）不再加通過率（2026-11-26）
 }
 
 /** 這個副本有沒有通關過（沒通關過 = 首次開荒：傷勢表較重；首通在結算時判定） */
@@ -347,7 +348,7 @@ export function stepRun(state, run = state.runs[0]) {
 function maybeOpenHiddenRoom(state, run, dungeon, mut, party) {
   if (!run.greedy || run.hidden || run.roomIndex !== roomCount(dungeon) || party.length === 0) return;
   if (run.results.filter(Boolean).length < roomsToClear(dungeon)) return;
-  const chance = Math.min(1, CONFIG.relic.greedyChance * (mut?.relicChanceMult ?? 1));
+  const chance = Math.min(1, (CONFIG.relic.greedyChance + collectionEffects(state).hiddenRoom) * (mut?.relicChanceMult ?? 1)); // 收藏的隱藏房機率
   if (rand(marketOf(state)) < chance) {
     run.hidden = { passed: null };
     emit(state, "greedy", logText(state, "hiddenOpen", { dungeon: dungeon.name }));
@@ -453,7 +454,7 @@ export function hurt(state, run, victim, dungeon, attacker = null) {
     return;
   }
   if (dies && bondGuard(state, run, partyOf(state, run), victim)) return; // 羈絆流託付後背：夥伴替他擋下致死一刀（4-E-2）
-  if (dies && rand(state) < Math.max(0, speedSaveChance(victim) + (getMutation(run.mutationId)?.speedSaveMod ?? 0))) { // 濃霧走散：鎖血率 -5%
+  if (dies && rand(state) < Math.max(0, speedSaveChance(victim) + (getMutation(run.mutationId)?.speedSaveMod ?? 0) + collectionEffects(state).deathSave)) { // 濃霧走散：鎖血率 -5%
     // 速度：極限閃避鎖血，免於死亡，改落致命傷
     setInjury(victim, INJURIES.length - 1);
     emit(state, "injury", logText(state, "speedSave", { A: victim }));
@@ -494,7 +495,7 @@ function finishRun(state, run) {
   // 情報條：不論成敗，每結算一場就累積（同副本多場依結算順序各加一次）
   const stats = run.mandatory ? null : state.dungeonStats[run.dungeonId]; // 強制任務沒有情報條與通關統計
   const ic = CONFIG.dungeon.intel;
-  if (stats) stats.intel = Math.min(ic.max, (stats.intel ?? ic.start) + ic.perRun * (1 + intelGainBonus(state))); // 星界觀測樞加成情報獲取（4-F-3）
+  if (stats) stats.intel = Math.min(ic.max, (stats.intel ?? ic.start) + ic.perRun * (1 + intelGainBonus(state) + collectionEffects(state).intelGain)); // 星界觀測樞加成情報獲取（4-F-3）
 
   // 首通在「結算時」才判定：同副本同時開多場，先結算的吃首通，後結算的視為重打
   const firstClear = success && !run.mandatory && !hasIntel(state, dungeon);
@@ -548,7 +549,7 @@ function finishRun(state, run) {
     if (survivors.length >= 2) {
       // 同行情誼：存活隊員兩兩好感 +bondLove（吊橋效應 ×1.5；傭兵流減半），不消耗亂數
       const loveBonus = Math.max(0, ...survivors.map((s) => s.runBuff?.loveBonus ?? 0)); // 合群清茶等：同行好感額外加成，取最高 1 件（4-E-8）
-      const bond = Math.round(CONFIG.dungeon.bondLove * (mut?.loveMult ?? 1) * squadBondMult(state)) + loveBonus;
+      const bond = Math.round(CONFIG.dungeon.bondLove * (mut?.loveMult ?? 1) * squadBondMult(state) + collectionEffects(state).bondLove) + loveBonus;
       for (const a of survivors) for (const b of survivors) if (a.id !== b.id) addLove(state, a, b, bond);
     }
     loot = distributeLoot(state, survivors, reward, { run, dungeon }); // 先抽稅入公庫（流派覆寫分潤見 4-E-2），其餘由存活隊員平分進私房錢（4-D-1）

@@ -30,6 +30,7 @@ import { dailyTension, newTensionState, tensionOf } from "./tension.js"; // 同�
 import { dailyAutomation, newAutomationState, automationOf } from "./automation.js"; // 同上（A-3 階段 3：自動化中樞，獨立亂數流）
 import { dailyDrama } from "./drama.js"; // 同上（Phase 4-E-3 5:2:1 狗血事件）
 import { newSquadState, dailySquad, refreshCaptainBonus, squadUpkeepMult, communalInherit, styleOf, squadSteleMult } from "./squad.js"; // 同上（Phase 4-E 小隊隊長與流派）
+import { collectionEffects } from "./collectionFx.js"; // 特殊物品效果（14 種，data/collectionFx.js）
 import { addLife, addLifeOnce, bioOf, compactBio } from "./life.js"; // 人物傳記（功能 5；循環引用只在執行時呼叫）
 import { newFacilities, dailyFacilities, refreshFacilityBonus, gravityPct, podsHeal, restSanityBonus } from "./facilities.js"; // 同上（Phase 4-F-3 永久基建）
 import { newRivalState, dailyRivals } from "./rivals.js"; // 同上（Phase 4-F-1／2 洲際宿敵團戰）
@@ -238,7 +239,7 @@ export function upkeepPartsOf(s, state = null) {
 export function upkeepOf(s, state = null) {
   if (s.location === "pod") return CONFIG.child.podUpkeep; // 催熟艙的嬰兒只吃固定的小額
   const { gene, space } = upkeepPartsOf(s, state);
-  return Math.round((gene + space) * (1 + RANKS[s.rank].upkeepPct + INJURIES[s.injury].upkeepPct) * (state ? squadUpkeepMult(state, s) : 1) * (state && (state.spaceLevel ?? 1) === 1 ? CONFIG.space.newbieUpkeepMult : 1)); // 養殖流零階新人 -50%（4-E-2）；新手期空間 Lv.1 -50%（4-E-7）
+  return Math.round((gene + space) * (1 + RANKS[s.rank].upkeepPct + INJURIES[s.injury].upkeepPct) * (state ? squadUpkeepMult(state, s) : 1) * (state && (state.spaceLevel ?? 1) === 1 ? CONFIG.space.newbieUpkeepMult : 1) * (state ? 1 - collectionEffects(state).upkeepCut : 1)); // 養殖流零階新人 -50%（4-E-2）；新手期空間 Lv.1 -50%（4-E-7）
 }
 
 export function setInjury(s, level) {
@@ -352,7 +353,7 @@ export function endOfDay(state) {
   let cost = 0;
   for (const s of atHome) {
     cost += upkeepOf(s, state); // 先用「今天的傷勢」算錢，再結算休息
-    s.stats.sanity = Math.min(100, s.stats.sanity + CONFIG.sanity.restRecover + restSanityBonus(state)); // 人在空間（含帶傷休養）每日自然恢復理智（4-C-2）
+    s.stats.sanity = Math.min(100, s.stats.sanity + CONFIG.sanity.restRecover + restSanityBonus(state) + Math.round(collectionEffects(state).sanityRegen)); // 收藏的每日理智回復；人在空間（含帶傷休養）每日自然恢復理智（4-C-2）
     taxSanityDaily(state, s); // 稅率高壓／低稅的每日理智影響（4-D-1）
     gearDaily(state, s); // 黑貨裝備被動：每日理智、入魔傾向（4-E-8）
     if (s.podLockDays > 0 && --s.podLockDays <= 0) s.lockedInPodBy = null; // 私人休眠艙倒數（4-D-2）
@@ -367,7 +368,8 @@ export function endOfDay(state) {
     // 體魄（Phase 4-C-1）：總 hp 超過 100 的部分每滿 40 點，+25% 機率額外多恢復 1 級（降 1 級，休養天數重算；沒有額外加成時不消耗亂數）
     if (s.injury > 0) {
       const { sure, chance } = hpRestBonus(s);
-      const extra = sure + (chance > 0 && rand(state) < chance ? 1 : 0);
+      const pExtra = Math.min(1, chance + collectionEffects(state).healBoost); // 收藏的傷勢恢復機率併入同一次擲骰（沒有加成時不消耗亂數）
+      const extra = sure + (pExtra > 0 && rand(state) < pExtra ? 1 : 0);
       if (extra > 0) {
         setInjury(s, Math.max(0, s.injury - extra));
         if (s.injury === 0) emit(state, "healed", logText(state, "healed", { A: s }), { samsariteId: s.id });

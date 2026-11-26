@@ -14,6 +14,7 @@ import { rand, pick } from "./rng.js";
 import { logText } from "./templates.js";
 import { canAfford, emit, getSamsarite, spend, spendWallet } from "./core.js";
 import { geneDiscountOf } from "./facilities.js"; // 法則共鳴碑（4-F-3）
+import { collectionEffects } from "./collectionFx.js"; // 特殊物品效果（14 種，data/collectionFx.js）
 
 /** 頓悟的獨立亂數流（跟主神搞事、生小孩同樣的做法） */
 export function newGrowthState(seed = 0) {
@@ -160,7 +161,8 @@ export function breakGene(state, id, opts = null) {
 export function rollKarmaDrop(state, dungeon, number, firstClear) {
   const K = CONFIG.karma;
   let n = firstClear ? (K.firstClear[dungeon.id] ?? 0) : 0; // 4-D-4：依副本 id（number 參數保留相容，不再使用）
-  const chance = K.chapterRoll[dungeon.chapter];
+  const base = K.chapterRoll[dungeon.chapter];
+  const chance = base ? base + collectionEffects(state).karmaDrop : 0; // 收藏的結晶掉率只加在原本就有機率掉的章節（擲骰次數不變）
   if (chance && rand(growth(state)) < chance) n += 1;
   if (n > 0) {
     state.karmaCrystals = (state.karmaCrystals ?? 0) + n;
@@ -184,7 +186,7 @@ export function rollInsights(state, survivors) {
   for (const s of survivors) {
     const done = s.insightCount ?? 0;
     if (done >= insightCapOf(s)) continue;
-    if (rand(g) >= C.chance) continue;
+    if (rand(g) >= C.chance + collectionEffects(state).insightChance) continue; // 收藏的頓悟機率（擲骰次數不變）
     const subStat = pick(g, C.subStats);
     const power = gainOf(C.gainPower, s);
     const subGain = gainOf(C.gainSub, s);

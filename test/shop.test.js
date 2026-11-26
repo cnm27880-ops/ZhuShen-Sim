@@ -173,7 +173,7 @@ test("商店日誌模板每個 key 至少 2 個版本", () => {
   assert.equal(LOGS.shopEnhance, undefined, "舊商店強化日誌已移除");
 });
 
-test("特殊獎勵資料表：30 個世界各 3 個（Phase 3-1 補齊），id 唯一、都有效果，類型對得上副本", () => {
+test("特殊獎勵資料表：30 個世界各 3 個（Phase 3-1 補齊），id 唯一、都有效果、效果在 14 種框架內", () => {
   const ids = new Set();
   for (const d of DUNGEONS) {
     assert.equal(d.specialRewards.length, 3, d.id);
@@ -181,25 +181,31 @@ test("特殊獎勵資料表：30 個世界各 3 個（Phase 3-1 補齊），id �
       assert.ok(!ids.has(r.id), `${r.id} 重複`);
       ids.add(r.id);
       assert.ok(r.name && r.desc && r.effect, r.id);
-      for (const genre of Object.keys(r.effect.genreBonus ?? {})) assert.ok(DUNGEONS.some((x) => x.genre === genre), `${r.id} 的類型 ${genre} 不存在`);
+      const keys = Object.keys(r.effect);
+      assert.equal(keys.length, 1, `${r.id} 每件物品恰好 1 種效果`);
+      assert.ok(keys[0] in CONFIG.collection.effects, `${r.id} 的效果 ${keys[0]} 不在框架內（特殊物品不能加通過率／戰力）`);
     }
   }
 });
 
-test("特殊獎勵生效：全域通過率、類型通過率、通關積分、傷勢減免", () => {
+test("特殊獎勵生效：不加通過率（2026-11-26 定案），通關積分、傷勢減免、情報獲取、頓悟機率照常加總", () => {
   const { state, s } = setup();
   state.dungeonStats[ghost.id] = { attempts: 1, clears: 1 };
   const base = roomPassRate(state, [s], ghost);
   const baseReward = rewardMultiplier(state, ghost, [s]);
   const none = collectionEffects(state);
-  assert.equal(none.passBonus + none.rewardPct + none.injuryShield, 0);
+  assert.equal(Object.values(none).reduce((n, v) => n + v, 0), 0);
 
-  state.collection = ["yin_yang_eye"]; // 全域 +3%
-  assert.ok(Math.abs(roomPassRate(state, [s], ghost) - (base + 0.03)) < 1e-9);
-  state.collection = ["ghost_talisman"]; // 靈異 +8%
-  assert.ok(Math.abs(roomPassRate(state, [s], ghost) - (base + 0.08)) < 1e-9);
-  state.collection = ["ember_firebolt"]; // 奇幻 +10%：打靈異副本沒用
-  assert.ok(Math.abs(roomPassRate(state, [s], ghost) - base) < 1e-9);
+  for (const id of ["yin_yang_eye", "ghost_talisman", "ember_firebolt"]) { // 原本是通過率的物品：現在換成別的效果，單房通過率完全不變
+    state.collection = [id];
+    assert.ok(Math.abs(roomPassRate(state, [s], ghost) - base) < 1e-9, `${id} 不可加通過率`);
+  }
+  state.collection = DUNGEONS.flatMap((d) => d.specialRewards.map((r) => r.id)); // 全收也一樣
+  assert.ok(Math.abs(roomPassRate(state, [s], ghost) - base) < 1e-9, "全收藏也不能加通過率");
+  state.collection = ["yin_yang_eye"]; // 暫代：情報獲取 +3%
+  assert.ok(Math.abs(collectionEffects(state).intelGain - 0.03) < 1e-9);
+  state.collection = ["ghost_talisman"]; // 暫代：頓悟機率 +1%
+  assert.ok(Math.abs(collectionEffects(state).insightChance - 0.01) < 1e-9);
   state.collection = ["ember_staff"]; // 通關積分 +10%
   assert.ok(Math.abs(rewardMultiplier(state, ghost, [s]) - baseReward * 1.1) < 1e-9);
   state.collection = ["ghost_seal", "ark_prosthetic"]; // 傷勢減免相加
@@ -269,7 +275,7 @@ test("存檔：裝備、強化、收藏讀回來還在；舊存檔的收藏名�
   assert.equal(effectivePower(migrated.samsarites[0]), effectivePower({ ...migrated.samsarites[0], gear: {} }), "舊強化不再加戰力");
 });
 
-test("30 世界首通獎勵：效果不重複、尾王比普通關強，收藏總量有上限（避免 30 個世界收完通過率爆表）", () => {
+test("30 世界首通獎勵：效果不重複、尾王比普通關強，收藏總量有上限（避免 30 個世界收完效果爆表）", () => {
   const seen = new Set();
   for (const d of DUNGEONS) {
     const kinds = d.specialRewards.map((r) => Object.keys(r.effect)[0]);
@@ -288,13 +294,11 @@ test("30 世界首通獎勵：效果不重複、尾王比普通關強，收藏�
   const state = createNewGame(1);
   state.collection = DUNGEONS.flatMap((d) => d.specialRewards.map((r) => r.id));
   const fx = collectionEffects(state);
-  assert.ok(fx.passBonus <= CONFIG.collection.passCap + 1e-9);
-  assert.ok(fx.rewardPct <= CONFIG.collection.rewardCap + 1e-9);
-  for (const v of Object.values(fx.genreBonus)) assert.ok(v <= CONFIG.collection.genreCap + 1e-9);
+  for (const [k, e] of Object.entries(CONFIG.collection.effects)) assert.ok(fx[k] <= e.cap + 1e-9, `${k} 超過上限`);
 });
 
 test("收藏的「少受一級」機率有上限 50%（第三批決策 5），不是減傷幅度", () => {
-  assert.equal(CONFIG.collection.injuryShieldCap, 0.5);
+  assert.equal(CONFIG.collection.effects.injuryShield.cap, 0.5);
   const state = createNewGame(1);
   state.collection = DUNGEONS.flatMap((d) => d.specialRewards.filter((r) => r.effect.injuryShield).map((r) => r.id));
   const raw = state.collection.reduce((n, id) => n + getSpecialReward(id).effect.injuryShield, 0);

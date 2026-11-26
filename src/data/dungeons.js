@@ -20,6 +20,7 @@
 import { CONFIG } from "./config.js";
 import { WORLD_LIST, WORLD_NAME_INTRO } from "./worlds.js";
 import { buildWorldRewards } from "./worldRewards.js";
+import { describeFx } from "./collectionFx.js";
 import { HAJIMI_ROOMS } from "./worldRooms.js";
 
 // 佔位房間：n 間通用文字，最後一間是首領房
@@ -96,9 +97,9 @@ const REAL_WORLDS = [
     recommendedPower: 90,
     reward: 95,
     specialRewards: [
-      { id: "ghost_talisman", name: "破局者手札", desc: "靈異副本通過率 +8%。", effect: { genreBonus: { 靈異: 0.08 } } },
+      { id: "ghost_talisman", name: "破局者手札", desc: describeFx("insightChance", 0.01), effect: { insightChance: 0.01 } }, // 暫代：原靈異通過率 +8%
       { id: "ghost_seal", name: "防爆機關護具", desc: "全員受傷時多 10% 機率少受一級。", effect: { injuryShield: 0.1 } },
-      { id: "yin_yang_eye", name: "洞悉死門之眼", desc: "所有副本通過率 +3%。", effect: { passBonus: 0.03 } },
+      { id: "yin_yang_eye", name: "洞悉死門之眼", desc: describeFx("intelGain", 0.03), effect: { intelGain: 0.03 } }, // 暫代：原全域通過率 +3%
     ],
     intro: "終年不散的霧、沒有人上香的祖祠、門口排排站的紙紮人。",
     rooms: [
@@ -119,9 +120,9 @@ const REAL_WORLDS = [
     recommendedPower: 130,
     reward: 125,
     specialRewards: [
-      { id: "ark_accelerator", name: "符紙灰", desc: "所有副本通過率 +4%。", effect: { passBonus: 0.04 } },
+      { id: "ark_accelerator", name: "符紙灰", desc: describeFx("intelGain", 0.03), effect: { intelGain: 0.03 } }, // 暫代：原全域通過率 +4%
       { id: "ark_prosthetic", name: "桃木釘", desc: "全員受傷時多 15% 機率少受一級。", effect: { injuryShield: 0.15 } },
-      { id: "ark_cutter", name: "破銅鈴", desc: "科幻副本通過率 +10%。", effect: { genreBonus: { 科幻: 0.1 } } },
+      { id: "ark_cutter", name: "破銅鈴", desc: describeFx("insightChance", 0.01), effect: { insightChance: 0.01 } }, // 暫代：原科幻通過率 +10%
     ],
     intro: "失去動力的殖民船，走廊只剩緊急照明，通風管裡有東西在爬。",
     rooms: [
@@ -142,9 +143,9 @@ const REAL_WORLDS = [
     recommendedPower: 185,
     reward: 165,
     specialRewards: [
-      { id: "ember_firebolt", name: "凍黑麵包", desc: "奇幻副本通過率 +10%。", effect: { genreBonus: { 奇幻: 0.1 } } },
+      { id: "ember_firebolt", name: "凍黑麵包", desc: describeFx("insightChance", 0.01), effect: { insightChance: 0.01 } }, // 暫代：原奇幻通過率 +10%
       { id: "ember_staff", name: "劣質烈酒", desc: "所有副本通關積分 +10%。", effect: { rewardPct: 0.1 } },
-      { id: "ember_blood", name: "列車長帽", desc: "所有副本通過率 +5%。", effect: { passBonus: 0.05 } },
+      { id: "ember_blood", name: "列車長帽", desc: describeFx("intelGain", 0.03), effect: { intelGain: 0.03 } }, // 暫代：原全域通過率 +5%
     ],
     intro: "兩座法師塔對轟了三百年，天空下的是火，地上跑的是失控的魔法生物。",
     rooms: [
@@ -180,7 +181,7 @@ export function getDungeon(id) {
 }
 
 // 副本特殊獎勵（首通掉落，永久生效）。state.collection 存的是獎勵 id。
-// effect 欄位：passBonus 所有副本單房通過率、genreBonus { 類型: 加成 }、rewardPct 通關積分加成、injuryShield 全員傷勢減免機率
+// effect 欄位：{ 效果key: 數值 }，14 種效果見 data/collectionFx.js（特殊物品絕不加通過率／戰力）
 export function getSpecialReward(id) {
   for (const d of DUNGEONS) {
     const hit = (d.specialRewards ?? []).find((r) => r.id === id);
