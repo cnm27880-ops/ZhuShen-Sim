@@ -855,7 +855,7 @@ export const CONFIG = {
     sanityMin: -10, // 單次理智變動夾在這個範圍
     sanityMax: 10,
     sanityFloor: 1, // 負向事件扣完不低於 1（不會把人推到 0 暴走）
-    relationBothWays: true, // 好感／仇恨雙向各加（false = 只加「被點到的人 → 對象」，需露葵確認）
+    relationBothWays: false, // 好感／仇恨只加「被點到的人 → 對象」單向（露葵 2026-11-26 拍板；true = 雙向各加，會讓效果翻倍）
   },
   logHiddenTypes: ["dayEnd", "shopTier", "wallet", "market", "autoIdle", "gachaPity"],
 };

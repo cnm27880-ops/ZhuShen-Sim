@@ -145,13 +145,13 @@ test("效果：理智（夾上限、不低於 1）、輕傷（只有無傷變輕
   assert.equal(state.points - before, 30);
   assert.equal(state.totalSpent, spent);
   assert.equal(state.pressure?.earned ?? 0, 0, "不記考核營收");
-  // 仇恨 +15（雙向）、好感 +15
+  // 仇恨 +15：單向，只有被點到的人（id 最小的 a）對另一人（b）
   state = setup(2);
   const [a, b] = state.samsarites;
   run = runWith(state, "ch1_01", "ev_ch1_01_c");
   stepTo(state, run, 3);
   assert.equal(getRel(state, a, b).hate, 15);
-  assert.equal(getRel(state, b, a).hate, 15);
+  assert.equal(getRel(state, b, a).hate, 0, "單向：對方不會反過來加");
   // 心情
   state = setup(2);
   state.samsarites[0].tags = [];
