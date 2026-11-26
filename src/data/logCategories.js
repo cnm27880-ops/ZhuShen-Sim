@@ -23,7 +23,7 @@ export const TYPE_CATEGORY = {
   // 戰鬥：副本過程與結算、受傷
   runStart: "battle", runParallel: "battle", runEnd: "battle", roomPass: "battle", roomFail: "battle", injury: "battle", injurySevere: "battle",
   dodge: "battle", mutation: "battle", env: "battle", greedy: "battle", erosion: "battle", rival: "battle", karma: "battle", relic: "battle",
-  intel: "battle", board: "battle", sanityCrash: "battle",
+  intel: "battle", dungeonEvent: "battle", board: "battle", sanityCrash: "battle",
   // 死亡
   death: "death", gameOver: "death", stele: "death", recycle: "death",
   // 許願

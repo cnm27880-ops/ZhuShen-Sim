@@ -35,6 +35,7 @@ import { gearAfterRun } from "./gearFx.js";
 import { erosionBlock, applyErosion, erosionRewardMult } from "./erosion.js";
 import { RIVAL_ID, buildRivalDungeon, rivalOnStart, rivalFinish, rivalSpare } from "./rivals.js";
 import { intelGainBonus, rivalRewardBonus } from "./facilities.js";
+import { rollRunEvent, maybeFireRunEvent } from "./dungeonEvents.js"; // 副本特殊事件（第 1 章試點）
 
 /** 關係加成（喜歡 +10%、愛慕 +20%、討厭 -10%、仇恨 -20%…，見 engine/relations.js） */
 export function relationBonus(state, party) {
@@ -269,6 +270,8 @@ export function startRun(state, dungeonId, partyIds, opts = {}) {
   const mutationId = slot?.mutationId ?? null;
   const run = { partyPostRunSanity: partySan, id: state.nextRunId++, startTick: state.tick, dungeonId, mutationId, slotId: slot?.id ?? null, greedy: !!opts.greedy, erosion, envId: env?.id ?? null, firstTime, intel, partyIds: [...partyIds], enteredInjury, roomIndex: 0, results: [], deaths: [] };
   if (!mandatory) run.rogueId = rollRogueEncounter(state); // 常規副本 10% 遭遇叛逃野生 Boss 亂入最後一房（4-E-4）
+  const eventId = mandatory ? null : rollRunEvent(state, dungeon, run); // 副本特殊事件：開場 3 選 1（獨立亂數流；沒登錄事件的副本、強制任務、洲際碰撞、侵蝕不擲）
+  if (eventId) run.eventId = eventId;
   if (mandatory) {
     run.mandatory = true;
     run.dungeonDef = dungeon; // 開場快照：R 與獎勵不隨之後名冊變動
@@ -335,6 +338,7 @@ export function stepRun(state, run = state.runs[0]) {
     hurt(state, run, victim, dungeon);
   }
   run.results.push(passed);
+  maybeFireRunEvent(state, run, dungeon, partyOf(state, run)); // 副本特殊事件：用「剛結算完的房間序號」判斷，要在 roomIndex += 1 之前
   run.roomIndex += 1;
   maybeOpenHiddenRoom(state, run, dungeon, mut, party);
 }
@@ -614,6 +618,7 @@ function finishRun(state, run) {
     rooms: roomCount(dungeon),
     levelUp,
     karma: 0, // 這場掉了幾顆因果結晶
+    events: run.events ?? [], // 副本特殊事件 [{ id, name, targetName, text, line, applied, kind }]
     insights: [], // 這場頓悟的人：[{ name, power, subStat, subGain, n }]
     results: run.results,
     deaths: run.deaths,

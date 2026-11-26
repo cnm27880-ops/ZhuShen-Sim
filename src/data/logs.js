@@ -213,6 +213,10 @@ export const LOGS = {
     "🌀 這場副本帶著突變詞綴【{mutation}】：{desc}",
     "🌀 突變詞綴【{mutation}】生效。{desc}",
   ],
+  runDungeonEventNoop: [
+    "{A} 在【{dungeon}】撞上「{event}」，不過這次沒造成任何影響。",
+    "「{event}」找上了 {A}，可惜【{dungeon}】這次沒留下任何痕跡。",
+  ],
   runGreedy: [
     "🔍 小隊決定貪婪探索：打完最後一房，還想翻翻角落有沒有好東西。",
     "🔍 貪婪探索啟動——主神：「見好就收是美德，可惜你們沒有。」",

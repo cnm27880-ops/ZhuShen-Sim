@@ -68,6 +68,7 @@ if (args.growcost) {
   for (const p of CONFIG.gacha.pools) { p.base = Math.round(p.base * args.growcost); p.step = Math.round(p.step * args.growcost); }
 }
 if (args.rivalSeize !== undefined) CONFIG.personality.rivalSeize.enabled = args.rivalSeize !== 0 && args.rivalSeize !== '0'; // --rivalSeize=0：關閉野心競爭奪權（A1 對照）
+if (args.dungeonEvent !== undefined) CONFIG.dungeonEvent.enabled = args.dungeonEvent !== 0 && args.dungeonEvent !== '0'; // --dungeonEvent=0：關閉副本特殊事件（對照）
 if (args.traitChance !== undefined) CONFIG.personality.eventChance = args.traitChance; // --traitChance=0：關閉個性事件（個性系統對照）
 if (args.minClear) CONFIG.auto.minClearChance = args.minClear;
 if (args.mpower) CONFIG.forcedMission.powerMult = args.mpower;
