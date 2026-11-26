@@ -15,7 +15,9 @@ import { MANDATORY_ID } from "../src/engine/mandatory.js";
 import { getRel } from "../src/engine/relations.js";
 
 const ch1 = ["ch1_01", "ch1_02", "ch1_03", "ch1_04", "ch1_05", "ch1_boss"]; // 規格編號（引擎 id 用 worldIdOf 轉）
-assert.equal(WORLD_LIST.filter((w) => w.chapter === 1).length, ch1.length);
+// 30 個世界的規格編號：第 1 章 1／3／5 關在引擎裡是語意 id，WORLD_LIST 順序 = 每章 5 個常規（01～05）＋尾王
+const ALL_SPEC = [1, 2, 3, 4, 5].flatMap((c) => [...[1, 2, 3, 4, 5].map((k) => `ch${c}_0${k}`), `ch${c}_boss`]);
+assert.equal(WORLD_LIST.length, ALL_SPEC.length);
 
 function setup(n = 3, seed = 11) {
   const state = createNewGame(seed);
@@ -46,18 +48,20 @@ const stepTo = (state, run, n) => {
   while (run.roomIndex < n) stepRun(state, run);
 };
 
-test("資料表：第 1 章 6 個世界各恰好 3 個事件，id 不重複、效果種類合法、數字合規", () => {
-  assert.equal(DUNGEON_EVENTS.length, 18);
-  assert.equal(new Set(DUNGEON_EVENTS.map((e) => e.id)).size, 18);
+test("資料表：30 個世界各恰好 3 個事件，id 不重複、效果種類合法、數字合規", () => {
+  assert.equal(DUNGEON_EVENTS.length, 90);
+  assert.equal(new Set(DUNGEON_EVENTS.map((e) => e.id)).size, 90);
   const c = CONFIG.dungeonEvent;
-  for (const w of ch1) {
+  assert.deepEqual(c.chapters, [1, 2, 3, 4, 5]);
+  assert.ok(c.chapterMult.every((m) => m === 1), "事件積分已是絕對數字，不能再乘章節倍率");
+  for (const w of ALL_SPEC) {
     assert.equal(DUNGEON_EVENTS.filter((e) => e.world === w).length, 3, `${w} 要 3 個事件`);
     assert.ok(getDungeon(worldIdOf(w)), `${w} 找得到副本`);
     assert.equal(eventsOf(worldIdOf(w)).length, 3);
   }
   const codexNames = new Set(CODEX_ALL.map((t) => t.name));
   for (const e of DUNGEON_EVENTS) {
-    assert.equal(e.room, 2);
+    assert.equal(e.room, Math.floor(getDungeon(worldIdOf(e.world)).rooms.length / 2), `${e.id} 要在中間房觸發`);
     assert.ok(["sanity", "injury", "points", "relation", "mood"].includes(e.fx.kind), e.id);
     if (e.fx.kind === "sanity") assert.ok(e.fx.value >= c.sanityMin && e.fx.value <= c.sanityMax, `${e.id} 理智超出上限`);
     if (e.fx.kind === "injury") assert.ok(["hurt", "heal"].includes(e.fx.mode));
@@ -67,7 +71,7 @@ test("資料表：第 1 章 6 個世界各恰好 3 個事件，id 不重複、�
     assert.ok(e.text.includes("{name}") && e.log.includes("{name}"));
     // 日誌句寫死的數字要和 fx 一致（防止改了一邊忘了另一邊）
     if (["sanity", "points", "relation"].includes(e.fx.kind)) assert.ok(e.log.includes(String(Math.abs(e.fx.value))), `${e.id} log 數字與 fx 不符`);
-    // 第 1 章公庫積分事件不超過通關獎勵的 35%（尾王含首通以外的基礎獎勵）
+    // 公庫積分事件不超過該副本通關獎勵的 35%（哈基米規格約 30%）
     if (e.fx.kind === "points") assert.ok(e.fx.value <= getDungeon(worldIdOf(e.world)).reward * 0.35, `${e.id} 積分過高`);
   }
 });
@@ -191,13 +195,19 @@ test("強制任務、位面侵蝕、關閉開關、非試點章節都不觸發�
   } finally {
     CONFIG.dungeonEvent.enabled = true;
   }
-  // 第 2 章沒登錄事件、沒開章節：不擲
+  // 沒開的章節：不擲（暫時把章節清單縮回第 1 章驗證）
   state = setup(3);
   const rng2 = state.dungeonEventRngState;
-  const ch2 = WORLD_LIST.find((w) => w.chapter === 2);
-  const ok = startRun(state, ch2.id, state.samsarites.map((s) => s.id));
-  if (ok.ok) assert.equal(ok.run.eventId, undefined);
-  assert.equal(state.dungeonEventRngState, rng2);
+  const oldChapters = CONFIG.dungeonEvent.chapters;
+  CONFIG.dungeonEvent.chapters = [1];
+  try {
+    const ch2 = WORLD_LIST.find((w) => w.chapter === 2);
+    const ok = startRun(state, ch2.id, state.samsarites.map((s) => s.id));
+    if (ok.ok) assert.equal(ok.run.eventId, undefined);
+    assert.equal(state.dungeonEventRngState, rng2);
+  } finally {
+    CONFIG.dungeonEvent.chapters = oldChapters;
+  }
 });
 
 test("事件不動主亂數流：開場擲事件前後主亂數序列只差副本本身的消耗（獨立流）", () => {
@@ -220,6 +230,22 @@ test("報告與日誌：整場跑完後 report.events 與日誌都有事件，se
   assert.ok(state.log.some((l) => l.type === "dungeonEvent" && l.text.includes("反鎖的車門")));
   assert.equal(state.dungeonEvents.seen.ev_ch1_02_b, 1);
   assert.ok(run);
+});
+
+test("第 2～5 章：事件在各章的中間房觸發，積分不再乘章節倍率", () => {
+  const state = setup(2);
+  state.chapterClears = { 5: 99 }; // 打開第 5 章尾王守門
+  for (const m of state.samsarites) m.stats.power = 1e9; // 第 5 章尾王很強：確保前 6 間房都過、沒人戰死
+  const before = state.points;
+  const ev = getRunEvent("ev_ch5_boss_a"); // 公庫積分 +8640，第 7 間房（index 6）
+  assert.equal(ev.room, 6);
+  const run = runWith(state, "ch5_boss", ev.id);
+  stepTo(state, run, 6);
+  assert.equal(run.events, undefined, "第 6 間房前不觸發");
+  stepRun(state, run);
+  assert.equal(run.roomIndex, 7);
+  assert.equal(run.events.length, 1);
+  assert.equal(state.points - before, 8640, "不乘章節倍率");
 });
 
 test("開場每個世界都會從自己的 3 個事件裡挑，多場抽樣能抽到全部 3 種", () => {
