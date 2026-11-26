@@ -54,7 +54,27 @@ export const CONFIG = {
   // 值 = 要先首通哪一章的尾王（0 = 開局就有）。Tier 2 = 通關第 1 章尾王 … Tier 6 = 通關第 5 章尾王。
   shopTierBossChapter: [0, 1, 2, 3, 4, 5],
   // 副本首通特殊獎勵（收藏）全部疊加的上限（第二批回饋 3-1：30 個世界各有獎勵，避免堆到爆）。原本 3 個世界的總和遠低於這些上限
-  collection: { passCap: 0.15, genreCap: 0.15, rewardCap: 0.3, injuryShieldCap: 0.5 }, // 全域通過率／單一類型通過率／通關積分／「全員受傷時少受一級」的機率（第三批決策 5）
+  // 副本特殊物品（收藏）效果（露葵 2026-11-26 拍板：絕對不加通過率、不加戰力）。unit = 單件預設數值（尾王 ×bossMult），cap = 跨物品加總後的上限。
+  // 效果名稱／說明文字在 data/collectionFx.js，掛鉤位置見該檔檔頭。**數字全是暫定值，需 sim 驗證**。
+  collection: {
+    bossMult: 1.5,
+    effects: {
+      insightChance: { unit: 0.01, cap: 0.1 }, // 通關頓悟機率 +（growth.js rollInsights）
+      intelGain: { unit: 0.03, cap: 0.5 }, // 情報條獲取 +%（與星界觀測樞加算）
+      healBoost: { unit: 0.02, cap: 0.25 }, // 每日傷勢多降 1 級的機率 +（與體魄加成併入同一次擲骰）
+      injuryShield: { unit: 0.03, cap: 0.5 }, // 受傷時少 1 級的機率（第三批決策 5）
+      rewardPct: { unit: 0.03, cap: 0.3 }, // 通關積分 +%
+      sanityRegen: { unit: 0.25, cap: 3 }, // 留守每日理智回復 +（加總後四捨五入成整數）
+      sanityGuard: { unit: 0.1, cap: 2 }, // 副本單房失敗理智損耗 -（加總後四捨五入、最少仍扣 1）
+      karmaDrop: { unit: 0.005, cap: 0.1 }, // 因果結晶機率掉落的機率 +（只加在原本就有機率掉的章節）
+      hiddenRoom: { unit: 0.01, cap: 0.15 }, // 貪婪探索隱藏房機率 +
+      upkeepCut: { unit: 0.005, cap: 0.1 }, // 每日維持費 -%
+      shopDiscount: { unit: 0.005, cap: 0.1 }, // 商店／黑市價格 -%
+      bondLove: { unit: 0.1, cap: 2 }, // 同行情誼好感 +（加總後與基礎值一起四捨五入）
+      deathSave: { unit: 0.01, cap: 0.1 }, // 副本戰死鎖血免死機率 +
+      tensionEase: { unit: 0.01, cap: 0.15 }, // 人際張力事件產生率 -%
+    },
+  },
   shopDodgeMax: 0.9, // 閃避機率上限（標籤 + 商店加成加起來）
 
   // ── 雙錢包活體經濟（Phase 4-D-1）──

@@ -10,6 +10,7 @@
 // 「好感」一律用淨好感 affinity = love - hate（relations.js），因為 love／hate 各自是 0~100 不會是負的。
 
 import { CONFIG } from "../data/config.js";
+import { collectionEffects } from "./collectionFx.js"; // 特殊物品效果（14 種，data/collectionFx.js）
 import { SQUAD_STYLES, DEFAULT_STYLE, TIE_ORDER, TAG_STYLE } from "../data/squadStyles.js";
 import { getShopItem } from "../data/shopItems.js";
 import { rand } from "./rng.js";
@@ -323,6 +324,7 @@ export function failSanityLoss(state, party, base) {
   if (styleOf(state) === "elite") loss *= S().elite.failSanityMult;
   const cap = captainOf(state);
   if (cap && party.some((p) => p.id === cap.id)) loss -= S().captainFailSanityCut;
+  loss -= Math.round(collectionEffects(state).sanityGuard); // 收藏的理智守護（合計取整）
   return Math.max(1, loss);
 }
 

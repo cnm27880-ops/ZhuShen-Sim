@@ -63,9 +63,10 @@ import {
   geneTierOf,
 } from "../engine/growth.js";
 import { effectivePower, subStat, defenseChance, speedSaveChance } from "../engine/tags.js";
-import { shopTier, nextTierInfo, checkBuy, buyItem, collectionEffects, shopItemsOfTier } from "../engine/shop.js";
+import { shopTier, nextTierInfo, checkBuy, buyItem, collectionEffects, shopItemsOfTier, shopPrice } from "../engine/shop.js";
 import { SHOP_KIND_LABELS, SHOP_CATEGORY_LABELS, SHOP_SLOT_LABELS, getShopItem } from "../data/shopItems.js";
 import { getSpecialReward } from "../data/dungeons.js";
+import { COLLECTION_FX, FX_KEYS } from "../data/collectionFx.js";
 import { firstRelicOf } from "../data/relics.js";
 import { getTag, getEnvTag } from "../data/tags.js";
 import { step, areEnemies } from "../engine/dispatch.js";
@@ -1139,7 +1140,7 @@ function shopStandardTab(tier, target) {
     return `<div class="option ${locked ? "locked" : ""}" style="${locked ? "opacity:.45" : ""}">
       <span class="option-icon">${item.icon}</span>
       <span class="grow"><b>${item.name}</b> <small>${SHOP_SLOT_LABELS[item.slot] ?? ""}</small>${itemFx(item)}${replaceNote(item, target)}${why}</span>
-      <button class="primary" data-action="buy" data-id="${item.id}" ${check.ok ? "" : "disabled"}>${locked ? "🔒" : item.price + " 分"}</button>
+      <button class="primary" data-action="buy" data-id="${item.id}" ${check.ok ? "" : "disabled"}>${locked ? "🔒" : shopPrice(state, item) + " 分"}</button>
     </div>`;
   };
   const sections = CONFIG.shopTierBossChapter
@@ -1158,10 +1159,10 @@ function shopStandardTab(tier, target) {
         .map((r) => `<div>🎁 <b>${r.name}</b>：${r.desc}</div>`)
         .join("")
     : "（還沒有）";
-  const shield = Math.round(fx.injuryShield * 100);
+  const totals = FX_KEYS.filter((k) => fx[k] > 0).map((k) => `${COLLECTION_FX[k].icon} ${COLLECTION_FX[k].name}（已套上限）：${COLLECTION_FX[k].desc(fx[k])}`);
   return `${head}${sections}
     <h3>副本特殊獎勵</h3>
-    <div class="summary">${collection}${shield ? `<div>全員傷勢減免合計 +${shield}%</div>` : ""}</div>`;
+    <div class="summary">${collection}${totals.length ? `<hr /><b>目前合計</b>${totals.map((t) => `<div>${t}</div>`).join("")}` : ""}</div>`;
 }
 
 /** 藥品／消耗品：買進物資倉庫（可一次買 1／5／10 份），之後到物資面板選人使用 */
@@ -1175,7 +1176,7 @@ function shopMedicineTab(tier) {
     const buttons = [1, 5, 10]
       .map((n) => {
         const c = checkBuyStock(state, item.id, n);
-        return `<button class="${n === 1 ? "primary" : ""}" data-action="buy-stock" data-id="${item.id}" data-qty="${n}" ${c.ok ? "" : `disabled title="${c.reason ?? ""}"`}>${locked ? "🔒" : `買 ${n}（${item.price * n}）`}</button>`;
+        return `<button class="${n === 1 ? "primary" : ""}" data-action="buy-stock" data-id="${item.id}" data-qty="${n}" ${c.ok ? "" : `disabled title="${c.reason ?? ""}"`}>${locked ? "🔒" : `買 ${n}（${shopPrice(state, item) * n}）`}</button>`;
       })
       .join("");
     const useBtn = modal.lockTarget && !locked ? `<button class="primary" data-action="buy-use-stock" data-id="${item.id}" ${checkBuyStock(state, item.id, 1).ok ? "" : "disabled"}>買 1 並給他用</button>` : "";

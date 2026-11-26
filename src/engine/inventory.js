@@ -5,7 +5,7 @@
 import { CONFIG } from "../data/config.js";
 import { SHOP_ITEMS, getShopItem, isNewItem } from "../data/shopItems.js";
 import { emit, spend, canAfford, shopTier, getSamsarite } from "./core.js";
-import { applyUse, useBlock, isPermanent, doseMult } from "./shop.js";
+import { applyUse, useBlock, isPermanent, doseMult, shopPrice } from "./shop.js";
 import { logText } from "./templates.js";
 
 export const MAX_BATCH = 99; // 單次最多買幾份
@@ -35,7 +35,7 @@ export function checkBuyStock(state, itemId, qty = 1) {
   if (!isStockable(item)) return { ok: false, reason: "這件商品不能囤進倉庫" };
   if (!Number.isInteger(qty) || qty < 1 || qty > MAX_BATCH) return { ok: false, reason: `一次要買 1～${MAX_BATCH} 份` };
   if (item.tier > shopTier(state)) return { ok: false, reason: `Tier ${item.tier} 還沒解鎖（要先打通第 ${CONFIG.shopTierBossChapter[item.tier - 1]} 章尾王）` };
-  const total = item.price * qty;
+  const total = shopPrice(state, item) * qty; // 含收藏的商店折扣
   if (!canAfford(state, total)) return { ok: false, reason: "積分不夠（連主神高利貸都借不到）", total };
   return { ok: true, total };
 }

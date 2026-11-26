@@ -10,7 +10,7 @@
 import { noteContraband, squadRng, bump } from "./squad.js"; // 黑貨使用紀錄（4-E-3；循環引用只在執行時呼叫）
 import { CONFIG, INJURIES } from "../data/config.js";
 import { SHOP_ITEMS, SHOP_SLOT_LABELS, getShopItem, isNewItem } from "../data/shopItems.js";
-import { getSpecialReward } from "../data/dungeons.js";
+import { collectionEffects, collectionPassBonus } from "./collectionFx.js";
 import { emit, spend, spendWallet, canAfford, getSamsarite, setInjury, shopTier, currentDay } from "./core.js";
 import { addLove, softenHate, addHate } from "./relations.js";
 import { intelTargets, gainIntel, marketOf } from "./market.js";
@@ -75,7 +75,7 @@ export function checkBuy(state, item, s, opts = {}) {
   if (!item) return { ok: false, reason: "沒有這個商品" };
   if (!isNewItem(item.id)) return { ok: false, reason: "這是舊版商品，已停售" };
   const payer = opts.payer ?? "treasury";
-  const price = opts.price ?? item.price;
+  const price = opts.price ?? shopPrice(state, item);
   if (item.tier > shopTier(state)) {
     return { ok: false, reason: `Tier ${item.tier} 還沒解鎖（要先打通第 ${CONFIG.shopTierBossChapter[item.tier - 1]} 章尾王）` };
   }
@@ -117,7 +117,7 @@ export function buyItem(state, itemId, targetId, opts = {}) {
   const check = checkBuy(state, item, s, opts);
   if (!check.ok) return check;
   const payer = opts.payer ?? "treasury";
-  const price = opts.price ?? item.price;
+  const price = opts.price ?? shopPrice(state, item);
   const paid = payer === "wallet" ? spendWallet(state, s, price) : spend(state, price); // 階層解鎖的日誌由 core.addSpent 負責
   if (!paid) return { ok: false, reason: payer === "wallet" ? `${s.name} 的私房錢不夠` : "積分不夠（連主神高利貸都借不到）" }; // #39：付款失敗就不給貨
   const vars = { A: s, item: item.name, cost: price };
@@ -291,28 +291,11 @@ export function consumeRunBuffs(s) {
 
 // ───────── 副本特殊獎勵（state.collection）的效果 ─────────
 
-/** 把收藏裡所有獎勵的效果加總：{ passBonus, genreBonus: {類型: 加成}, rewardPct, injuryShield } */
-export function collectionEffects(state) {
-  const total = { passBonus: 0, genreBonus: {}, rewardPct: 0, injuryShield: 0 };
-  for (const id of state.collection ?? []) {
-    const e = getSpecialReward(id)?.effect;
-    if (!e) continue;
-    total.passBonus += e.passBonus ?? 0;
-    total.rewardPct += e.rewardPct ?? 0;
-    total.injuryShield += e.injuryShield ?? 0;
-    for (const [genre, v] of Object.entries(e.genreBonus ?? {})) total.genreBonus[genre] = (total.genreBonus[genre] ?? 0) + v;
-  }
-  const cap = CONFIG.collection;
-  total.passBonus = Math.min(cap.passCap, total.passBonus);
-  total.rewardPct = Math.min(cap.rewardCap, total.rewardPct);
-  total.injuryShield = Math.min(cap.injuryShieldCap, total.injuryShield);
-  for (const g of Object.keys(total.genreBonus)) total.genreBonus[g] = Math.min(cap.genreCap, total.genreBonus[g]);
-  return total;
-}
+// 收藏效果加總搬到 engine/collectionFx.js（14 種新效果，不加通過率）；這裡 re-export 給舊呼叫處
+export { collectionEffects, collectionPassBonus };
 
-/** 收藏對某個副本「單房通過率」的加成（全域 + 該副本類型） */
-export function collectionPassBonus(state, dungeon) {
-  const e = collectionEffects(state);
-  return e.passBonus + (e.genreBonus[dungeon.genre] ?? 0);
+/** 商店售價（含收藏的商店折扣）；折扣為 0 時就是原價 */
+export function shopPrice(state, item) {
+  return Math.max(1, Math.round(item.price * (1 - collectionEffects(state).shopDiscount)));
 }
 

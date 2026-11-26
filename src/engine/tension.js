@@ -15,6 +15,7 @@
 // 叛逃不看 isDefectImmune（那個函式不動）：怨氣叛逃只豁免隊長與 customProfile，綁定裝備（soulbound）不豁免。
 
 import { CONFIG } from "../data/config.js";
+import { collectionEffects } from "./collectionFx.js"; // 特殊物品效果（14 種，data/collectionFx.js）
 import { getTensionKind, CLIMATE_LEVELS } from "../data/tensionEvents.js";
 import { DRAMA_EVENTS } from "../data/dramaEvents.js";
 import { rand, weighted } from "./rng.js";
@@ -90,7 +91,7 @@ export function pairProfile(state, a, b) {
   const R = CONFIG.relations;
   const t = tensionOf(state);
   const day = currentDay(state);
-  let m = 1;
+  let m = 1 - collectionEffects(state).tensionEase; // 收藏的張力緩和（沒收藏 = 1，與之前逐項相同）
   const flags = {};
   const hate = Math.max(getRel(state, a, b).hate, getRel(state, b, a).hate);
   const status = pairStatus(state, a, b);
