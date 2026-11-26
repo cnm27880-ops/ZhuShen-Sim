@@ -67,6 +67,7 @@ if (args.growcost) {
   for (const t of CONFIG.enhance.costTiers) t.cost = Math.round(t.cost * args.growcost);
   for (const p of CONFIG.gacha.pools) { p.base = Math.round(p.base * args.growcost); p.step = Math.round(p.step * args.growcost); }
 }
+if (args.rivalSeize !== undefined) CONFIG.personality.rivalSeize.enabled = args.rivalSeize !== 0 && args.rivalSeize !== '0'; // --rivalSeize=0：關閉野心競爭奪權（A1 對照）
 if (args.traitChance !== undefined) CONFIG.personality.eventChance = args.traitChance; // --traitChance=0：關閉個性事件（個性系統對照）
 if (args.minClear) CONFIG.auto.minClearChance = args.minClear;
 if (args.mpower) CONFIG.forcedMission.powerMult = args.mpower;
@@ -540,7 +541,7 @@ for (let ch = 1; ch <= 5; ch++) {
   const sum = (key) => results.reduce((n, r) => n + (r.counters[key] ?? 0), 0) / SEEDS;
   const totalDays = results.reduce((n, r) => n + Object.values(r.styleDays).reduce((a, b) => a + b, 0), 0) || 1;
   const dist = ["communal", "bond", "farming", "elite", "mercenary"].map((k) => `${k} ${Math.round((results.reduce((n, r) => n + (r.styleDays[k] ?? 0), 0) / totalDays) * 100)}%`).join("　");
-  console.log(`\n小隊（4-E${FORCE_STYLE ? `，強制流派 ${FORCE_STYLE}` : "，自然演化"}，每局平均）：隊長異動 ${avg(results.map((r) => r.captainChanges))} 次・政變 ${sum("coup").toFixed(1)}・空降不服 ${sum("snub").toFixed(1)}・叛逃 ${sum("defect").toFixed(2)}（${results.filter((r) => (r.counters.defect ?? 0) > 0).length}/${SEEDS} 局發生）・討伐叛徒 ${sum("slain").toFixed(2)}・子嗣 ${sum("birth").toFixed(1)}（其中催生黑貨 ${sum("birthItem").toFixed(1)}）（期末二代以上 ${avg(results.map((r) => r.gen2))} 人、最高第 ${avg(results.map((r) => r.maxGen))} 代）・遺物 ${sum("heirloom").toFixed(1)}（期末庫存 ${avg(results.map((r) => r.heirloomsLeft))}）・人際事件 ${sum("drama").toFixed(1)}・互助金期末 ${avg(results.map((r) => r.fund))}`);
+  console.log(`\n小隊（4-E${FORCE_STYLE ? `，強制流派 ${FORCE_STYLE}` : "，自然演化"}，每局平均）：隊長異動 ${avg(results.map((r) => r.captainChanges))} 次・政變 ${sum("coup").toFixed(1)}（野心競爭：標記 ${sum("rivalMark").toFixed(2)} 次、促成奪權 ${sum("rivalSeize").toFixed(2)}）・空降不服 ${sum("snub").toFixed(1)}・叛逃 ${sum("defect").toFixed(2)}（${results.filter((r) => (r.counters.defect ?? 0) > 0).length}/${SEEDS} 局發生）・討伐叛徒 ${sum("slain").toFixed(2)}・子嗣 ${sum("birth").toFixed(1)}（其中催生黑貨 ${sum("birthItem").toFixed(1)}）（期末二代以上 ${avg(results.map((r) => r.gen2))} 人、最高第 ${avg(results.map((r) => r.maxGen))} 代）・遺物 ${sum("heirloom").toFixed(1)}（期末庫存 ${avg(results.map((r) => r.heirloomsLeft))}）・人際事件 ${sum("drama").toFixed(1)}・互助金期末 ${avg(results.map((r) => r.fund))}`);
   console.log(`流派分佈（占有隊長的天數）：${dist}`);
 }
 {

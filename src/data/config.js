@@ -417,6 +417,10 @@ export const CONFIG = {
     // 每個留守者（非隊長）每天固定擲 1 次 chance，擲中就找「事件 × 對象」；隊長不當任何一方；冷卻沿用 personCooldown／eventCooldown；
     // 走獨立亂數流 state.trait.duetRngState（不動主亂數，也不動單人事件的亂數順序）
     duet: { enabled: true, chance: 0.02 },
+    // 野心競爭奪權（A1，暫定值需露葵驗證）：rivalry 雙人事件發生時，在 state.squad.rivalMarks 記一筆「宿怨標記」，勝者＝當下 effectivePower 較高者（平手比 id，不擲骰）。
+    // 隊長缺位的繼承（squad.js succeed）：戰力前兩名之間有未過期標記，視同宿怨成立（等同互相討厭），標記勝者在奪權擲骰的戰力 ×(1+winnerPowerPct)；
+    // 戰力差仍須 < squad.coupGapPct，沒有標記時結果與沒有這項功能完全相同。完全不新增擲骰（沿用 squadRng 原本那一次）。enabled=false 關閉。
+    rivalSeize: { enabled: true, markDays: 30, winnerPowerPct: 0.1, markCap: 6 },
     // 個性 v2（暫定值需露葵驗證；enabled=false 時副本擋刀／背刺、叛逃、私奔與 v1b 逐項相同）：
     // 擋刀只調「守護者」的機率（候選人仍是愛慕／靈魂伴侶，擲骰次數不變，不動主亂數順序）；
     // 非背刺詞條的「陰謀者」背刺走獨立亂數流 state.trait.clashRngState；叛逃／私奔只調門檻與免疫。
