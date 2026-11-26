@@ -199,6 +199,7 @@ test("抽卡：扣對的錢（含本週漲價）、只出該池的階級、借�
 });
 
 test("一場副本剛好過 1 天，而且出征的人不扣維持費", () => {
+  CONFIG.dungeonEvent.enabled = false; // 副本特殊事件可能直接加公庫積分，這裡只驗維持費與稅
   const state = createNewGame(3);
   const stay = state.samsarites[0];
   const party = state.samsarites.slice(1).map((s) => s.id);
@@ -210,6 +211,7 @@ test("一場副本剛好過 1 天，而且出征的人不扣維持費", () => {
   assert.equal(state.runs.length, 0);
   assert.equal(state.points, before - upkeepOf(stay, state) + state.lastRun.tax);
   assert.ok(state.samsarites.every((s) => s.location === "space"));
+  CONFIG.dungeonEvent.enabled = true;
 });
 
 test("戰力嚴重不足的隊伍會傷亡；失敗生還者一定帶傷", () => {

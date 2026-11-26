@@ -109,6 +109,8 @@ export function createNewGame(seed = freshSeed()) {
     rivals: newRivalState(seed), // 洲際宿敵團戰：倒數、待派任務、各隊叛逃名冊（4-F-1／2，見 engine/rivals.js）
     squad: newSquadState(), // 小隊隊長、流派、共產互助金（Phase 4-E，見 engine/squad.js）
     squadRngState: (seed ^ 0x5ad0) | 0, // 小隊獨立亂數流：政變、擋刀、狗血事件、子嗣、叛逃（4-E 全域設計原則）
+    dungeonEventRngState: (seed ^ 0xdee7) | 0, // 副本特殊事件的獨立亂數流（見 engine/dungeonEvents.js）
+    dungeonEvents: { seen: {} }, // 遇過的副本事件 { 事件id: 次數 }（收集冊預留）
     chronicles: [], // 《空間編年史》：[{ day, kind, text }]，最多 100 條（見 engine/lineage.js）
     armoryHeirlooms: [], // 先人遺物庫：最多 8 件（見 engine/lineage.js）
     rogueBosses: [], // 叛逃的野生魔王：最多 5 名（見 engine/lineage.js）
@@ -697,6 +699,9 @@ export function deserialize(json) {
   state.squad.captainId ??= null;
   state.squad.style ??= null;
   state.squadRngState ??= (state.rngState ^ 0x5ad0) | 0;
+  state.dungeonEventRngState ??= (state.rngState ^ 0xdee7) | 0;
+  state.dungeonEvents ??= { seen: {} };
+  state.dungeonEvents.seen ??= {};
   state.autoStrategy ??= CONFIG.auto.defaultStrategy;
   state.codex ??= { categories: [] };
   state.log = (state.log ?? []).filter((e) => !CONFIG.logHiddenTypes.includes(e.type)); // 舊存檔裡已寫入的這幾種日誌一併清掉

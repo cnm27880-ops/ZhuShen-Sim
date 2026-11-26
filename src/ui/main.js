@@ -1870,6 +1870,7 @@ function runResult() {
       <span class="result-rooms">${rooms}</span><br />房間通過 ${r.passedCount}/${r.rooms ?? r.results.length}<br />
       ${r.envName ? `環境：${r.envName}<br />` : ""}${r.mutation ? `突變詞綴：<b>${r.mutation.icon} ${r.mutation.name}</b><br />` : ""}獎勵：<b class="${r.success ? "good" : "bad"}">+${r.reward} 分</b>${r.firstClear ? "（含首通加成）" : ""}${r.success ? `　<small>入公庫 ${r.tax}、存活隊員各分 ${r.share} 私房錢</small>` : ""}<br />
       ${r.hidden ? `🔍 貪婪探索：隱藏房 <b class="${r.hidden === "passed" ? "good" : "bad"}">${r.hidden === "passed" ? "闖過了" : "失敗"}</b><br />` : r.greedy ? "🔍 貪婪探索：這次沒有開出隱藏房<br />" : ""}
+      ${r.events?.length ? r.events.map((e) => `✨ 副本事件「${esc(e.name)}」：${esc(e.line)}<br />`).join("") : ""}
       ${r.relics?.length ? `🏺 奇物：<b class="good">${r.relics.map((x) => `${x.name}（${x.kind === "first" ? "首通" : "隱藏"}${x.dup ? "・已擁有，轉為積分" : ""}）`).join("、")}</b><br />` : ""}
       ${r.levelUp ? `🏛️ <b class="good">主神空間升到 Lv.${r.levelUp}，第 ${r.levelUp} 章解鎖！</b><br />` : ""}
       ${r.specialReward ? `🎁 特殊獎勵：<b class="good">${r.specialReward}</b>（已永久生效）<br />` : ""}

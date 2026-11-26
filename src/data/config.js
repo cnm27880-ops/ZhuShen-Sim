@@ -845,6 +845,18 @@ export const CONFIG = {
   logMax: 300,
   // 不寫進主神日誌的訊息種類（2026-11 露葵：每日結算、商店等級、錢包、市集、自動閒置、保底）。
   // 這些事件照常產生（暫停事件、測試用的 state.events 不受影響），只是不佔日誌版面與 logMax 額度。
+  // 副本特殊事件（露葵 2026-11-26 拍板；資料見 data/dungeonEvents.js，引擎見 engine/dungeonEvents.js）：
+  // 每場開場在該世界的 3 個事件裡抽 1 個（獨立亂數流 state.dungeonEventRngState），走到事件房間後觸發，點到 1 人；沒有選項、不動通過率與戰力。
+  // 強制任務、洲際碰撞、位面侵蝕（星級 > 0）、貪婪隱藏房都不觸發。chapterMult 目前全是 1（事件資料裡的積分已是各章的絕對數字，不能再乘章節倍率）；只有 chapters 列的章節才會觸發。
+  dungeonEvent: {
+    enabled: true,
+    chapters: [1, 2, 3, 4, 5], // 哪些章節有事件（2026-11-26 起第 1～5 章全開，共 90 個事件）
+    chapterMult: [1, 1, 1, 1, 1], // 公庫積分事件的章節倍率。哈基米的事件積分已是按各章通關獎勵約 30% 算好的絕對數字，所以全部 ×1；再乘一次會讓第 5 章尾王事件超過通關獎勵（變成刷錢點）
+    sanityMin: -10, // 單次理智變動夾在這個範圍
+    sanityMax: 10,
+    sanityFloor: 1, // 負向事件扣完不低於 1（不會把人推到 0 暴走）
+    relationBothWays: false, // 好感／仇恨只加「被點到的人 → 對象」單向（露葵 2026-11-26 拍板；true = 雙向各加，會讓效果翻倍）
+  },
   logHiddenTypes: ["dayEnd", "shopTier", "wallet", "market", "autoIdle", "gachaPity"],
 };
 
