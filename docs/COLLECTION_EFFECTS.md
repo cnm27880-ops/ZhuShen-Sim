@@ -1,7 +1,12 @@
 # 副本特殊物品效果規格（給哈基米）
 
-> 2026-11-26，小克整理。**特殊物品效果絕對不能加副本通過率，也不能加戰力**（露葵定案）。90 件物品要各配 1 種下面的效果，名字與效果主題要對得上。
+> 2026-11-26，蘇爾按 `ITEM-NAME-AUDIT.md` 修正。**特殊物品效果絕對不能加副本通過率，也不能加戰力**（露葵定案）。90 件物品要各配 1 種下面的效果，名字與效果主題要對得上。
 > 數字（單件預設值、總上限）是暫定值，要 sim 驗證，所以你只要選「效果種類」，**不用寫數字**（特殊情況想要比預設大或小，可以在備註寫倍率，例如 ×2、×0.5）。尾王物品引擎會自動 ×1.5。
+> **這版改了什麼**：90 件裡 48 件名字與世界主題明顯不合（見審查文件），14 組整組搬去主題相符的世界；6 個世界的 18 件新名已由哈基米補齊（第三節，效果為正式配法）；另外 6 組找不到合適世界，留檔備用、不列入。
+> **id 不動**：搬移只換名字屬於哪個世界，`id` 跟著物品走（例如義眼的 id 仍是 `ch2_01_r1`，只是現在屬於 ch3_02）。舊存檔的收藏紀錄靠 id，不影響。
+> **效果跟著名字走**：哈基米已按名字配好的效果，搬移後仍然有效（72 件不變）；18 件新名由哈基米寫名時一併配效果。
+> **新名 id 注意**：哈基米給 18 件新名的 id（`ch1_04_r1` 等）與搬走的舊物品原 id 重複（5 個世界、15 個 id，例如 `ch1_04_r1` 同時是鏽齒輪與斷裂的項圈），不能直接用；18 件新名的 id 已由小克發完，格式 `{世界}_n1／_n2／_n3`（例如 `ch1_04_n1`）。正式效果以 `src/data/worldRewards.js` 為準。
+> 別名對照：`ghost_village`＝ch1_01 密室殺陣、`silent_ark`＝ch1_03 猛鬼宿舍、`ember_war`＝ch1_05 極寒列車。
 
 ## 一、14 種效果
 
@@ -29,75 +34,75 @@
 - 不要配通過率或戰力，也不要想框架以外的新效果；真的需要新效果種類，請先跟小克說（引擎要加掛鉤）。
 - **id 不要動**（`_r1`／`_r2`／`_r3` 與語意 id），舊存檔的收藏紀錄靠它。
 
-## 三、90 件物品（2026-11-26 起已換成哈基米的正式效果；下表「目前（暫代）效果」欄是換入前的舊暫代，僅供對照，正式配法見 `src/data/worldRewards.js`）
+## 三、90 件物品（修正後：90 件已定位，18 件新名已補齊）
 
 交稿格式：每件一行「世界編號｜id｜名稱｜效果 key｜（選填）倍率或備註」。
 
-| 世界 | id | 名稱 | 目前（暫代）效果 |
+| 世界 | id | 名稱 | 換入前的暫代效果（僅供對照；18 件新名這欄就是正式配法） |
 |---|---|---|---|
-| ghost_village（密室殺陣） | `ghost_talisman` | 破局者手札 | insightChance |
-| ghost_village（密室殺陣） | `ghost_seal` | 防爆機關護具 | injuryShield |
-| ghost_village（密室殺陣） | `yin_yang_eye` | 洞悉死門之眼 | intelGain |
+| ch1_01（密室殺陣） | `ghost_talisman` | 破局者手札 | insightChance |
+| ch1_01（密室殺陣） | `ghost_seal` | 防爆機關護具 | injuryShield |
+| ch1_01（密室殺陣） | `yin_yang_eye` | 洞悉死門之眼 | intelGain |
 | ch1_02（喪屍危城） | `ch1_02_r1` | 黑血 | intelGain |
 | ch1_02（喪屍危城） | `ch1_02_r2` | 碎骨刀 | rewardPct |
 | ch1_02（喪屍危城） | `ch1_02_r3` | 染血繃帶 | injuryShield |
-| silent_ark（猛鬼宿舍） | `ark_accelerator` | 符紙灰 | intelGain |
-| silent_ark（猛鬼宿舍） | `ark_prosthetic` | 桃木釘 | injuryShield |
-| silent_ark（猛鬼宿舍） | `ark_cutter` | 破銅鈴 | insightChance |
-| ch1_04（絕命荒島） | `ch1_04_r1` | 鏽齒輪 | insightChance |
-| ch1_04（絕命荒島） | `ch1_04_r2` | 煤灰瓶 | injuryShield |
-| ch1_04（絕命荒島） | `ch1_04_r3` | 黃銅懷錶 | intelGain |
-| ember_war（極寒列車） | `ember_firebolt` | 凍黑麵包 | insightChance |
-| ember_war（極寒列車） | `ember_staff` | 劣質烈酒 | rewardPct |
-| ember_war（極寒列車） | `ember_blood` | 列車長帽 | intelGain |
-| ch1_boss（骸骨巨獸島） | `ch1_boss_r1` | 蟲母毒腺 | insightChance |
-| ch1_boss（骸骨巨獸島） | `ch1_boss_r2` | 幾丁質甲 | rewardPct |
-| ch1_boss（骸骨巨獸島） | `ch1_boss_r3` | 腦核 | injuryShield |
-| ch2_01（漠北刀客行） | `ch2_01_r1` | 義眼 | insightChance |
-| ch2_01（漠北刀客行） | `ch2_01_r2` | 廢晶片 | injuryShield |
-| ch2_01（漠北刀客行） | `ch2_01_r3` | 霓虹燈管 | rewardPct |
-| ch2_02（血族古堡） | `ch2_02_r1` | 鹽晶 | intelGain |
-| ch2_02（血族古堡） | `ch2_02_r2` | 舊船票 | injuryShield |
-| ch2_02（血族古堡） | `ch2_02_r3` | 深海藤壺 | rewardPct |
-| ch2_03（黃沙古墓） | `ch2_03_r1` | 狐面 | insightChance |
-| ch2_03（黃沙古墓） | `ch2_03_r2` | 紙燈籠 | injuryShield |
-| ch2_03（黃沙古墓） | `ch2_03_r3` | 斷弦三味線 | rewardPct |
-| ch2_04（蒸氣機甲城） | `ch2_04_r1` | 沙蟲牙 | intelGain |
-| ch2_04（蒸氣機甲城） | `ch2_04_r2` | 舊水壺 | injuryShield |
-| ch2_04（蒸氣機甲城） | `ch2_04_r3` | 防風鏡 | rewardPct |
-| ch2_05（幽靈海盜灣） | `ch2_05_r1` | 蠟封信 | insightChance |
-| ch2_05（幽靈海盜灣） | `ch2_05_r2` | 鳥嘴面具 | rewardPct |
-| ch2_05（幽靈海盜灣） | `ch2_05_r3` | 放血刀 | intelGain |
+| ch1_03（猛鬼宿舍） | `ark_accelerator` | 符紙灰 | intelGain |
+| ch1_03（猛鬼宿舍） | `ark_prosthetic` | 桃木釘 | injuryShield |
+| ch1_03（猛鬼宿舍） | `ark_cutter` | 破銅鈴 | insightChance |
+| ch1_04（絕命荒島） | `ch1_04_n1` | 斷裂的項圈 | deathSave |
+| ch1_04（絕命荒島） | `ch1_04_n2` | 染血號碼牌 | rewardPct |
+| ch1_04（絕命荒島） | `ch1_04_n3` | 空投信號彈 | intelGain |
+| ch1_05（極寒列車） | `ember_firebolt` | 凍黑麵包 | insightChance |
+| ch1_05（極寒列車） | `ember_staff` | 劣質烈酒 | rewardPct |
+| ch1_05（極寒列車） | `ember_blood` | 列車長帽 | intelGain |
+| ch1_boss（骸骨巨獸島） | `ch1_boss_n1` | 暴龍斷齒 | karmaDrop |
+| ch1_boss（骸骨巨獸島） | `ch1_boss_n2` | 化石心臟 | healBoost |
+| ch1_boss（骸骨巨獸島） | `ch1_boss_n3` | 翼龍羽骨 | hiddenRoom |
+| ch2_01（漠北刀客行） | `ch2_04_r1` | 沙蟲牙 | intelGain |
+| ch2_01（漠北刀客行） | `ch2_04_r2` | 舊水壺 | injuryShield |
+| ch2_01（漠北刀客行） | `ch2_04_r3` | 防風鏡 | rewardPct |
+| ch2_02（血族古堡） | `ch4_02_r1` | 血酒杯 | insightChance |
+| ch2_02（血族古堡） | `ch4_02_r2` | 銀樁 | injuryShield |
+| ch2_02（血族古堡） | `ch4_02_r3` | 蒼白獠牙 | intelGain |
+| ch2_03（黃沙古墓） | `ch3_05_r1` | 金甲蟲 | injuryShield |
+| ch2_03（黃沙古墓） | `ch3_05_r2` | 裹屍布 | insightChance |
+| ch2_03（黃沙古墓） | `ch3_05_r3` | 法老權杖 | rewardPct |
+| ch2_04（蒸氣機甲城） | `ch1_04_r1` | 鏽齒輪 | insightChance |
+| ch2_04（蒸氣機甲城） | `ch1_04_r2` | 煤灰瓶 | injuryShield |
+| ch2_04（蒸氣機甲城） | `ch1_04_r3` | 黃銅懷錶 | intelGain |
+| ch2_05（幽靈海盜灣） | `ch2_02_r1` | 鹽晶 | intelGain |
+| ch2_05（幽靈海盜灣） | `ch2_02_r2` | 舊船票 | injuryShield |
+| ch2_05（幽靈海盜灣） | `ch2_02_r3` | 深海藤壺 | rewardPct |
 | ch2_boss（熔岩龍巢） | `ch2_boss_r1` | 龍血石 | injuryShield |
 | ch2_boss（熔岩龍巢） | `ch2_boss_r2` | 逆鱗 | rewardPct |
 | ch2_boss（熔岩龍巢） | `ch2_boss_r3` | 斷角 | insightChance |
-| ch3_01（血月霧都） | `ch3_01_r1` | 仙人骨 | insightChance |
-| ch3_01（血月霧都） | `ch3_01_r2` | 廢丹渣 | intelGain |
-| ch3_01（血月霧都） | `ch3_01_r3` | 斷劍穗 | injuryShield |
-| ch3_02（霓虹夜城） | `ch3_02_r1` | 夢境沙 | intelGain |
-| ch3_02（霓虹夜城） | `ch3_02_r2` | 陀螺 | injuryShield |
-| ch3_02（霓虹夜城） | `ch3_02_r3` | 碎鏡片 | rewardPct |
-| ch3_03（百鬼夜行京） | `ch3_03_r1` | 黑羽毛 | insightChance |
-| ch3_03（百鬼夜行京） | `ch3_03_r2` | 荊棘冠 | injuryShield |
-| ch3_03（百鬼夜行京） | `ch3_03_r3` | 告解書 | intelGain |
-| ch3_04（浮空奧術塔） | `ch3_04_r1` | 輻射塵 | intelGain |
-| ch3_04（浮空奧術塔） | `ch3_04_r2` | 蓋革錶 | rewardPct |
-| ch3_04（浮空奧術塔） | `ch3_04_r3` | 鉛盒 | injuryShield |
-| ch3_05（異星蟲巢） | `ch3_05_r1` | 金甲蟲 | injuryShield |
-| ch3_05（異星蟲巢） | `ch3_05_r2` | 裹屍布 | insightChance |
-| ch3_05（異星蟲巢） | `ch3_05_r3` | 法老權杖 | rewardPct |
-| ch3_boss（雷鳴天空城） | `ch3_boss_r1` | 古神觸鬚 | insightChance |
-| ch3_boss（雷鳴天空城） | `ch3_boss_r2` | 瘋人日記 | intelGain |
-| ch3_boss（雷鳴天空城） | `ch3_boss_r3` | 黑石碑 | injuryShield |
-| ch4_01（九州劍仙界） | `ch4_01_r1` | 星塵 | insightChance |
-| ch4_01（九州劍仙界） | `ch4_01_r2` | 重力環 | injuryShield |
-| ch4_01（九州劍仙界） | `ch4_01_r3` | 航行黑盒 | rewardPct |
-| ch4_02（幽冥斷界） | `ch4_02_r1` | 血酒杯 | insightChance |
-| ch4_02（幽冥斷界） | `ch4_02_r2` | 銀樁 | injuryShield |
-| ch4_02（幽冥斷界） | `ch4_02_r3` | 蒼白獠牙 | intelGain |
-| ch4_03（亞空間聖戰） | `ch4_03_r1` | 時之砂 | intelGain |
-| ch4_03（亞空間聖戰） | `ch4_03_r2` | 斷指針 | injuryShield |
-| ch4_03（亞空間聖戰） | `ch4_03_r3` | 莫比烏斯環 | rewardPct |
+| ch3_01（血月霧都） | `ch3_boss_r1` | 古神觸鬚 | insightChance |
+| ch3_01（血月霧都） | `ch3_boss_r2` | 瘋人日記 | intelGain |
+| ch3_01（血月霧都） | `ch3_boss_r3` | 黑石碑 | injuryShield |
+| ch3_02（霓虹夜城） | `ch2_01_r1` | 義眼 | insightChance |
+| ch3_02（霓虹夜城） | `ch2_01_r2` | 廢晶片 | injuryShield |
+| ch3_02（霓虹夜城） | `ch2_01_r3` | 霓虹燈管 | rewardPct |
+| ch3_03（百鬼夜行京） | `ch2_03_r1` | 狐面 | insightChance |
+| ch3_03（百鬼夜行京） | `ch2_03_r2` | 紙燈籠 | injuryShield |
+| ch3_03（百鬼夜行京） | `ch2_03_r3` | 斷弦三味線 | rewardPct |
+| ch3_04（浮空奧術塔） | `ch3_04_n1` | 禁咒殘頁 | insightChance |
+| ch3_04（浮空奧術塔） | `ch3_04_n2` | 賢者石碎片 | shopDiscount |
+| ch3_04（浮空奧術塔） | `ch3_04_n3` | 元素恆定環 | injuryShield |
+| ch3_05（異星蟲巢） | `ch1_boss_r1` | 蟲母毒腺 | insightChance |
+| ch3_05（異星蟲巢） | `ch1_boss_r2` | 幾丁質甲 | rewardPct |
+| ch3_05（異星蟲巢） | `ch1_boss_r3` | 腦核 | injuryShield |
+| ch3_boss（雷鳴天空城） | `ch3_boss_n1` | 審判之矛碎片 | karmaDrop |
+| ch3_boss（雷鳴天空城） | `ch3_boss_n2` | 避雷神紋 | sanityGuard |
+| ch3_boss（雷鳴天空城） | `ch3_boss_n3` | 殘破羽人翼 | upkeepCut |
+| ch4_01（九州劍仙界） | `ch3_01_r1` | 仙人骨 | insightChance |
+| ch4_01（九州劍仙界） | `ch3_01_r2` | 廢丹渣 | intelGain |
+| ch4_01（九州劍仙界） | `ch3_01_r3` | 斷劍穗 | injuryShield |
+| ch4_02（幽冥斷界） | `ch4_02_n1` | 斬魂刀殘刃 | insightChance |
+| ch4_02（幽冥斷界） | `ch4_02_n2` | 虛之半面 | tensionEase |
+| ch4_02（幽冥斷界） | `ch4_02_n3` | 靈子凝結體 | sanityRegen |
+| ch4_03（亞空間聖戰） | `ch4_01_r1` | 星塵 | insightChance |
+| ch4_03（亞空間聖戰） | `ch4_01_r2` | 重力環 | injuryShield |
+| ch4_03（亞空間聖戰） | `ch4_01_r3` | 航行黑盒 | rewardPct |
 | ch4_04（諸神黃昏庭） | `ch4_04_r1` | 魔神灰 | insightChance |
 | ch4_04（諸神黃昏庭） | `ch4_04_r2` | 勇者斷劍 | injuryShield |
 | ch4_04（諸神黃昏庭） | `ch4_04_r3` | 魔王戒 | rewardPct |
@@ -107,21 +112,66 @@
 | ch4_boss（噬界虛空淵） | `ch4_boss_r1` | 泰坦核心 | intelGain |
 | ch4_boss（噬界虛空淵） | `ch4_boss_r2` | 神血結晶 | injuryShield |
 | ch4_boss（噬界虛空淵） | `ch4_boss_r3` | 雷霆之矛 | rewardPct |
-| ch5_01（因果時鐘塔） | `ch5_01_r1` | 維度碎片 | intelGain |
-| ch5_01（因果時鐘塔） | `ch5_01_r2` | 二向箔 | injuryShield |
-| ch5_01（因果時鐘塔） | `ch5_01_r3` | 觀測眼 | rewardPct |
-| ch5_02（黑暗森林星海） | `ch5_02_r1` | 因果線 | insightChance |
-| ch5_02（黑暗森林星海） | `ch5_02_r2` | 命運紡錘 | injuryShield |
-| ch5_02（黑暗森林星海） | `ch5_02_r3` | 剪刀 | rewardPct |
-| ch5_03（舊日幻夢境） | `ch5_03_r1` | 虛無結晶 | insightChance |
-| ch5_03（舊日幻夢境） | `ch5_03_r2` | 反物質瓶 | injuryShield |
-| ch5_03（舊日幻夢境） | `ch5_03_r3` | 白洞核 | intelGain |
-| ch5_04（混沌封神劫） | `ch5_04_r1` | 舊日遺骨 | intelGain |
-| ch5_04（混沌封神劫） | `ch5_04_r2` | 黃衣殘布 | insightChance |
-| ch5_04（混沌封神劫） | `ch5_04_r3` | 銀鑰匙 | injuryShield |
+| ch5_01（因果時鐘塔） | `ch4_03_r1` | 時之砂 | intelGain |
+| ch5_01（因果時鐘塔） | `ch4_03_r2` | 斷指針 | injuryShield |
+| ch5_01（因果時鐘塔） | `ch4_03_r3` | 莫比烏斯環 | rewardPct |
+| ch5_02（黑暗森林星海） | `ch5_01_r1` | 維度碎片 | intelGain |
+| ch5_02（黑暗森林星海） | `ch5_01_r2` | 二向箔 | injuryShield |
+| ch5_02（黑暗森林星海） | `ch5_01_r3` | 觀測眼 | rewardPct |
+| ch5_03（舊日幻夢境） | `ch5_04_r1` | 舊日遺骨 | intelGain |
+| ch5_03（舊日幻夢境） | `ch5_04_r2` | 黃衣殘布 | insightChance |
+| ch5_03（舊日幻夢境） | `ch5_04_r3` | 銀鑰匙 | injuryShield |
+| ch5_04（混沌封神劫） | `ch5_04_n1` | 封神榜殘卷 | deathSave |
+| ch5_04（混沌封神劫） | `ch5_04_n2` | 先天葫蘆籽 | bondLove |
+| ch5_04（混沌封神劫） | `ch5_04_n3` | 誅仙陣圖角 | intelGain |
 | ch5_05（戴森機械神國） | `ch5_05_r1` | 源代碼 | intelGain |
 | ch5_05（戴森機械神國） | `ch5_05_r2` | 廢棄光碟 | injuryShield |
 | ch5_05（戴森機械神國） | `ch5_05_r3` | 管理員金鑰 | rewardPct |
 | ch5_boss（原初神座中樞） | `ch5_boss_r1` | 主神碎片 | intelGain |
 | ch5_boss（原初神座中樞） | `ch5_boss_r2` | 創世泥板 | insightChance |
 | ch5_boss（原初神座中樞） | `ch5_boss_r3` | 終焉之冠 | rewardPct |
+
+## 四、14 組搬移對照（給小克：只動 name 的歸屬，id 不動）
+
+| # | 這三件 | 從 | 搬到 |
+|---|---|---|---|
+| 1 | 鏽齒輪／煤灰瓶／黃銅懷錶 | ch1_04 絕命荒島 | ch2_04 蒸氣機甲城 |
+| 2 | 蟲母毒腺／幾丁質甲／腦核 | ch1_boss 骸骨巨獸島 | ch3_05 異星蟲巢 |
+| 3 | 義眼／廢晶片／霓虹燈管 | ch2_01 漠北刀客行 | ch3_02 霓虹夜城 |
+| 4 | 鹽晶／舊船票／深海藤壺 | ch2_02 血族古堡 | ch2_05 幽靈海盜灣 |
+| 5 | 狐面／紙燈籠／斷弦三味線 | ch2_03 黃沙古墓 | ch3_03 百鬼夜行京 |
+| 6 | 沙蟲牙／舊水壺／防風鏡 | ch2_04 蒸氣機甲城 | ch2_01 漠北刀客行 |
+| 7 | 仙人骨／廢丹渣／斷劍穗 | ch3_01 血月霧都 | ch4_01 九州劍仙界 |
+| 8 | 金甲蟲／裹屍布／法老權杖 | ch3_05 異星蟲巢 | ch2_03 黃沙古墓 |
+| 9 | 古神觸鬚／瘋人日記／黑石碑 | ch3_boss 雷鳴天空城 | ch3_01 血月霧都 |
+| 10 | 星塵／重力環／航行黑盒 | ch4_01 九州劍仙界 | ch4_03 亞空間聖戰 |
+| 11 | 血酒杯／銀樁／蒼白獠牙 | ch4_02 幽冥斷界 | ch2_02 血族古堡 |
+| 12 | 時之砂／斷指針／莫比烏斯環 | ch4_03 亞空間聖戰 | ch5_01 因果時鐘塔 |
+| 13 | 維度碎片／二向箔／觀測眼 | ch5_01 因果時鐘塔 | ch5_02 黑暗森林星海 |
+| 14 | 舊日遺骨／黃衣殘布／銀鑰匙 | ch5_04 混沌封神劫 | ch5_03 舊日幻夢境 |
+
+## 五、需要補名的 6 個世界（18 件，哈基米寫）
+
+| 世界 | 主題方向 | 舉例（僅供參考，不用照抄） |
+|---|---|---|
+| ch1_04 絕命荒島 | 大逃殺孤島、項圈倒數、安全區縮減 | 斷裂的項圈、染血號碼牌、空罐頭陷阱 |
+| ch1_boss 骸骨巨獸島 | 史前巨獸、骸骨、掠食生態 | 暴龍斷齒、化石心臟、巨獸脊骨 |
+| ch3_04 浮空奧術塔 | 禁咒、鍊金、元素 | 禁咒殘頁、賢者石碎片、元素核心 |
+| ch3_boss 雷鳴天空城 | 雷霆、審判、神代遺跡 | 雷霆碎角、審判之矛碎片、避雷針殘骸 |
+| ch4_02 幽冥斷界 | 死神、斬魂、靈子 | 斬魂刀碎片、死神羽織、虛之面具 |
+| ch5_04 混沌封神劫 | 中國神話、量劫、先天至寶 | 誅仙劍氣、封神榜殘頁、先天葫蘆籽 |
+
+新名寫好後，請一併按第二節的原則配效果（每件 1 種，14 種裡選）。新名的 id 由小克統一發。注意：哈基米原表給的 id（例如 `ch1_04_r1`）與搬走的舊物品原 id 重複（`ch1_04_r1` 同時是鏽齒輪與斷裂的項圈），不能直接用；請小克發 18 個不重複的新 id。
+
+## 六、多出來的 6 組（18 件，留檔備用，不列入 90 件）
+
+以下 6 組在 30 個世界裡找不到合適歸屬，先留著，以後開新世界或活動再用，不要硬塞。
+
+| 這組 | 主題 | 為什麼沒家 |
+|---|---|---|
+| 蠟封信／鳥嘴面具／放血刀（原 ch2_05） | 吸血鬼／瘟疫 | ch2_02 已配更純的吸血鬼組（血酒杯／銀樁／蒼白獠牙） |
+| 夢境沙／陀螺／碎鏡片（原 ch3_02） | 夢境 | 30 個世界沒有純夢境世界（ch5_03 已配克蘇魯組） |
+| 黑羽毛／荊棘冠／告解書（原 ch3_03） | 基督教哥德 | 30 個世界沒有教堂／基督世界 |
+| 輻射塵／蓋革錶／鉛盒（原 ch3_04） | 核輻射 | 30 個世界沒有核子世界 |
+| 因果線／命運紡錘／剪刀（原 ch5_02） | 命運 | ch5_01 已配時間組；命運紡錘／剪刀是希臘命運三女神意象，與封神不合 |
+| 虛無結晶／反物質瓶／白洞核（原 ch5_03） | 科幻 | ch4_03 與 ch5_02 已配其他科幻組 |

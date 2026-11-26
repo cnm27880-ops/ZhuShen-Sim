@@ -19,7 +19,7 @@
 
 import { CONFIG } from "./config.js";
 import { WORLD_LIST, WORLD_NAME_INTRO } from "./worlds.js";
-import { buildWorldRewards } from "./worldRewards.js";
+import { buildWorldRewards, ARCHIVED_REWARD_LIST } from "./worldRewards.js";
 import { describeFx } from "./collectionFx.js";
 import { HAJIMI_ROOMS } from "./worldRooms.js";
 
@@ -187,7 +187,7 @@ export function getSpecialReward(id) {
     const hit = (d.specialRewards ?? []).find((r) => r.id === id);
     if (hit) return hit;
   }
-  return undefined;
+  return ARCHIVED_REWARD_LIST.find((r) => r.id === id); // 留檔備用的 18 件：世界不掉，但舊存檔收藏裡的 id 要查得到
 }
 
 /** 舊存檔的收藏是「名字」，用名字找回獎勵（找不到回傳 undefined） */

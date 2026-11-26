@@ -270,14 +270,48 @@ test("存檔往返：收藏 id 不變、效果由資料表算出（舊存檔打�
 // ── 2b：哈基米正式配法（2026-11-26）──
 const FORMAL = `ghost_talisman intelGain|ghost_seal injuryShield|yin_yang_eye hiddenRoom|ch1_02_r1 healBoost|ch1_02_r2 shopDiscount|ch1_02_r3 injuryShield|ark_accelerator sanityGuard|ark_prosthetic insightChance|ark_cutter tensionEase|ch1_04_r1 upkeepCut|ch1_04_r2 hiddenRoom|ch1_04_r3 intelGain|ember_firebolt upkeepCut|ember_staff bondLove|ember_blood shopDiscount|ch1_boss_r1 deathSave|ch1_boss_r2 injuryShield|ch1_boss_r3 insightChance|ch2_01_r1 intelGain|ch2_01_r2 karmaDrop|ch2_01_r3 sanityRegen|ch2_02_r1 sanityGuard|ch2_02_r2 hiddenRoom|ch2_02_r3 injuryShield|ch2_03_r1 tensionEase|ch2_03_r2 sanityRegen|ch2_03_r3 bondLove|ch2_04_r1 rewardPct|ch2_04_r2 upkeepCut|ch2_04_r3 intelGain|ch2_05_r1 intelGain|ch2_05_r2 sanityGuard|ch2_05_r3 healBoost|ch2_boss_r1 healBoost|ch2_boss_r2 deathSave|ch2_boss_r3 insightChance|ch3_01_r1 insightChance|ch3_01_r2 healBoost|ch3_01_r3 bondLove|ch3_02_r1 sanityRegen|ch3_02_r2 sanityGuard|ch3_02_r3 hiddenRoom|ch3_03_r1 tensionEase|ch3_03_r2 injuryShield|ch3_03_r3 sanityRegen|ch3_04_r1 karmaDrop|ch3_04_r2 intelGain|ch3_04_r3 injuryShield|ch3_05_r1 rewardPct|ch3_05_r2 deathSave|ch3_05_r3 shopDiscount|ch3_boss_r1 karmaDrop|ch3_boss_r2 insightChance|ch3_boss_r3 sanityGuard|ch4_01_r1 karmaDrop|ch4_01_r2 injuryShield|ch4_01_r3 intelGain|ch4_02_r1 bondLove|ch4_02_r2 deathSave|ch4_02_r3 rewardPct|ch4_03_r1 deathSave|ch4_03_r2 hiddenRoom|ch4_03_r3 insightChance|ch4_04_r1 karmaDrop|ch4_04_r2 tensionEase|ch4_04_r3 shopDiscount|ch4_05_r1 karmaDrop|ch4_05_r2 insightChance|ch4_05_r3 deathSave|ch4_boss_r1 upkeepCut|ch4_boss_r2 healBoost|ch4_boss_r3 rewardPct|ch5_01_r1 hiddenRoom|ch5_01_r2 karmaDrop|ch5_01_r3 intelGain|ch5_02_r1 insightChance|ch5_02_r2 tensionEase|ch5_02_r3 injuryShield|ch5_03_r1 karmaDrop|ch5_03_r2 upkeepCut|ch5_03_r3 sanityRegen|ch5_04_r1 deathSave|ch5_04_r2 sanityGuard|ch5_04_r3 hiddenRoom|ch5_05_r1 intelGain|ch5_05_r2 shopDiscount|ch5_05_r3 hiddenRoom|ch5_boss_r1 karmaDrop|ch5_boss_r2 insightChance|ch5_boss_r3 rewardPct`.split("|").map((x) => x.split(" "));
 
-test("2b 正式配法：90 件的效果 key 和哈基米的表一致，數值 = 單件值（尾王 ×bossMult）", () => {
-  assert.equal(FORMAL.length, 90);
-  for (const [id, key] of FORMAL) {
-    const r = getSpecialReward(id);
-    assert.ok(r, id);
-    assert.deepEqual(Object.keys(r.effect), [key], id);
-    const boss = id.startsWith("ch") && id.includes("_boss_");
-    const want = Math.round(CONFIG.collection.effects[key].unit * (boss ? CONFIG.collection.bossMult : 1) * 1000) / 1000;
-    assert.ok(Math.abs(r.effect[key] - want) < 1e-9, `${id} ${r.effect[key]} vs ${want}`);
+const NEW18 = { ch1_04_n1: "deathSave", ch1_04_n2: "rewardPct", ch1_04_n3: "intelGain", ch1_boss_n1: "karmaDrop", ch1_boss_n2: "healBoost", ch1_boss_n3: "hiddenRoom", ch3_04_n1: "insightChance", ch3_04_n2: "shopDiscount", ch3_04_n3: "injuryShield", ch3_boss_n1: "karmaDrop", ch3_boss_n2: "sanityGuard", ch3_boss_n3: "upkeepCut", ch4_02_n1: "insightChance", ch4_02_n2: "tensionEase", ch4_02_n3: "sanityRegen", ch5_04_n1: "deathSave", ch5_04_n2: "bondLove", ch5_04_n3: "intelGain" };
+const ARCHIVED_IDS = ["ch2_05", "ch3_02", "ch3_03", "ch3_04", "ch5_02", "ch5_03"].flatMap((w) => [1, 2, 3].map((n) => `${w}_r${n}`));
+
+test("2b 正式配法（含名字搬移）：DUNGEONS 剛好 90 件；72 件舊 id 效果照名字走，18 件新 id 用 _n1～_n3；尾王看世界 ×bossMult", () => {
+  const expected = { ...Object.fromEntries(FORMAL.filter(([id]) => !ARCHIVED_IDS.includes(id))), ...NEW18 }; // 72 + 18
+  const all = DUNGEONS.flatMap((d) => d.specialRewards.map((r) => ({ d, r })));
+  assert.equal(all.length, 90);
+  assert.equal(Object.keys(expected).length, 90);
+  for (const { d, r } of all) {
+    const key = expected[r.id];
+    assert.ok(key, `${r.id} 不在 90 件清單裡`);
+    assert.deepEqual(Object.keys(r.effect), [key], r.id);
+    const want = Math.round(CONFIG.collection.effects[key].unit * (d.boss ? CONFIG.collection.bossMult : 1) * 1000) / 1000;
+    assert.ok(Math.abs(r.effect[key] - want) < 1e-9, `${r.id}@${d.id} ${r.effect[key]} vs ${want}`);
   }
+  assert.equal(new Set(all.map(({ r }) => r.id)).size, 90);
+  assert.equal(new Set(all.map(({ r }) => r.name)).size, 90);
+  for (const d of DUNGEONS) assert.equal(d.specialRewards.length, 3, d.id);
+});
+
+test("2b 搬移對照（第四節 14 組）：id 不動、名字屬於新世界", () => {
+  const where = (id) => DUNGEONS.find((d) => d.specialRewards.some((r) => r.id === id));
+  const WORLD_ID = (c) => ({ ch1_01: "ghost_village", ch1_03: "silent_ark", ch1_05: "ember_war" })[c] ?? c;
+  const moves = [["ch1_04_r1", "ch2_04"], ["ch1_boss_r1", "ch3_05"], ["ch2_01_r1", "ch3_02"], ["ch2_02_r1", "ch2_05"], ["ch2_03_r1", "ch3_03"], ["ch2_04_r1", "ch2_01"], ["ch3_01_r1", "ch4_01"], ["ch3_05_r1", "ch2_03"], ["ch3_boss_r1", "ch3_01"], ["ch4_01_r1", "ch4_03"], ["ch4_02_r1", "ch2_02"], ["ch4_03_r1", "ch5_01"], ["ch5_01_r1", "ch5_02"], ["ch5_04_r1", "ch5_03"]];
+  for (const [id, w] of moves) assert.equal(where(id).id, WORLD_ID(w), id);
+  assert.equal(getSpecialReward("ch2_01_r1").name, "義眼");
+});
+
+test("2b 留檔備用 18 件：世界不掉，但 id 查得到（舊存檔收藏不會被 deserialize 丟掉）", () => {
+  const inWorlds = new Set(DUNGEONS.flatMap((d) => d.specialRewards.map((r) => r.id)));
+  for (const id of ARCHIVED_IDS) {
+    assert.ok(!inWorlds.has(id), `${id} 不該出現在世界掉落`);
+    assert.ok(getSpecialReward(id), `${id} 要查得到`);
+  }
+  const st = createNewGame(5);
+  st.collection = ["ch2_05_r1", "ch3_02_r2", "ch1_04_n1"];
+  assert.deepEqual(deserialize(serialize(st)).collection, st.collection);
+});
+
+test("2b 全 90 件全收總量：沒有任何效果超過 CONFIG.collection 上限（insightChance 可能被上限吃掉，只提示）", () => {
+  const st = createNewGame(1);
+  st.collection = DUNGEONS.flatMap((d) => d.specialRewards.map((r) => r.id));
+  const fx = collectionEffects(st);
+  for (const [k, e] of Object.entries(CONFIG.collection.effects)) assert.ok(fx[k] <= e.cap + 1e-9, k);
 });

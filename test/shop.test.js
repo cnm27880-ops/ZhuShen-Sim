@@ -287,9 +287,9 @@ test("30 世界首通獎勵：效果不重複、尾王比普通關強，收藏�
     }
     if (d.id.startsWith("ch1_") || d.id.startsWith("ch2_") || d.id.startsWith("ch3_") || d.id.startsWith("ch4_") || d.id.startsWith("ch5_")) assert.ok(new Set(kinds).size >= 2, `${d.id} 效果種類太單調`);
   }
-  const boss = DUNGEONS.find((d) => d.id === "ch1_boss").specialRewards.find((r) => r.effect.injuryShield);
-  const norm = DUNGEONS.find((d) => d.id === "ch2_02").specialRewards.find((r) => r.effect.injuryShield);
-  assert.ok(boss.effect.injuryShield > norm.effect.injuryShield);
+  const boss = DUNGEONS.find((d) => d.id === "ch1_boss").specialRewards.find((r) => r.effect.healBoost);
+  const norm = DUNGEONS.find((d) => d.id === "ch1_02").specialRewards.find((r) => r.effect.healBoost);
+  assert.ok(boss.effect.healBoost > norm.effect.healBoost); // 尾王世界的同種效果 ×1.5
   // 全部收進來：被上限擋住
   const state = createNewGame(1);
   state.collection = DUNGEONS.flatMap((d) => d.specialRewards.map((r) => r.id));
