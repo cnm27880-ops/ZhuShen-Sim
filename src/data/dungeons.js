@@ -97,9 +97,9 @@ const REAL_WORLDS = [
     recommendedPower: 90,
     reward: 95,
     specialRewards: [
-      { id: "ghost_talisman", name: "破局者手札", desc: describeFx("insightChance", 0.01), effect: { insightChance: 0.01 } }, // 暫代：原靈異通過率 +8%
-      { id: "ghost_seal", name: "防爆機關護具", desc: "全員受傷時多 10% 機率少受一級。", effect: { injuryShield: 0.1 } },
-      { id: "yin_yang_eye", name: "洞悉死門之眼", desc: describeFx("intelGain", 0.03), effect: { intelGain: 0.03 } }, // 暫代：原全域通過率 +3%
+      { id: "ghost_talisman", name: "破局者手札", desc: describeFx("intelGain", 0.03), effect: { intelGain: 0.03 } },
+      { id: "ghost_seal", name: "防爆機關護具", desc: describeFx("injuryShield", 0.03), effect: { injuryShield: 0.03 } },
+      { id: "yin_yang_eye", name: "洞悉死門之眼", desc: describeFx("hiddenRoom", 0.01), effect: { hiddenRoom: 0.01 } },
     ],
     intro: "終年不散的霧、沒有人上香的祖祠、門口排排站的紙紮人。",
     rooms: [
@@ -120,9 +120,9 @@ const REAL_WORLDS = [
     recommendedPower: 130,
     reward: 125,
     specialRewards: [
-      { id: "ark_accelerator", name: "符紙灰", desc: describeFx("intelGain", 0.03), effect: { intelGain: 0.03 } }, // 暫代：原全域通過率 +4%
-      { id: "ark_prosthetic", name: "桃木釘", desc: "全員受傷時多 15% 機率少受一級。", effect: { injuryShield: 0.15 } },
-      { id: "ark_cutter", name: "破銅鈴", desc: describeFx("insightChance", 0.01), effect: { insightChance: 0.01 } }, // 暫代：原科幻通過率 +10%
+      { id: "ark_accelerator", name: "符紙灰", desc: describeFx("sanityGuard", 0.1), effect: { sanityGuard: 0.1 } },
+      { id: "ark_prosthetic", name: "桃木釘", desc: describeFx("insightChance", 0.01), effect: { insightChance: 0.01 } },
+      { id: "ark_cutter", name: "破銅鈴", desc: describeFx("tensionEase", 0.01), effect: { tensionEase: 0.01 } },
     ],
     intro: "失去動力的殖民船，走廊只剩緊急照明，通風管裡有東西在爬。",
     rooms: [
@@ -143,9 +143,9 @@ const REAL_WORLDS = [
     recommendedPower: 185,
     reward: 165,
     specialRewards: [
-      { id: "ember_firebolt", name: "凍黑麵包", desc: describeFx("insightChance", 0.01), effect: { insightChance: 0.01 } }, // 暫代：原奇幻通過率 +10%
-      { id: "ember_staff", name: "劣質烈酒", desc: "所有副本通關積分 +10%。", effect: { rewardPct: 0.1 } },
-      { id: "ember_blood", name: "列車長帽", desc: describeFx("intelGain", 0.03), effect: { intelGain: 0.03 } }, // 暫代：原全域通過率 +5%
+      { id: "ember_firebolt", name: "凍黑麵包", desc: describeFx("upkeepCut", 0.005), effect: { upkeepCut: 0.005 } },
+      { id: "ember_staff", name: "劣質烈酒", desc: describeFx("bondLove", 0.1), effect: { bondLove: 0.1 } },
+      { id: "ember_blood", name: "列車長帽", desc: describeFx("shopDiscount", 0.005), effect: { shopDiscount: 0.005 } },
     ],
     intro: "兩座法師塔對轟了三百年，天空下的是火，地上跑的是失控的魔法生物。",
     rooms: [

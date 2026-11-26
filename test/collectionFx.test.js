@@ -266,3 +266,18 @@ test("存檔往返：收藏 id 不變、效果由資料表算出（舊存檔打�
   const fx = collectionEffects(loaded);
   assert.ok(FX_KEYS.some((k) => fx[k] > 0));
 });
+
+// ── 2b：哈基米正式配法（2026-11-26）──
+const FORMAL = `ghost_talisman intelGain|ghost_seal injuryShield|yin_yang_eye hiddenRoom|ch1_02_r1 healBoost|ch1_02_r2 shopDiscount|ch1_02_r3 injuryShield|ark_accelerator sanityGuard|ark_prosthetic insightChance|ark_cutter tensionEase|ch1_04_r1 upkeepCut|ch1_04_r2 hiddenRoom|ch1_04_r3 intelGain|ember_firebolt upkeepCut|ember_staff bondLove|ember_blood shopDiscount|ch1_boss_r1 deathSave|ch1_boss_r2 injuryShield|ch1_boss_r3 insightChance|ch2_01_r1 intelGain|ch2_01_r2 karmaDrop|ch2_01_r3 sanityRegen|ch2_02_r1 sanityGuard|ch2_02_r2 hiddenRoom|ch2_02_r3 injuryShield|ch2_03_r1 tensionEase|ch2_03_r2 sanityRegen|ch2_03_r3 bondLove|ch2_04_r1 rewardPct|ch2_04_r2 upkeepCut|ch2_04_r3 intelGain|ch2_05_r1 intelGain|ch2_05_r2 sanityGuard|ch2_05_r3 healBoost|ch2_boss_r1 healBoost|ch2_boss_r2 deathSave|ch2_boss_r3 insightChance|ch3_01_r1 insightChance|ch3_01_r2 healBoost|ch3_01_r3 bondLove|ch3_02_r1 sanityRegen|ch3_02_r2 sanityGuard|ch3_02_r3 hiddenRoom|ch3_03_r1 tensionEase|ch3_03_r2 injuryShield|ch3_03_r3 sanityRegen|ch3_04_r1 karmaDrop|ch3_04_r2 intelGain|ch3_04_r3 injuryShield|ch3_05_r1 rewardPct|ch3_05_r2 deathSave|ch3_05_r3 shopDiscount|ch3_boss_r1 karmaDrop|ch3_boss_r2 insightChance|ch3_boss_r3 sanityGuard|ch4_01_r1 karmaDrop|ch4_01_r2 injuryShield|ch4_01_r3 intelGain|ch4_02_r1 bondLove|ch4_02_r2 deathSave|ch4_02_r3 rewardPct|ch4_03_r1 deathSave|ch4_03_r2 hiddenRoom|ch4_03_r3 insightChance|ch4_04_r1 karmaDrop|ch4_04_r2 tensionEase|ch4_04_r3 shopDiscount|ch4_05_r1 karmaDrop|ch4_05_r2 insightChance|ch4_05_r3 deathSave|ch4_boss_r1 upkeepCut|ch4_boss_r2 healBoost|ch4_boss_r3 rewardPct|ch5_01_r1 hiddenRoom|ch5_01_r2 karmaDrop|ch5_01_r3 intelGain|ch5_02_r1 insightChance|ch5_02_r2 tensionEase|ch5_02_r3 injuryShield|ch5_03_r1 karmaDrop|ch5_03_r2 upkeepCut|ch5_03_r3 sanityRegen|ch5_04_r1 deathSave|ch5_04_r2 sanityGuard|ch5_04_r3 hiddenRoom|ch5_05_r1 intelGain|ch5_05_r2 shopDiscount|ch5_05_r3 hiddenRoom|ch5_boss_r1 karmaDrop|ch5_boss_r2 insightChance|ch5_boss_r3 rewardPct`.split("|").map((x) => x.split(" "));
+
+test("2b 正式配法：90 件的效果 key 和哈基米的表一致，數值 = 單件值（尾王 ×bossMult）", () => {
+  assert.equal(FORMAL.length, 90);
+  for (const [id, key] of FORMAL) {
+    const r = getSpecialReward(id);
+    assert.ok(r, id);
+    assert.deepEqual(Object.keys(r.effect), [key], id);
+    const boss = id.startsWith("ch") && id.includes("_boss_");
+    const want = Math.round(CONFIG.collection.effects[key].unit * (boss ? CONFIG.collection.bossMult : 1) * 1000) / 1000;
+    assert.ok(Math.abs(r.effect[key] - want) < 1e-9, `${id} ${r.effect[key]} vs ${want}`);
+  }
+});
