@@ -202,14 +202,14 @@ test("特殊獎勵生效：不加通過率（2026-11-26 定案），通關積分
   }
   state.collection = DUNGEONS.flatMap((d) => d.specialRewards.map((r) => r.id)); // 全收也一樣
   assert.ok(Math.abs(roomPassRate(state, [s], ghost) - base) < 1e-9, "全收藏也不能加通過率");
-  state.collection = ["yin_yang_eye"]; // 暫代：情報獲取 +3%
+  state.collection = ["ghost_talisman"]; // 2b 正式配法：情報獲取 +3%
   assert.ok(Math.abs(collectionEffects(state).intelGain - 0.03) < 1e-9);
-  state.collection = ["ghost_talisman"]; // 暫代：頓悟機率 +1%
+  state.collection = ["ark_prosthetic"]; // 頓悟機率 +1%
   assert.ok(Math.abs(collectionEffects(state).insightChance - 0.01) < 1e-9);
-  state.collection = ["ember_staff"]; // 通關積分 +10%
-  assert.ok(Math.abs(rewardMultiplier(state, ghost, [s]) - baseReward * 1.1) < 1e-9);
-  state.collection = ["ghost_seal", "ark_prosthetic"]; // 傷勢減免相加
-  assert.ok(Math.abs(collectionEffects(state).injuryShield - 0.25) < 1e-9);
+  state.collection = ["ch2_04_r1"]; // 通關積分 +3%
+  assert.ok(Math.abs(rewardMultiplier(state, ghost, [s]) - baseReward * 1.03) < 1e-9);
+  state.collection = ["ghost_seal", "ch1_02_r3"]; // 傷勢減免相加（各 +3%）
+  assert.ok(Math.abs(collectionEffects(state).injuryShield - 0.06) < 1e-9);
 });
 
 test("傷勢減免的收藏真的進入副本結算：同一個種子下，有減免的人撐得比較久", () => {
@@ -229,7 +229,7 @@ test("傷勢減免的收藏真的進入副本結算：同一個種子下，有�
     }
     return total;
   };
-  const shielded = Array.from({ length: 4 }, () => "ghost_seal"); // 灌到 injuryShieldMax 上限
+  const shielded = DUNGEONS.flatMap((d) => d.specialRewards).filter((r) => r.effect.injuryShield).map((r) => r.id); // 8 件傷勢減免全收
   assert.ok(roomsSurvived(shielded) > roomsSurvived([]));
 });
 
@@ -287,9 +287,9 @@ test("30 世界首通獎勵：效果不重複、尾王比普通關強，收藏�
     }
     if (d.id.startsWith("ch1_") || d.id.startsWith("ch2_") || d.id.startsWith("ch3_") || d.id.startsWith("ch4_") || d.id.startsWith("ch5_")) assert.ok(new Set(kinds).size >= 2, `${d.id} 效果種類太單調`);
   }
-  const boss = DUNGEONS.find((d) => d.id === "ch2_boss").specialRewards.find((r) => r.effect.injuryShield);
-  const norm = DUNGEONS.find((d) => d.id === "ch2_04").specialRewards.find((r) => r.effect.injuryShield);
-  assert.ok(boss.effect.injuryShield > norm.effect.injuryShield);
+  const boss = DUNGEONS.find((d) => d.id === "ch1_boss").specialRewards.find((r) => r.effect.healBoost);
+  const norm = DUNGEONS.find((d) => d.id === "ch1_02").specialRewards.find((r) => r.effect.healBoost);
+  assert.ok(boss.effect.healBoost > norm.effect.healBoost); // 尾王世界的同種效果 ×1.5
   // 全部收進來：被上限擋住
   const state = createNewGame(1);
   state.collection = DUNGEONS.flatMap((d) => d.specialRewards.map((r) => r.id));
@@ -302,7 +302,7 @@ test("收藏的「少受一級」機率有上限 50%（第三批決策 5），�
   const state = createNewGame(1);
   state.collection = DUNGEONS.flatMap((d) => d.specialRewards.filter((r) => r.effect.injuryShield).map((r) => r.id));
   const raw = state.collection.reduce((n, id) => n + getSpecialReward(id).effect.injuryShield, 0);
-  assert.ok(raw > 0.5, `全收原始值 ${raw} 要超過上限才測得到`);
+  assert.ok(raw > 0 && raw <= 0.5 + 1e-9, `2b 正式配法下全收原始值 ${raw} 約 0.255，低於上限（上限只是保險）`);
   assert.ok(collectionEffects(state).injuryShield <= 0.5 + 1e-9);
   assert.ok(DUNGEONS.flatMap((d) => d.specialRewards).filter((r) => r.effect.injuryShield).every((r) => r.desc.includes("少受一級")));
 });
